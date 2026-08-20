@@ -101,6 +101,17 @@ public sealed record VariableSnapshot(
 
 public sealed record AssemblyInfo(int Pid, string Name, string? Path);
 
+/// <summary>
+/// One line of debuggee output: a logcat line of one of the app's processes, or text the
+/// debuggee wrote to stdout/stderr (delivered through the debugger, tagged <c>stdout</c>/<c>stderr</c>).
+/// </summary>
+/// <param name="Level">Android priority: V, D, I, W, E or F.</param>
+public sealed record AppLogLine(DateTime Timestamp, int Pid, int Tid, char Level, string Tag, string Message)
+{
+    /// <summary>Compact rendering: <c>12:34:56.789 E/Tag(1234): message</c>.</summary>
+    public override string ToString() => $"{Timestamp:HH:mm:ss.fff} {Level}/{Tag}({Pid}): {Message}";
+}
+
 public sealed record SessionStatus(
     SessionState State,
     long StopGeneration,

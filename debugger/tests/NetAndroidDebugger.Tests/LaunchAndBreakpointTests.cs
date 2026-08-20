@@ -180,7 +180,13 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
         // Debug.WriteLine / Console.WriteLine from the debuggee: they may arrive through the
         // SDB user-log channel or logcat; either way they belong to the app output.
         var app = session.GetAppOutput(1000);
-        Assert.Contains(app, l => l.Contains("trace tick", StringComparison.Ordinal) || l.Contains("console tick", StringComparison.Ordinal));
+        Assert.Contains(app, l => l.Message.Contains("trace tick", StringComparison.Ordinal) || l.Message.Contains("console tick", StringComparison.Ordinal));
+        // Every line is structured, not a raw logcat string.
+        Assert.All(app, l => Assert.Contains(l.Level, "VDIWEF"));
+        Assert.All(app, l => Assert.False(string.IsNullOrWhiteSpace(l.Tag)));
+        // Filtering narrows by tag and by text.
+        Assert.NotEmpty(session.GetAppOutput(1000, contains: "tick"));
+        Assert.Empty(session.GetAppOutput(1000, contains: "this text appears nowhere"));
         var dbg = session.GetDebuggerOutput(1000);
         Assert.DoesNotContain(dbg, l => l.Contains("trace tick", StringComparison.Ordinal) || l.Contains("console tick", StringComparison.Ordinal));
     }

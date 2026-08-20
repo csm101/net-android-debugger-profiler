@@ -22,7 +22,7 @@ public sealed class DebugSession : IAsyncDisposable
     private readonly Dictionary<int, Task> _attaching = new();
     private readonly HashSet<int> _unhandledReported = new();
     private readonly Dictionary<int, (BreakpointSpec Spec, Breakpoint Bp)> _breakpoints = new();
-    private readonly List<string> _appOutput = new();
+    private readonly List<AppLogLine> _appOutput = new();
     private readonly List<string> _debuggerOutput = new();
     private readonly Dictionary<string, (int Pid, ObjectValue Value)> _values = new();
     private readonly DebuggerSessionOptions _sessionOptions;
@@ -127,7 +127,7 @@ public sealed class DebugSession : IAsyncDisposable
         _adb = new AdbClient(options.AdbPath);
         var launcher = new AndroidLauncher(_adb, app, options, _log);
         _launcher = launcher;
-        launcher.AppOutput += (pid, line) => AppendAppOutput(line);
+        launcher.AppOutput += AppendAppOutput;
         launcher.ProcessDied += OnProcessDied;
         launcher.AgentDetected += ready => _ = AttachProcessSafeAsync(ready);
 
@@ -191,7 +191,8 @@ public sealed class DebugSession : IAsyncDisposable
         pd.Stopped += OnProcessStopped;
         pd.Resumed += OnProcessResumed;
         pd.Exited += OnProcessExited;
-        pd.Output += (p, isErr, text) => AppendAppOutput($"[pid {p.Pid}] {text.TrimEnd()}");
+        pd.Output += (p, isErr, text) => AppendAppOutput(
+            new AppLogLine(DateTime.Now, p.Pid, 0, isErr ? 'E' : 'I', isErr ? "stderr" : "stdout", text.TrimEnd()));
         try
         {
             await pd.ConnectAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
@@ -794,9 +795,28 @@ public sealed class DebugSession : IAsyncDisposable
         return "";
     }
 
-    public IReadOnlyList<string> GetAppOutput(int maxLines = 200)
+    /// <summary>
+    /// Recent debuggee output (logcat lines of the app's processes plus its stdout/stderr),
+    /// newest last. Filters are applied before <paramref name="maxLines"/>, so narrowing the
+    /// filter shows older matches rather than fewer.
+    /// </summary>
+    /// <param name="minLevel">Lowest Android priority to include (V, D, I, W, E, F).</param>
+    /// <param name="tagContains">Case-insensitive substring the tag must contain.</param>
+    /// <param name="contains">Case-insensitive substring the message must contain.</param>
+    /// <param name="pid">Restrict to one process.</param>
+    public IReadOnlyList<AppLogLine> GetAppOutput(int maxLines = 200, char? minLevel = null, string? tagContains = null, string? contains = null, int? pid = null)
     {
-        lock (_lock) return _appOutput.TakeLast(maxLines).ToList();
+        const string Priorities = "VDIWEF";
+        var floor = minLevel is null ? -1 : Priorities.IndexOf(char.ToUpperInvariant(minLevel.Value));
+        lock (_lock)
+        {
+            IEnumerable<AppLogLine> lines = _appOutput;
+            if (floor > 0) lines = lines.Where(l => Priorities.IndexOf(char.ToUpperInvariant(l.Level)) >= floor);
+            if (pid is not null) lines = lines.Where(l => l.Pid == pid);
+            if (!string.IsNullOrEmpty(tagContains)) lines = lines.Where(l => l.Tag.Contains(tagContains, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(contains)) lines = lines.Where(l => l.Message.Contains(contains, StringComparison.OrdinalIgnoreCase));
+            return lines.TakeLast(maxLines).ToList();
+        }
     }
 
     public IReadOnlyList<string> GetDebuggerOutput(int maxLines = 200)
@@ -910,7 +930,7 @@ public sealed class DebugSession : IAsyncDisposable
             _values.Remove(k);
     }
 
-    private void AppendAppOutput(string line)
+    private void AppendAppOutput(AppLogLine line)
     {
         lock (_lock)
         {

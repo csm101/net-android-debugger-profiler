@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using NetAndroidDebugger.Core.Adb;
 
@@ -20,7 +21,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
 
     // threadtime: "08-20 09:10:39.891  6954  6954 W monodroid-debug: Trying to initialize ..."
     private static readonly Regex LogcatLine = new(
-        @"^\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+\s+(?<pid>\d+)\s+(?<tid>\d+)\s+(?<lvl>[VDIWEFS])\s+(?<tag>.*?)\s*:\s(?<msg>.*)$",
+        @"^(?<stamp>\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+)\s+(?<pid>\d+)\s+(?<tid>\d+)\s+(?<lvl>[VDIWEFS])\s+(?<tag>.*?)\s*:\s(?<msg>.*)$",
         RegexOptions.Compiled);
     private static readonly Regex AgentInit = new(@"Trying to initialize the debugger with options:.*address=127\.0\.0\.1:(?<port>\d+)", RegexOptions.Compiled);
     private static readonly Regex StartProc = new(@"Start proc (?<pid>\d+):(?<name>\S+?)/", RegexOptions.Compiled);
@@ -54,7 +55,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     public event Action<AgentReady>? AgentDetected;
 
     /// <summary>Raised for every logcat line that belongs to a known process of the package.</summary>
-    public event Action<int, string>? AppOutput;
+    public event Action<AppLogLine>? AppOutput;
 
     /// <summary>Raised when a known process of the package died according to ActivityManager.</summary>
     public event Action<int>? ProcessDied;
@@ -261,8 +262,26 @@ public sealed class AndroidLauncher : IAsyncDisposable
         }
 
         if (known)
-            AppOutput?.Invoke(pid, line);
+        {
+            var handler = AppOutput;
+            if (handler is not null)
+            {
+                var tid = int.TryParse(m.Groups["tid"].Value, out var t) ? t : 0;
+                var level = m.Groups["lvl"].Value is { Length: > 0 } l ? l[0] : 'I';
+                handler(new AppLogLine(ParseLogcatTimestamp(m.Groups["stamp"].Value), pid, tid, level, tag, msg));
+            }
+        }
     }
+
+    /// <summary>
+    /// logcat's threadtime stamps carry no year (`08-20 09:10:39.891`) and are in device local
+    /// time; assume the current year and fall back to now when it does not parse.
+    /// </summary>
+    private static DateTime ParseLogcatTimestamp(string stamp)
+        => DateTime.TryParseExact($"{DateTime.Now.Year}-{stamp}", "yyyy-MM-dd HH:mm:ss.fff",
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+            ? parsed
+            : DateTime.Now;
 
     private bool BelongsToPackage(string processName)
         => processName == _app.PackageName || processName.StartsWith(_app.PackageName + ":", StringComparison.Ordinal);

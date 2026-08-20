@@ -101,6 +101,13 @@ Every process of the package (main, `:helper`, ...) reads the **same**
   short (engine default 3 min, `LaunchOptions.PropertyLifetime` /
   `launch_app propertyLifetimeSeconds`) — this is also why the SDK's
   `RunActivity` uses a tiny deadline. **[verified]**
+- A process started by **Android itself** (a manifest-declared receiver or
+  service in its own `android:process`) is attached the same way, even while
+  the app's main process sits suspended at a breakpoint — the main process is
+  not involved in starting it. Verified with a broadcast receiver in `:late`
+  (TestTarget). Note `adb shell am broadcast` blocks until the receiver
+  returns, so with a breakpoint inside the receiver the adb command hangs
+  until you resume: fire it without waiting. **[verified]**
 - Each process is a fully independent SDB session: own threads, assemblies,
   breakpoints (pending breakpoints for a file resolve in whichever process
   loads the assembly). Locals/backtrace read fine in both concurrently.
@@ -210,6 +217,13 @@ dotnet build <Project>.csproj -t:Run -p:Configuration=Debug \
   `AllowToStringCalls=false` for slow targets) and `RunBounded` (45 s) so a
   stuck invoke costs a leaked thread instead of a hung frontend.
   **[verified — suite runs 7 and 9, live MCP reproduction 2026-08-20]**
+  What happens to the *debuggee* after such an abort is not deterministic: an
+  invocation blocked in a call the abort cannot interrupt (`Thread.Sleep`, a
+  native call) sometimes survives and the thread keeps working, and sometimes
+  the runtime keeps retrying the abort until the process dies. Prefer generous
+  timeouts, and on targets where a getter may block prefer
+  `allowTargetInvoke=false` over relying on the abort. **[both outcomes
+  observed on the same test, 2026-08-20]**
 - Debuggee traces (`Debug.WriteLine`, `Console.WriteLine`, app loggers) reach
   the client as SDB **UserLog** events; `SoftDebuggerSession` hands them to
   `DebuggerSession.DebugWriter(level, category, message)` and, when that is
@@ -251,7 +265,11 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
   **Unattended runs must be headless**: a windowed emulator cannot start once
   the desktop session is locked or the display sleeps — it logs `Unable to
   open monitor interface to \\.\DISPLAY1`, never registers with adb, and just
-  hangs. `-no-window -gpu swiftshader_indirect` starts fine in that state.
+  hangs. `-no-window -gpu host` starts fine in that state and keeps the
+  hardware GPU, which matters: under `swiftshader_indirect` the debuggee is
+  slow enough that ordinary property getters exceed the evaluation timeout,
+  and the resulting abort storm (dozens of `Aborting invocation of ...` for a
+  single getter) can kill the app.
   `DevTools/scripts/ensure-emulator.sh` defaults to that and also clears the
   stale `hardware-qemu.ini.lock` / `multiinstance.lock` / `read-snapshot.txt`
   a crashed instance leaves behind (clearing them does not touch installed

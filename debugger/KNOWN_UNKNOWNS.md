@@ -45,16 +45,22 @@ near-term concern for net9; track when the reference application retargets.
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
 
-## U11 - ANSWERED (delete once the entry stops being useful context)
-Measured 2026-08-20 on a healthy emulator with the current engine: a debuggee
-invocation that is aborted on timeout (TestTarget `SlowProbe.SlowValue`, an
-8 s getter with a 1.5 s timeout) leaves the stopped thread **fully usable** -
-further evaluation returns correct values, object expansion reports the slow
-member as `[error]` while still reading the others, and Continue works. The
-"wedged thread" seen in suite runs 10-11 was the degraded software-GPU
-emulator (invokes so slow that the abort itself could not complete), not a
-structural defect; the current timeouts (12 s / 18 s) and RunBounded cover it.
-No warm-up invoke needed. Covered by `AbortedSlowInvoke_LeavesTheThreadUsable`.
+## U11 - What an aborted debuggee invocation costs (mostly answered)
+Measured 2026-08-20 with TestTarget `SlowProbe.SlowValue` (an 8 s getter) and
+a 1.5 s timeout. The debugger side is settled: the timeout is reported as an
+error, the session stays responsive, later evaluation and expansion answer
+normally, and `RunBounded` guarantees no hang.
+The **debuggee** side is not deterministic: an invocation stuck in a call the
+abort cannot interrupt (here `Thread.Sleep`) sometimes survives - the thread
+keeps working and Continue resumes it - and sometimes the runtime retries the
+abort repeatedly ("Aborting invocation of ..." over and over) until the whole
+process dies. Both outcomes were observed on the same test.
+Practical consequence, worth documenting for users rather than fixing: keep
+`EvaluationTimeout` generous, and on a target where a getter may block, set
+`allowTargetInvoke=false` (or `allowToStringCalls=false`) instead of relying
+on the abort. Open only if it ever matters: can the engine tell an
+interruptible invocation from a doomed one before starting it? Covered by
+`AbortedSlowInvoke_LeavesTheThreadUsable`.
 
 ## U12 - DECIDED (delete once the entry stops being useful context)
 An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw,

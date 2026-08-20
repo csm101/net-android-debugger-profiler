@@ -262,11 +262,19 @@ public sealed class DebuggerTools(SessionHost host)
         return list.Count == 0 ? "No assemblies reported." : string.Join('\n', list.Select(a => $"pid {a.Pid}  {a.Name}  {a.Path ?? ""}"));
     }
 
-    [McpServerTool(Name = "get_app_output", ReadOnly = true), Description("Recent logcat lines of the app's processes plus stdout/stderr captured by the debugger.")]
-    public string GetAppOutput([Description("Max lines (default 200)")] int maxLines = 200)
+    [McpServerTool(Name = "get_app_output", ReadOnly = true), Description(
+        "Recent output of the app's processes: logcat lines plus anything the debuggee wrote to stdout/stderr " +
+        "(tags 'stdout'/'stderr'). Rendered as 'HH:mm:ss.fff LEVEL/Tag(pid): message', oldest first. " +
+        "Filters are applied before the line limit, so narrowing them surfaces older matches instead of fewer.")]
+    public string GetAppOutput(
+        [Description("Max lines (default 200)")] int maxLines = 200,
+        [Description("Lowest Android priority to include: V, D, I, W, E or F")] string? minLevel = null,
+        [Description("Only lines whose tag contains this text")] string? tagContains = null,
+        [Description("Only lines whose message contains this text")] string? contains = null,
+        [Description("Only lines from this process id")] int? pid = null)
     {
-        var lines = host.Require().GetAppOutput(maxLines);
-        return lines.Count == 0 ? "(no output)" : string.Join('\n', lines);
+        var lines = host.Require().GetAppOutput(maxLines, string.IsNullOrEmpty(minLevel) ? null : minLevel[0], tagContains, contains, pid);
+        return lines.Count == 0 ? "(no output)" : string.Join('\n', lines.Select(l => l.ToString()));
     }
 
     [McpServerTool(Name = "get_debugger_output", ReadOnly = true), Description("Recent engine/Mono.Debugging log lines (attach dance, port rotation, resolution of breakpoints, errors).")]

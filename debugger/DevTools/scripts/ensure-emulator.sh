@@ -12,10 +12,12 @@
 # - Only ever touches the serial it is given; other emulators are left alone.
 # - Kills a half-dead instance with `adb emu kill` (killing the qemu PID from a
 #   non-elevated shell silently fails and blocks the next launch of the same AVD).
-# - Defaults to HEADLESS=1 with a software GPU, because a windowed `-gpu host`
-#   emulator cannot start once the desktop session is locked or the display is
-#   asleep ("Unable to open monitor interface to \\.\DISPLAY1" and it never
-#   registers with adb). Set HEADLESS=0 GPU=host for an interactive, faster one.
+# - Defaults to HEADLESS=1 with the hardware GPU. Headless is required once the
+#   desktop session is locked or the display sleeps: a windowed emulator then
+#   logs "Unable to open monitor interface to \\.\DISPLAY1" and never registers
+#   with adb. The hardware GPU still works headless and matters — with
+#   `-gpu swiftshader_indirect` the debuggee is slow enough that ordinary
+#   property getters exceed the evaluation timeout and the suite turns flaky.
 # - After a qemu crash the AVD keeps stale locks (hardware-qemu.ini.lock,
 #   multiinstance.lock) and a possibly broken snapshot; both are cleared here.
 #   Clearing them does NOT touch installed apps or user data.
@@ -24,7 +26,7 @@ SERIAL=${SERIAL:-emulator-5554}
 AVD=${AVD:-pixel_7_-_api_33_0}
 PORT=${PORT:-${SERIAL##*-}}
 HEADLESS=${HEADLESS:-1}
-GPU=${GPU:-swiftshader_indirect}
+GPU=${GPU:-host}
 CORES=${CORES:-4}
 EMULATOR=${EMULATOR:-/c/Program Files (x86)/Android/android-sdk/emulator/emulator.exe}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-300}

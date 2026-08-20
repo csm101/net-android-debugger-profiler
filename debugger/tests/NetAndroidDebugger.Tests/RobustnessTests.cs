@@ -184,6 +184,57 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
     }
 
     [Fact]
+    public async Task ProcessSpawnedWhileMainIsStopped_IsAttachedOnItsOwnPort()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var lateLine = TestEnvironment.LineOf(TestEnvironment.HelperServiceSource, "Android.Util.Log.Verbose(\"TestTarget\", $\"late compute {value}\");");
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+            s.SetBreakpoint(new BreakpointSpec(TestEnvironment.HelperServiceSource, lateLine));
+        });
+
+        // Suspend the app first: the third process must be attached even though the main process
+        // (which normally starts helpers) is frozen — Android starts it for the broadcast.
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(SessionState.Stopped, session.State);
+
+        var pkg = TestEnvironment.TestTargetPackage;
+        // `am broadcast` waits for the receiver to return, and our breakpoint stops it inside the
+        // receiver — so waiting for the command here would deadlock the test against itself.
+        var adb = new AdbClient();
+        _ = Task.Run(async () =>
+        {
+            try { await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.SPAWN_LATE -p {pkg}", CancellationToken.None, TimeSpan.FromMinutes(2)); }
+            catch (Exception ex) { output.WriteLine($"broadcast command ended: {ex.Message}"); }
+        }, CancellationToken.None);
+
+        // The new process reads the (still fresh) debug property, waits for us, and gets the next port.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(45);
+        ProcessSnapshot? late;
+        do
+        {
+            late = session.GetProcesses().FirstOrDefault(p => p.Name.EndsWith(":late", StringComparison.Ordinal));
+            if (late is not null) break;
+            await Task.Delay(500, cts.Token);
+        } while (DateTime.UtcNow < deadline);
+
+        var processes = session.GetProcesses();
+        output.WriteLine(string.Join("\n", processes.Select(p => $"{p.Pid} {p.Name} port={p.SdbPort} stopped={p.IsStopped} exited={p.HasExited}")));
+        Assert.NotNull(late);
+        Assert.True(processes.Count >= 3, "main, :helper and :late should all be attached");
+        Assert.Equal(processes.Count, processes.Select(p => p.SdbPort).Distinct().Count());
+
+        // And it is really debuggable: its breakpoint is hit inside the receiver.
+        var lateStop = await session.WaitForStopAsync(stop.Generation, StopTimeout, cts.Token);
+        Assert.NotNull(lateStop);
+        Assert.Equal(late.Pid, lateStop.Pid);
+        Assert.Equal(lateLine, lateStop.Location?.Line);
+        Assert.Equal("123", session.GetLocals(lateStop.Pid, lateStop.ThreadId).Single(l => l.Name == "value").Value);
+    }
+
+    [Fact]
     public async Task Launch_UnknownPackage_FailsCleanly()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
