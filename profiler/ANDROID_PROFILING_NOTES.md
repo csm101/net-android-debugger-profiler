@@ -323,6 +323,11 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   usable for staging (the app user cannot write there). **[verified]**
 - `am start -W` waits for the activity to become idle and times out on a
   heavily instrumented app: start without `-W`. **[verified]**
+- Weave scope drives feasibility: on the reference application (emulator) weaving a single type
+  (15 methods) starts and records normally, while weaving the whole
+  `App.Droid` namespace (7882 methods) leaves the app still in Java-side class
+  verification after 2 minutes - alive but nowhere near managed code. Narrow
+  callspecs only; use sampling to choose them. **[verified]**
 
 ## Analysis
 

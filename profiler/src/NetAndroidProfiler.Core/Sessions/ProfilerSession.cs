@@ -305,15 +305,19 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         SetState(SessionState.WaitingForApp);
         // The collector writes a marker the first time a woven method executes. No
-        // marker means the app is not running the woven assemblies at all - typically
-        // because it loads them from inside the APK instead of the fast-deployment
-        // directory the weaver writes to.
-        if (!await _weaveDeployer!.WaitForCollectorMarkerAsync(TimeSpan.FromSeconds(120), ct).ConfigureAwait(false))
+        // marker means either that the app is not running the woven assemblies at all
+        // (it loads them from inside the APK) or that the weave scope is so wide that
+        // startup has not reached managed code yet.
+        var markerWait = TimeSpan.FromSeconds(240);
+        if (!await _weaveDeployer!.WaitForCollectorMarkerAsync(markerWait, ct).ConfigureAwait(false))
             throw new ProfilerException(
-                $"The woven assemblies are not being executed by {Spec.Package}. The app loads its assemblies from " +
-                "inside the APK, so the woven copies in the fast-deployment directory are ignored. Build the app for " +
-                "profiling with fast deployment enabled (-p:EmbedAssembliesIntoApk=false, the Debug default) and " +
-                "reinstall, then run the weaver session again. See docs/APP_SETUP.md.");
+                $"No woven method of {Spec.Package} executed within {markerWait.TotalSeconds:F0} s " +
+                $"({_weaveMap!.Count} methods woven). Two common causes: " +
+                "(1) the app loads its assemblies from inside the APK (EmbedAssembliesIntoApk=true), so the woven copies " +
+                "in the fast-deployment directory are ignored - rebuild with -p:EmbedAssembliesIntoApk=false and reinstall; " +
+                "(2) the weave filter is too wide - instrumenting thousands of methods makes startup far slower than this " +
+                "timeout (measured on the reference application: ~7900 methods had not reached managed code after 2 minutes, while a single " +
+                "type starts normally), so narrow the callspec to the types you are investigating. See docs/APP_SETUP.md.");
         Log("collector marker seen: woven code is running");
         SetState(SessionState.Collecting);
         _started = DateTimeOffset.UtcNow;

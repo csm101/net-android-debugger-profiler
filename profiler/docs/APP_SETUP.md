@@ -41,6 +41,17 @@ profiler detects this and tells you. For a profiling build:
 (Or build with `-p:EmbedAssembliesIntoApk=false` and reinstall.) Sampling and
 heap snapshots are unaffected and work with embedded assemblies.
 
+The weaver also needs the original `.pdb` of a rewritten assembly out of the
+way; the profiler moves it aside for the duration of the session and restores
+it afterwards - nothing to do on your side.
+
+**Keep the weave filter narrow.** Every woven method costs an Enter/Leave pair
+per call, and the cost is paid from the very first line of startup. Measured on
+the reference application (emulator): weaving one type (15 methods) runs normally, weaving the
+whole `App.Droid` namespace (7882 methods) makes startup so slow that the app
+had not reached managed code after two minutes. Use sampling first to find the
+area of interest, then weave that type or a handful of types.
+
 ## What each mode needs
 
 | Mode | Build requirement | Notes |

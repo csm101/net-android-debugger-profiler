@@ -85,7 +85,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (needs EmbedAssembliesIntoApk=false)
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
-- [ ] Weaver with a wide callspec (whole namespace) within a usable time budget
+- [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`
 
 ## G2. the reference application hardening (P3+)
 - [ ] Sampling session on real app completes and analyzes
