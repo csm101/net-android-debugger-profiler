@@ -97,11 +97,16 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   profile_flat, profile_report, profile_annotate_source, list_devices,
   profile_sessions); integration tests on emulator + fast tests on recorded
   traces.
-- P2 - Memory: gcdump + alloc events -> per-type/per-callsite reports; MCP
-  memory tools.
-- P3 - Instrumenting: plan A callspec sessions end-to-end; then plan B weaver
-  (Cecil, async-aware) + on-device collector lib + APK strumentation build
-  step.
+- P2 - Memory: DONE for the core scenarios - exact allocation events per type
+  and per allocating frame (runtime provider), live-heap snapshots, multiple
+  snapshots per session with a growth diff, MCP tools alloc_report /
+  heap_report / heap_diff. Open: type names for objects whose type was loaded
+  before the session (U13), allocation data from the weaver engine.
+- P3 - Instrumenting: plan A (callspec) works on net10 targets but crashes
+  net9 runtimes (U20), so plan B is the path on the real app: Mono.Cecil
+  weaver + on-device collector, working on TestTarget and the reference application, with
+  build-time weaving for apps that embed their assemblies (U22). Open: async
+  MoveNext attribution (U8).
 - P4 - Delphi GUI (gui/): DevExpress VCL, call tree (cxTreeList), hot lists
   (cxGrid), allocations (PivotGrid), timeline (chart); reads SQLite, drives
   Core via local control service.

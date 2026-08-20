@@ -24,8 +24,10 @@ of that this project adds:
   can profile an app and reason about the results.
 - **Instrumenting modes** - the runtime's experimental
   `Microsoft-DotNETRuntimeMonoProfiler` provider (method enter/leave with
-  callspec filters, allocations with callstacks), and a planned IL-weaving
-  mode (Mono.Cecil) that is runtime-independent.
+  callspec filters, exact allocations), and an IL-weaving mode (Mono.Cecil)
+  that is runtime-independent and works on .NET 9 apps, where the runtime
+  provider is unusable. Weaving happens either on the device (fast-deployment
+  builds) or during the build (`nap-weave`).
 - **GUI frontend (planned)** - Delphi + DevExpress VCL desktop client in the
   AQTime style: call trees, hot lists, allocation pivots, timelines - reading
   the SQLite analysis database directly.
@@ -51,7 +53,8 @@ heap; launch restart | attach), `profile_start` / `profile_stop` /
 `profile_tree`, `profile_callers` / `profile_callees`, `profile_timings`,
 `alloc_report`, `heap_report`, `profile_threads`, `profile_report`,
 `profile_annotate_source` (per-method figures on the source file, via the
-build's portable pdbs), `get_app_output`. Sessions are stored under
+build's portable pdbs), `heap_diff` (growth between two snapshots of a memory
+session), `get_app_output`. Sessions are stored under
 `%LOCALAPPDATA%\net-android-profiler\sessions\<id>\` (override with
 `NAP_SESSIONS_ROOT`): `session.db` (SQLite, schema in ARCHITECTURE.md),
 `trace.nettrace` (opens in PerfView / Visual Studio), `session.log`.

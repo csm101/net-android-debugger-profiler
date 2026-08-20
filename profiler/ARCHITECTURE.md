@@ -67,6 +67,41 @@ Profiling modes:
 | Mcp/ | stdio MCP server over ProfilerSession (P1, next) |
 | gui/ (P4) | Delphi + DevExpress VCL frontend (AQTime-style), reads SQLite, drives sessions via local control service |
 
+## Instrumenting engines
+
+Two engines produce the same `InstrumentingResult` and therefore the same
+`timing_*` tables, so frontends never branch on the engine:
+
+| | Runtime provider | Weaver (Mono.Cecil) |
+|---|---|---|
+| Mechanism | `Microsoft-DotNETRuntimeMonoProfiler` callspec, events over EventPipe | `Profiler.Enter/Leave` injected into the selected methods, events written to files by the app |
+| Requirements | MonoVM, `MONO_DIAGNOSTICS` in the app environment, JIT (AOT methods are never instrumented) | the woven assemblies must be the ones the app loads |
+| Availability | broken on .NET 9 runtimes (KNOWN_UNKNOWNS U20) | works on any runtime, including .NET 9 |
+| Allocations | exact, with type and allocating frame | not collected (v1) |
+| Where the rewrite happens | nowhere (runtime decides at JIT time) | on the device (fast-deployment copies) or during the build (`nap-weave`) |
+
+Weaver data path: `CecilWeaver` wraps each selected method body in
+`Profiler.Enter(id); try { ... } finally { Profiler.Leave(id); }` and emits an
+id map; `NetAndroidProfiler.Collector` (netstandard2.0, no dependencies) writes
+one `.napw` file per thread into `NAP_PROFILER_OUT`; `WeaveAnalyzer` turns those
+files plus the map into timings and a timing tree.
+
+`.napw` format: header `"NAPW"`, version byte, `i64` Stopwatch frequency,
+`i32` pid (0), `i32` managed thread id; then fixed 13-byte records of
+`u8 kind` (1 enter, 2 leave, 3 exception leave), `i32 method id`, `i64` Stopwatch
+ticks. Buffers are flushed every second and on process exit, so a killed process
+loses at most one second of events.
+
+Two deployment shapes:
+- **on device** (`WeaveDeployer`): pulls the assemblies from
+  `files/.__override__/<abi>/`, weaves them, pushes the woven copies back with
+  backups, moves the stale `.pdb` aside, injects the environment, and restores
+  everything at the end. Requires a fast-deployment build.
+- **at build time** (`nap-weave` + `build/NetAndroidProfiler.Weaving.targets`):
+  the build rewrites the assembly before packaging and writes `nap-weave.map`;
+  the session consumes the map (`SessionSpec.WeaveMapPath`) and touches nothing
+  on the device. This is the path for apps that embed their assemblies.
+
 ## SQLite schema contract
 
 Source of truth: `src/NetAndroidProfiler.Core/Store/ResultSchema.cs`
