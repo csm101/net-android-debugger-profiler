@@ -254,6 +254,15 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Debugged through the MCP server (2026-08-20):** attach (= restart with
+  agent) works on the installed Debug build (fast deployment, assemblies in
+  `.__override__/x86_64`); PDB paths are the `C:\Work\ReferenceApp\...` sources,
+  so breakpoints on those absolute paths bind. Verified: breakpoint on startup
+  code in the main process (`AppApplication.InizializzaApplicazione`, set
+  before launch), breakpoint in another assembly (`App.Core.dll`, pending until
+  loaded, then hit on the main thread id 1), helper `:crash_report_process`
+  auto-attached on the next port, expansion of `this` with Unity container /
+  lists, step over, terminate leaves the device clean. **[verified]**
 
 ## Sources
 

@@ -57,8 +57,11 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   server for Claude Code, then run against the reference application (M3 start).
 - M2 - Inspection depth: evaluate, object/array expansion, exception filters,
   threads, logcat capture, compact debug snapshot.
-- M3 - the reference application hardening: attach to the real app, multi-assembly, source
-  resolution against the the reference application checkout, device (non-emulator) support.
+- M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
+  the registered MCP server: attach, helper process auto-attach, breakpoints
+  on startup code (main) and in App.Core (multi-assembly), locals/expansion,
+  stepping, clean terminate. Remaining: App.Background service, physical device
+  over adb connect (U9), the reference application build specifics (U6), main-thread labelling.
 - M4 - Optional DAP frontend + packaging/registration (mirror the Delphi
   project's installer / register-mcp.ps1 approach).
 

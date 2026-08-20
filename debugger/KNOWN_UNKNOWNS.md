@@ -28,9 +28,11 @@ What does the Mono.Debugging built-in evaluator cover on net9-android
 Where do we need our own formatting (the Delphi project needed a lot)?
 
 ## U6 - the reference application debug build specifics
-Does App.Droid Debug config have fast deployment enabled? Custom manifest
-flags, multi-process, services starting before attach? MQTT/watchdog behavior
-while paused at a breakpoint.
+Resolved so far (ANDROID_ATTACH_NOTES.md, the reference application section): Debug build is
+debuggable with fast deployment, attach works, multi-process handled. Still
+open: MQTT/watchdog/TTManager behavior while paused at a breakpoint for a
+long time (does the app get killed or reconnect storms happen?), and the
+on-demand `the app's own android:process` process.
 
 ## U8 - CoreCLR on Android
 Future .NET versions may switch Android to CoreCLR (SDB disappears). Not a

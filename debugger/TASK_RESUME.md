@@ -59,11 +59,27 @@ NullValue_HasNoExpansionHandle, AppTraces_GoToAppOutput_NotDebuggerOutput,
 SetBreakpoint_BeforeLaunch_IsHitOnStartupCode_AndWaitReturnsCurrentStop.
 Suite run 3 (14 tests, with redeploy): 14/14 green in 67 s, device clean.
 
+## Committed
+cb4f7d6 "M0 spike and M1 engine + MCP frontend" (2026-08-20). Server
+republished by the user via register-mcp.cmd.
+
+## M3 drive #2 on the reference application (2026-08-20, new server)
+- set_breakpoint before launch on AppApplication.cs:91 (startup code, main
+  process) and on App.Core/.../ControlloNumeratoriProgressiviImpl.cs:62
+  (different assembly) -> attach_to_app -> bp1 hit on main (thread 4, TP),
+  bp2 pending until App.Core.dll loaded -> continue -> bp2 hit on thread 1
+  (the main/UI thread), locals with nulls (no handles), `this` expanded
+  (Unity container, List Count = 0, ...). Helper process auto-attached on
+  10001 meanwhile. terminate -> clean.
+- Polish found: thread 1 has an empty name; should be labelled as the main
+  thread (TEST_CATALOG D "Main/UI thread identified" still open).
+
 ## Next action if interrupted right now
-User must republish the registered MCP server (register-mcp.cmd, with the
-Claude Code session that holds the server closed - the dll is locked while
-it runs). Then continue M3 on the reference application (main-process breakpoints on UI code,
-multi-assembly, App.Background service). Suggest a commit.
+Decide with the user: (a) M3 remaining - App.Background service (on demand, needs
+app interaction), physical device over adb connect (U9), the reference application debug
+build specifics (U6); (b) M2 depth - value formatting (main thread label,
+collections, enums), exception filters tests, conditional/hit-count bps,
+set_breakpoint while running test, error-path MCP tests.
 Working tree uncommitted (docs, src, tests, TestTarget, DevTools, submodule
 pointer) - suggest a commit to the user.
 
