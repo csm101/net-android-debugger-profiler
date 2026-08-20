@@ -27,7 +27,7 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 36 tests in four files, ~3 min on the headless emulator after deploy. Each
+- 49 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -40,11 +40,11 @@ Conventions (mirroring the Delphi project's discipline):
       `Launch_AttachesMainProcess_AndReportsRunning`
 - [x] Terminate ends the session, stops the app, clears the property —
       `Terminate_EndsSession_AndStopsApp`
-- [ ] Attach to already-running debuggable app — not possible on Mono Android
-      (property read at process start); attach == restart with agent. Test
-      that `LaunchAsync` on an already-running app restarts it cleanly.
-- [ ] Detach leaves app running — known impossible (agent kills the app);
-      name: `Detach_TerminatesApp_ByDesign`
+- [x] Launching an app that is already running restarts it under the debugger
+      (attach == restart on Mono Android; the pid changes) —
+      `LaunchingAnAlreadyRunningApp_RestartsItUnderTheDebugger`
+- [x] Detach terminates the app, by design (the Mono runtime exits when the
+      debugger disconnects) — `Detach_TerminatesTheApp_ByDesign`
 - [x] An app that kills itself is reported as a process exit, and the session
       never claims to be stopped with nothing suspended —
       `AppDyingOnItsOwn_IsReportedAsProcessExit`
@@ -160,7 +160,9 @@ Conventions (mirroring the Delphi project's discipline):
 ## H. Android specifics
 - [x] Logcat/app output capture during session, as structured lines with
       level/tag/pid and filters — `AppTraces_GoToAppOutput_NotDebuggerOutput`
-- [ ] Activity restart (rotation) mid-session behavior
+- [x] Screen rotation recreates the Activity in the same process and the
+      session follows it (OnCreate breakpoint hits again) —
+      `ScreenRotation_RecreatesTheActivity_AndTheSessionSurvives`
 - [ ] Attach over `adb connect` (WiFi device) — deferred (U9)
 
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
@@ -180,6 +182,7 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Null values carry no expansion handle — `NullValue_HasNoExpansionHandle` (E)
 - [x] App trace lines (Debug.WriteLine / Console) appear in app output, not
       debugger output — `AppTraces_GoToAppOutput_NotDebuggerOutput` (H)
-- [ ] launch_app with deploy=true redeploys and launches
+- [x] launch_app with deploy=true builds, installs and attaches —
+      `LaunchWithDeploy_BuildsInstallsAndAttaches`
 - [x] A second launch_app replaces the previous session (new pid, old one gone
       from the status) — `SecondLaunch_ReplacesTheFirstSession`

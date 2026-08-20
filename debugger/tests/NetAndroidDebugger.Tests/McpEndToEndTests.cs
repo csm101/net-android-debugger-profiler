@@ -105,6 +105,30 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
     }
 
     [Fact]
+    public async Task LaunchWithDeploy_BuildsInstallsAndAttaches()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        // The deploy path is the one a user hits first: point the tool at the csproj and let it
+        // install before launching. An up-to-date build still exercises the whole route.
+        var launched = await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+            ["projectPath"] = TestEnvironment.TestTargetProject,
+            ["deploy"] = true,
+        }, ct);
+        Assert.Contains("state=Running", launched);
+        Assert.Contains($"package={TestEnvironment.TestTargetPackage}", launched);
+
+        var log = await CallAsync(client, "get_debugger_output", new Dictionary<string, object?> { ["maxLines"] = 2000 }, ct);
+        Assert.Contains("deploy: ok", log);
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+    }
+
+    [Fact]
     public async Task SecondLaunch_ReplacesTheFirstSession()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));

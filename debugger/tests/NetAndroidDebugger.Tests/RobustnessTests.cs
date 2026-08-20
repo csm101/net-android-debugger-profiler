@@ -445,6 +445,82 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
     }
 
     [Fact]
+    public async Task Detach_TerminatesTheApp_ByDesign()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var adb = new AdbClient();
+        var pkg = TestEnvironment.TestTargetPackage;
+        var session = await LaunchAsync(cts.Token);
+        Assert.NotEmpty(await adb.ListPackageProcessesAsync(device.Serial, pkg, cts.Token));
+
+        // On Mono Android the runtime exits when the debugger disconnects, so detaching cannot
+        // leave the app running. The engine models this by terminating explicitly; this test
+        // exists so the day that changes upstream, we notice.
+        await session.DetachAsync(cts.Token);
+        Assert.Equal(SessionState.Exited, session.State);
+
+        var left = await WaitForAsync(
+            async () => (await adb.ListPackageProcessesAsync(device.Serial, pkg, CancellationToken.None)).Count == 0 ? "gone" : null,
+            TimeSpan.FromSeconds(20), cts.Token);
+        Assert.Equal("gone", left);
+    }
+
+    [Fact]
+    public async Task LaunchingAnAlreadyRunningApp_RestartsItUnderTheDebugger()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var adb = new AdbClient();
+        var pkg = TestEnvironment.TestTargetPackage;
+
+        // Start it the ordinary way first: no agent, nothing attached.
+        await adb.ForceStopAsync(device.Serial, pkg, cts.Token);
+        var activity = await adb.ResolveLauncherActivityAsync(device.Serial, pkg, cts.Token);
+        await adb.StartActivityAsync(device.Serial, activity, cts.Token);
+        var before = await WaitForAsync(
+            async () => (await adb.ListPackageProcessesAsync(device.Serial, pkg, CancellationToken.None)).FirstOrDefault(p => p.Name == pkg) is { Pid: > 0 } m ? m.Pid.ToString() : null,
+            TimeSpan.FromSeconds(30), cts.Token);
+        Assert.NotNull(before);
+        output.WriteLine($"running without debugger as pid {before}");
+
+        // Attaching means restarting it with the agent — the pid must change.
+        await using var session = await LaunchAsync(cts.Token);
+        var main = session.GetProcesses().Single(p => p.Name == pkg);
+        output.WriteLine($"after launch: pid {main.Pid}");
+        Assert.NotEqual(int.Parse(before), main.Pid);
+        Assert.Equal(SessionState.Running, session.State);
+    }
+
+    [Fact]
+    public async Task ScreenRotation_RecreatesTheActivity_AndTheSessionSurvives()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var adb = new AdbClient();
+        var onCreate = TestEnvironment.LineOf(Main, "SetContentView(Resource.Layout.activity_main);");
+        await using var session = await LaunchAsync(cts.Token);
+        var mainPid = session.GetProcesses().Single(p => p.Name == TestEnvironment.TestTargetPackage).Pid;
+
+        await adb.ShellAsync(device.Serial, "settings put system accelerometer_rotation 0", cts.Token);
+        try
+        {
+            // A rotation destroys and recreates the Activity in the same process: OnCreate runs
+            // again, so a breakpoint there proves the session followed the app through it.
+            session.SetBreakpoint(new BreakpointSpec(Main, onCreate));
+            await adb.ShellAsync(device.Serial, "settings put system user_rotation 1", cts.Token);
+
+            var stop = await session.WaitForStopAsync(session.StopGeneration, TimeSpan.FromSeconds(45), cts.Token);
+            output.WriteLine($"after rotation: {stop?.Location?.Method} line {stop?.Location?.Line} pid {stop?.Pid}");
+            Assert.NotNull(stop);
+            Assert.Equal(onCreate, stop.Location?.Line);
+            Assert.Equal(mainPid, stop.Pid);
+            Assert.NotEmpty(session.GetLocals(stop.Pid, stop.ThreadId));
+        }
+        finally
+        {
+            await adb.ShellAsync(device.Serial, "settings put system user_rotation 0", CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task ForeignMonoApp_StartingDuringTheSession_IsNotAttached()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
