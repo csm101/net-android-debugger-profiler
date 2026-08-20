@@ -129,6 +129,30 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
     }
 
     [Fact]
+    public async Task RepeatedExpansion_WithAFrequentBreakpointArmed_KeepsWorking()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        // TickLine is hit every second on a pool thread. Mono resumes all threads during a
+        // debuggee invocation, so without disarming breakpoints first, another thread hits this
+        // breakpoint mid-invocation, suspends the VM, and the invocation never returns.
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        for (int round = 0; round < 5; round++)
+        {
+            var sample = session.GetLocals(stop.Pid, stop.ThreadId).Single(l => l.Name == "sample");
+            var children = session.ExpandVariable(sample.ExpansionHandle!);
+            Assert.Contains(children, c => c.Name == "When");
+            Assert.Contains(children, c => c.Name == "NumbersCount" && !c.IsError);
+            output.WriteLine($"round {round}: expanded {children.Count} members");
+        }
+        // The breakpoints are armed again afterwards, so execution still stops.
+        Assert.Single(session.ListBreakpoints());
+        Assert.NotNull(await session.ContinueAndWaitAsync(StopTimeout, cts.Token));
+    }
+
+    [Fact]
     public async Task AbortedSlowInvoke_LeavesTheThreadUsable()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));

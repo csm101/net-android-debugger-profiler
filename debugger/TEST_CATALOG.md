@@ -49,8 +49,9 @@ Conventions (mirroring the Delphi project's discipline):
 - [ ] Debugger disconnect mid-run (recovery behavior)
 - [x] Pause stops a running process with reason Pause —
       `Pause_StopsRunningProcess_AndReportsPauseReason`
-- [ ] Launch fails cleanly when the package is not installed (error, no hang)
-- [ ] Launch fails cleanly when the device is offline / serial wrong
+- [x] Launch fails cleanly when the package is not installed (error names the
+      package, session ends, property cleared) — `Launch_UnknownPackage_FailsCleanly`
+- [x] Launch fails cleanly when the serial is unknown — `Launch_UnknownDeviceSerial_FailsCleanly`
 
 ## A2. Multi-process (port rotation)
 - [x] Helper process (`:helper`) attached on the next port, breakpoint hit
@@ -89,7 +90,8 @@ Conventions (mirroring the Delphi project's discipline):
       before the await still readable, user frame in the stack, step stays in
       the method — `AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack`
 - [ ] Step over a call that raises an exception
-- [ ] Step in one process while another process is stopped
+- [x] Step in one process while another stays stopped and inspectable —
+      `SteppingOneProcess_LeavesTheOtherStopped`
 
 ## D. Stack and threads
 - [x] Call stack at breakpoint: user frame on top, external frames below —
@@ -99,7 +101,9 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Stop location is always the user's line, even when the stop is delivered
       inside an external call (JNI callee on top) —
       `StopLocation_IsAlwaysTheUserLine_EvenWhenStoppedInsideAnExternalCall`
-- [ ] Stack of a thread other than the stopping one
+- [x] Stack of a thread other than the stopping one (and the main thread of an
+      idle Activity legitimately has no managed frames) —
+      `CallStack_OfAnotherThread_IsReadable_WhenStopped`
 - [x] Main/UI thread identified ("Main" label, OnCreate stops on it) —
       `MainThread_IsLabelledMain_AndOnCreateRunsOnIt`; unnamed threads get
       "Thread N"
@@ -117,8 +121,9 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Stuck debuggee invoke yields a bounded TimeoutException, never a hang —
       engine `RunBounded` (60 s); timeouts are 12 s/18 s so a first slow invoke
       (DateTime.ToString / ICU init) completes instead of being aborted.
-- [ ] `set_evaluation_options(allowToStringCalls=false)` makes a DateTime
-      render as a struct without invoking — `EvaluationOptions_NoToString_RendersWithoutInvoke`
+- [x] Safe mode without debuggee invocation (`allowToStringCalls=false`,
+      `allowTargetInvoke=false`): primitives, strings and object expansion still
+      readable — `EvaluationOptions_WithoutToStringCalls_StillReadsValues`
 - [x] An aborted slow invocation is reported as an error and the debugger stays
       responsive (the debuggee may or may not survive it — both outcomes are
       accepted) — `AbortedSlowInvoke_LeavesTheThreadUsable` (U11)
@@ -141,7 +146,8 @@ Conventions (mirroring the Delphi project's discipline):
       Details are captured at stop time from the backtrace (the process dies
       right after); the message is best-effort and the stop backtrace is the
       dispatch frame, not the original throw site.
-- [~] Exception type filtering (single type verified; multiple types + clear open)
+- [x] Exception type filtering: several types at once, and clearing the filters
+      stops the exception stops — `ExceptionFilters_CanBeNarrowedAndCleared`
 
 ## H. Android specifics
 - [x] Logcat/app output capture during session, as structured lines with

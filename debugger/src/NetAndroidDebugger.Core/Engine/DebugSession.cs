@@ -331,7 +331,7 @@ public sealed class DebugSession : IAsyncDisposable
     private void OnProcessExited(Engine.ProcessDebugger pd)
     {
         _log($"pid {pd.Pid} ({pd.Name}) exited");
-        bool allGone;
+        bool allGone, nowRunning = false;
         lock (_lock)
         {
             InvalidateValuesNoLock(pd.Pid);
@@ -340,8 +340,17 @@ public sealed class DebugSession : IAsyncDisposable
             {
                 _generation++;
             }
+            else if (!allGone && _state == SessionState.Stopped
+                     && !_processes.Values.Any(e => e.Debugger.IsStopped && !e.Debugger.HasExited))
+            {
+                // The process that was stopped is the one that just died: nothing is suspended
+                // any more, so the session is running again rather than still "stopped".
+                _state = SessionState.Running;
+                nowRunning = true;
+            }
         }
         Signal();
+        if (nowRunning) StateChanged?.Invoke(this, SessionState.Running);
         if (allGone)
         {
             // Do not block the Mono event thread on adb work.
@@ -596,26 +605,26 @@ public sealed class DebugSession : IAsyncDisposable
 
     public IReadOnlyList<VariableSnapshot> GetLocals(int pid, long threadId, int frameIndex = 0)
     {
-        return RunBounded("GetLocals", () =>
+        return RunBounded("GetLocals", () => WithBreakpointsDisarmed(() =>
         {
             var frame = RequireFrame(pid, threadId, frameIndex);
             return (IReadOnlyList<VariableSnapshot>)frame.GetAllLocals().Select(v => Describe(pid, v)).ToList();
-        });
+        }));
     }
 
     public VariableSnapshot? GetVariable(int pid, long threadId, int frameIndex, string name)
     {
-        return RunBounded("GetVariable", () =>
+        return RunBounded("GetVariable", () => WithBreakpointsDisarmed(() =>
         {
             var frame = RequireFrame(pid, threadId, frameIndex);
             var v = frame.GetAllLocals().FirstOrDefault(l => l.Name == name);
             return v is null ? null : Describe(pid, v);
-        });
+        }));
     }
 
     public VariableSnapshot Evaluate(int pid, long threadId, int frameIndex, string expression)
     {
-        return RunBounded("Evaluate", () => EvaluateCore(pid, threadId, frameIndex, expression));
+        return RunBounded("Evaluate", () => WithBreakpointsDisarmed(() => EvaluateCore(pid, threadId, frameIndex, expression)));
     }
 
     private VariableSnapshot EvaluateCore(int pid, long threadId, int frameIndex, string expression)
@@ -673,11 +682,11 @@ public sealed class DebugSession : IAsyncDisposable
             if (!_values.TryGetValue(expansionHandle, out entry))
                 throw new ArgumentException($"unknown or expired expansion handle '{expansionHandle}'");
         }
-        return RunBounded("ExpandVariable", () =>
+        return RunBounded("ExpandVariable", () => WithBreakpointsDisarmed(() =>
         {
             var children = entry.Value.GetAllChildren(_sessionOptions.EvaluationOptions);
             return (IReadOnlyList<VariableSnapshot>)children.Take(maxChildren).Select(c => Describe(entry.Pid, c)).ToList();
-        });
+        }));
     }
 
     public IReadOnlyList<AssemblyInfo> GetLoadedAssemblies(int? pid = null)
@@ -834,6 +843,41 @@ public sealed class DebugSession : IAsyncDisposable
     /// session, the caller and the test host survive instead of hanging forever.
     /// </summary>
     private static readonly TimeSpan InspectionTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Runs an operation that invokes code in the debuggee with every breakpoint disarmed.
+    /// Mono resumes *all* threads for the duration of an invocation (it only disables
+    /// breakpoints on the invoking thread), so a breakpoint that another thread hits meanwhile
+    /// suspends the VM with the invocation still in flight: it never returns, gets aborted on
+    /// timeout, and the abort can take the process down. Disarming for the duration costs two
+    /// round-trips per breakpoint and removes the whole class of failure. Hits that would have
+    /// happened during the evaluation are lost by design — an evaluation is not a resume.
+    /// </summary>
+    private T WithBreakpointsDisarmed<T>(Func<T> f)
+    {
+        List<BreakEvent> disarmed = new();
+        lock (_lock)
+        {
+            foreach (var be in (IEnumerable<BreakEvent>)_store)
+            {
+                if (!be.Enabled) continue;
+                try { be.Enabled = false; disarmed.Add(be); }
+                catch (Exception ex) { _log($"could not disarm a breakpoint for the evaluation: {ex.Message}"); }
+            }
+        }
+        try
+        {
+            return f();
+        }
+        finally
+        {
+            foreach (var be in disarmed)
+            {
+                try { be.Enabled = true; }
+                catch (Exception ex) { _log($"could not re-arm a breakpoint after the evaluation: {ex.Message}"); }
+            }
+        }
+    }
 
     private T RunBounded<T>(string what, Func<T> f)
     {

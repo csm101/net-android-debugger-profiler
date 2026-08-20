@@ -171,7 +171,10 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
             output.WriteLine($"after continue: state={session.State} main={mainProc}");
             Assert.True(session.State == SessionState.Exited || mainProc is null || mainProc.HasExited,
                 $"the crashing process should have died; state={session.State} main={mainProc}");
-            Assert.NotEqual(SessionState.Stopped, session.State);
+            // Nothing is suspended once the crashing process is gone, so the session must not
+            // still claim to be stopped.
+            Assert.False(session.State == SessionState.Stopped && !session.GetProcesses().Any(p => p.IsStopped && !p.HasExited),
+                $"session still reports Stopped with nothing suspended; processes: {string.Join(", ", session.GetProcesses())}");
             // The details still describe the first (real) exception, not a teardown one.
             var still = session.GetExceptionDetails();
             Assert.NotNull(still);
@@ -232,6 +235,102 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         Assert.Equal(late.Pid, lateStop.Pid);
         Assert.Equal(lateLine, lateStop.Location?.Line);
         Assert.Equal("123", session.GetLocals(lateStop.Pid, lateStop.ThreadId).Single(l => l.Name == "value").Value);
+    }
+
+    [Fact]
+    public async Task SteppingOneProcess_LeavesTheOtherStopped()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var helperTick = TestEnvironment.LineOf(TestEnvironment.HelperServiceSource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+            s.SetBreakpoint(new BreakpointSpec(TestEnvironment.HelperServiceSource, helperTick));
+        });
+
+        // Wait until both processes are sitting at their own breakpoint.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(45);
+        long generation = 0;
+        while (DateTime.UtcNow < deadline)
+        {
+            var stop = await session.WaitForStopAsync(generation, StopTimeout, cts.Token);
+            if (stop is null) break;
+            generation = stop.Generation;
+            var stopped = session.GetProcesses().Where(p => p.IsStopped).ToList();
+            if (stopped.Count >= 2) break;
+            // Resuming would release the one already stopped; just wait for the other's stop.
+        }
+        var processes = session.GetProcesses();
+        output.WriteLine(string.Join("\n", processes.Select(p => $"{p.Pid} {p.Name} stopped={p.IsStopped}")));
+        var both = processes.Where(p => p.IsStopped).ToList();
+        Assert.True(both.Count >= 2, "both the main and the helper process should be stopped");
+
+        var main = both.Single(p => p.Name == TestEnvironment.TestTargetPackage);
+        var helper = both.Single(p => p.Name.EndsWith(":helper", StringComparison.Ordinal));
+
+        // Step in whichever process reported the last stop; the other must stay where it was.
+        var last = session.LastStop!;
+        var other = last.Pid == main.Pid ? helper : main;
+        var stepped = await session.StepOverAsync(last.Pid, last.ThreadId, StopTimeout, cts.Token);
+        Assert.NotNull(stepped);
+        Assert.Equal(last.Pid, stepped.Pid);
+        Assert.True(session.GetProcesses().Single(p => p.Pid == other.Pid).IsStopped, "the other process must still be stopped");
+        // And it is still inspectable while the other process moved.
+        Assert.NotEmpty(session.GetThreads(other.Pid));
+    }
+
+    [Fact]
+    public async Task ExceptionFilters_CanBeNarrowedAndCleared()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetExceptionFilters(
+            new ExceptionFilters(true, ["System.FormatException", "System.InvalidOperationException"])));
+
+        // TestTarget throws InvalidOperationException every fifth tick; the unrelated filter
+        // in the list must not prevent that from being caught.
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(StopReason.Exception, stop.Reason);
+        Assert.Contains("InvalidOperationException", stop.ExceptionType);
+
+        // Clearing the filters must stop the exception stops.
+        session.SetExceptionFilters(new ExceptionFilters(true, []));
+        Assert.Empty(session.GetExceptionFilters().FirstChanceTypes ?? []);
+        var next = await session.ContinueAndWaitAsync(TimeSpan.FromSeconds(20), cts.Token);
+        output.WriteLine($"after clearing filters: {next?.Reason.ToString() ?? "no stop (expected)"}");
+        Assert.True(next is null || next.Reason != StopReason.Exception,
+            $"no first-chance stop expected after clearing, got {next?.Reason} at {next?.Location?.Method}");
+    }
+
+    [Fact]
+    public async Task EvaluationOptions_WithoutToStringCalls_StillReadsValues()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            // Fields only: nothing is invoked in the debuggee, which is the safe mode for
+            // targets where a getter may block.
+            s.SetEvaluationOptions(allowToStringCalls: false, allowTargetInvoke: false);
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+        });
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        var locals = session.GetLocals(stop.Pid, stop.ThreadId);
+        output.WriteLine(string.Join("\n", locals.Select(l => $"{l.Name} : {l.TypeName} = {l.DisplayValue}")));
+
+        // Primitives and strings still read correctly without any invocation.
+        Assert.StartsWith("\"tick ", locals.Single(l => l.Name == "message").Value);
+        Assert.True(long.TryParse(locals.Single(l => l.Name == "now").Value, out _));
+
+        // Object expansion still works; it just reports fields rather than invoking getters.
+        var sample = locals.Single(l => l.Name == "sample");
+        var children = session.ExpandVariable(sample.ExpansionHandle!);
+        output.WriteLine("children: " + string.Join(", ", children.Select(c => c.Name)));
+        Assert.NotEmpty(children);
+        var options = session.GetEvaluationOptions();
+        Assert.False(options.AllowToStringCalls);
+        Assert.False(options.AllowTargetInvoke);
     }
 
     [Fact]
