@@ -4,15 +4,17 @@
 P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
 
 ## Current substep
-P1 step 6 DONE: profile_annotate_source (method token -> portable pdb ->
-line range; MonoVM has no per-line samples) + PortablePdbSymbols + 4 fast
-tests; SamplingAnalyzer uses a private temp .etlx (parallel-safe). Full
-suite delegated to test-runner; commit after its report.
+P1 done. First the reference application run 2026-08-20: sampling works (12k samples, V7
+startup hot path resolved); instrumenting fails at session start on the big
+app (U20, reproduces with stock dotnet-trace) -> test skipped. Session now
+force-stops an app it launched + tags it NAP_SESSION so a stale app cannot
+hijack the next session. V7 reinstalling to clear override state I dirtied
+manually, then reconfirm sampling.
 
 ## Next action if interrupted right now
-Commit/push step 6. Then step 7: run register-mcp.cmd, exercise the server
-from Claude Code on TestTarget (fresh session), then first the reference application session
-(U16: does App.Droid build here; Debug + EnableDiagnostics; sampling attach).
+After V7 reinstall: NAP_REFAPP=1 rerun Sampling_restart_session_on_the reference application
+(expect green). Then ask user how to proceed on U20 (instrumenting on the
+real app) vs moving to P2 memory. Commit already pushed.
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.

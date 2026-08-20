@@ -28,7 +28,8 @@ public sealed record SessionSpec(
     bool SuspendOnStart = true,
     string? Callspec = null,
     bool TrackAllocations = true,
-    string? Name = null);
+    string? Name = null,
+    bool KeepAppRunning = false);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -71,6 +72,8 @@ public sealed class ProfilerSession : IAsyncDisposable
     private DsRouterProcess? _dsrouter;
     private AppEnvironment? _env;
     private bool _reverseSet;
+    private string? _expectedMarker;
+    private bool _appLaunchedByUs;
     private ResultStore? _store;
 
     private ProfilerSession(string id, SessionSpec spec, string directory, AdbClient adb)
@@ -190,10 +193,15 @@ public sealed class ProfilerSession : IAsyncDisposable
             string ports = $"{_dsrouter.AppAddress},{(Spec.SuspendOnStart ? "suspend" : "nosuspend")},connect";
             if (prereq.IsDebuggable)
             {
-                var updates = new List<KeyValuePair<string, string?>> { new("DOTNET_DiagnosticPorts", ports) };
+                var updates = new List<KeyValuePair<string, string?>>
+                {
+                    new("DOTNET_DiagnosticPorts", ports),
+                    new(EventPipeCollector.SessionMarkerVariable, Id),
+                };
                 if (Spec.Mode == ProfilingMode.Instrumenting)
                     updates.Add(new("MONO_DIAGNOSTICS", BuildMonoDiagnostics()));
                 await _env.ApplyOverrideAsync(updates, ct).ConfigureAwait(false);
+                _expectedMarker = Id;
                 Log("override environment applied: " + string.Join(" ", updates.Select(u => u.Key + "=" + u.Value)));
             }
             else
@@ -203,6 +211,7 @@ public sealed class ProfilerSession : IAsyncDisposable
             }
             await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
             await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+            _appLaunchedByUs = true;
             Log("app launched");
         }
         else
@@ -221,7 +230,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         SetState(SessionState.WaitingForApp);
         var collector = new EventPipeCollector(_dsrouter!.Pid, Log);
-        await collector.WaitForRuntimeAsync(TimeSpan.FromSeconds(Spec.Launch == LaunchMode.Attach ? 20 : 90), ct).ConfigureAwait(false);
+        await collector.WaitForRuntimeAsync(TimeSpan.FromSeconds(Spec.Launch == LaunchMode.Attach ? 20 : 90), ct, _expectedMarker).ConfigureAwait(false);
         SetState(SessionState.Collecting);
         _started = DateTimeOffset.UtcNow;
 
@@ -308,6 +317,14 @@ public sealed class ProfilerSession : IAsyncDisposable
     private async Task CleanupAsync()
     {
         var ct = CancellationToken.None;
+        // An app we launched keeps the injected DOTNET_DiagnosticPorts in its process environment and would
+        // reconnect to the next session's dsrouter (and be profiled instead of the intended app): stop it.
+        if (_appLaunchedByUs && !Spec.KeepAppRunning)
+        {
+            try { await _adb.ForceStopAsync(Spec.DeviceSerial, Spec.Package, ct).ConfigureAwait(false); Log("app stopped (KeepAppRunning=false)"); }
+            catch (Exception e) { Log("force-stop failed: " + e.Message); }
+            _appLaunchedByUs = false;
+        }
         try { if (_env is not null && _env.HasPendingChanges) { await _env.RestoreAsync(ct).ConfigureAwait(false); Log("app environment restored"); } }
         catch (Exception e) { Log("restore environment failed: " + e.Message); }
         try { if (_reverseSet) await _adb.ReverseRemoveAsync(Spec.DeviceSerial, DsRouterProcess.AppPort, ct).ConfigureAwait(false); }

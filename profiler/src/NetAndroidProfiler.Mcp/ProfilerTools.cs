@@ -67,9 +67,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Instrumenting: also record every allocation (type, size, allocating method)")] bool trackAllocations = true,
         [Description("restart: keep the app suspended until the session is up (captures startup)")] bool suspendOnStart = true,
         [Description("Optional friendly name used in the session id")] string? name = null,
+        [Description("restart: leave the app running after the session (default: stop it, so it does not reconnect to the next session)")] bool keepAppRunning = false,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -90,9 +91,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Instrumenting: Mono callspec")] string? callspec = null,
         [Description("Instrumenting: also record allocations")] bool trackAllocations = true,
         [Description("restart: suspend the app until the session is up")] bool suspendOnStart = true,
-        [Description("Optional friendly name")] string? name = null)
+        [Description("Optional friendly name")] string? name = null,
+        [Description("restart: leave the app running after the session")] bool keepAppRunning = false)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name);
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning);
         if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
         var live = host.Create(spec);
         live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
@@ -341,7 +343,7 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
@@ -362,6 +364,6 @@ public sealed class ProfilerTools(SessionHost host)
             throw new McpException("Instrumenting needs a callspec (e.g. N:My.App.Namespace). Instrumenting everything is not supported: it makes the app unusably slow.");
         return new SessionSpec(deviceSerial.Trim(), packageName.Trim(), pm, lm,
             durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
-            suspendOnStart, callspec, trackAllocations, name);
+            suspendOnStart, callspec, trackAllocations, name, keepAppRunning);
     }
 }

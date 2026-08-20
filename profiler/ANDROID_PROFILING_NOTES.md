@@ -314,7 +314,29 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
 ## Real target: the reference application
 
 - C:\Work\ReferenceApp\the reference application.sln, app project App.Droid,
-  TFM net9.0-android35.0, ApplicationId=App.Droid
+  TFM net9.0-android35.0, ApplicationId=App.Droid, RunAOTCompilation=false.
+- Builds here with `-c Debug -p:EnableDiagnostics=true` (SDK pack 35.0.105
+  auto-resolved); APK 24.7 MB, diagnostics component present, no libaot-*,
+  21 portable pdbs. **[verified 2026-08-20]**
+- **Sampling works end-to-end**: 25 s restart session -> 12,120 samples,
+  4,373 methods, V7 startup hot path resolved (AppApplication.
+  InizializzaApplicazione -> IoCContainerDroid.Register ->
+  EnumRegistration.Register, Unity container). trace.nettrace ~38 MB for
+  25 s (vs 0.7 MB for TestTarget: real app has far more managed activity).
+  **[verified]**
+- **Instrumenting does NOT start** on App.Droid: the EventPipe session with
+  the MonoProfiler MethodInstrumentation keyword fails at StartEventPipeSession
+  (EndOfStreamException), the suspended app is killed, no crash logged.
+  Reproduces with stock dotnet-trace, so it is a toolchain/runtime limit on
+  a large app, not our collector. TestTarget instruments fine. Tracked as
+  KNOWN_UNKNOWNS U20; P3 plan B (IL weaving) is the fallback. **[verified]**
+- A restart session that launched the app leaves the injected
+  DOTNET_DiagnosticPorts in the app's process environment, so the app keeps
+  reconnecting to any later dsrouter on the same port and would be profiled
+  instead of the next target. The engine force-stops an app it launched at
+  the end of the session (unless KeepAppRunning) and tags the app with
+  NAP_SESSION=<id>, which the collector verifies on connect (rejects a
+  stranger reconnecting). **[verified]**
 
 ## Sources
 

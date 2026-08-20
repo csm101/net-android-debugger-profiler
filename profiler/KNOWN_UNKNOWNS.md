@@ -116,3 +116,21 @@ ProfileFabric, "Profiling" build configuration) and Desymbolicate (pdb ->
 line numbers, symbol server per build). Evaluate reuse: Metalama weaving as
 P3 plan B instead of Cecil; Desymbolicate's symbol-server lookup for
 annotate_source on Jenkins builds.
+
+## U20 - MonoProfiler instrumenting fails on the real app (App.Droid)
+Sampling on App.Droid works end-to-end (12k samples, V7.* methods resolved,
+InizializzaApplicazione/IoC hot). Instrumenting (Microsoft-DotNETRuntime
+MonoProfiler, keywords 0x40020200000, callspec N:App.Droid, suspend) fails:
+StartEventPipeSession throws EndOfStreamException ("Attempted to read past
+the end of the stream"), the suspended app never resumes and is killed; no
+tombstone, no monodroid error in logcat. **Reproduces with stock
+`dotnet-trace collect -p <dsrouter> --providers
+Microsoft-DotNETRuntimeMonoProfiler:0x40020200000:5`**, so it is not our
+collector. TestTarget instruments fine with the same keywords/suspend, so
+the trigger is app size/complexity (methods matched at startup JIT, IPC
+payload, or a runtime limit). Hypotheses to test: narrower callspec
+(single type) vs N:App.Droid; nosuspend + attach after startup;
+MethodInstrumentation without MethodTracing; smaller circular buffer;
+newer/older diagnostics tools. Blocks P3 plan A on the real target; plan B
+(IL weaving) is the fallback. Sampling + heap remain the P1 deliverable on
+V7.

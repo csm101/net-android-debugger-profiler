@@ -53,11 +53,18 @@ public sealed class EventPipeCollector
         _log = log;
     }
 
+    /// <summary>Environment variable the session injects into the target app to recognize it on connect.</summary>
+    public const string SessionMarkerVariable = "NAP_SESSION";
+
     /// <summary>
     /// Wait until the runtime is connected to dsrouter (the app may still be
-    /// starting). Probes by asking for process info; retries until timeout.
+    /// starting). Probes by asking for the process environment; retries until
+    /// timeout. When <paramref name="expectedMarker"/> is given, the connected
+    /// runtime must carry NAP_SESSION=&lt;marker&gt;: another .NET process that
+    /// still points at the profiler port (typically an app profiled earlier and
+    /// left running) would otherwise be profiled by mistake.
     /// </summary>
-    public async Task WaitForRuntimeAsync(TimeSpan timeout, CancellationToken ct)
+    public async Task<IReadOnlyDictionary<string, string>> WaitForRuntimeAsync(TimeSpan timeout, CancellationToken ct, string? expectedMarker = null)
     {
         var deadline = DateTime.UtcNow + timeout;
         Exception? last = null;
@@ -68,7 +75,21 @@ public sealed class EventPipeCollector
             {
                 var env = await Task.Run(() => _client.GetProcessEnvironment(), ct).ConfigureAwait(false);
                 _log?.Invoke($"runtime connected ({env.Count} environment variables)");
-                return;
+                if (expectedMarker is not null)
+                {
+                    env.TryGetValue(SessionMarkerVariable, out var marker);
+                    if (marker != expectedMarker)
+                    {
+                        env.TryGetValue("DOTNET_DiagnosticPorts", out var ports);
+                        throw new ToolException(
+                            "A different .NET process connected to the profiler port" +
+                            (marker is null ? "" : $" (session marker {marker})") +
+                            (ports is null ? "" : $" with DOTNET_DiagnosticPorts={ports}") +
+                            ". Most likely an app profiled earlier is still running and keeps reconnecting: force-stop it " +
+                            "(adb shell am force-stop <package>) and retry.");
+                    }
+                }
+                return env;
             }
             catch (Exception e) when (e is ServerNotAvailableException or EndOfStreamException or IOException or TimeoutException or UnsupportedCommandException)
             {
