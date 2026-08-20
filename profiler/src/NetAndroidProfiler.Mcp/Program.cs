@@ -27,6 +27,8 @@ builder.Services
             "Long sessions: profile_start ... profile_stop. Results live in a SQLite database per session " +
             "(profile_sessions lists them; any tool accepts sessionId, default = the last session). " +
             "Sampling counts are samples (~1 ms each); *_cpu columns exclude samples of threads blocked in Sleep/Wait. " +
+            "A method's exclusive samples include the time of its very short callees: the MonoVM sampler does not report " +
+            "tiny leaf methods, so read hotspots as 'this method plus its trivial callees'. " +
             "Instrumenting needs a callspec (e.g. N:My.Namespace) and restarts the app; keep hot leaf methods out of it.";
     })
     .WithStdioServerTransport()

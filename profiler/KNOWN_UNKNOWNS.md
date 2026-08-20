@@ -72,18 +72,6 @@ enter/leave frame of that thread (works for instrumented methods only);
 or Microsoft-Windows-DotNETRuntime GCSampledObjectAllocation events with
 stacks (does MonoVM emit them with stacks?). Decide in P2.
 
-## U15 - Sampling leaf attribution (AOT and not only)
-Profiled-AOT Release builds lose leaf frames in sampled stacks (Mix absorbed
-by Busy). The Release JIT build shows Mix but under-represented (212 vs 579
-for Busy); a Debug-build session (2026-08-20, 12 s) showed Busy
-incl == excl == 753 and no Mix at all. Hypothesis: the MonoVM sample
-profiler reports the frame of the last managed method with a stack-walk
-anchor (LMF) rather than the true leaf, so tiny leaf methods vanish into
-their caller. Needs a controlled experiment (leaf that loops for seconds vs
-a tiny leaf; interpreter vs JIT). Until understood: hotspot lists are
-reliable at "method + its small callees" granularity; document it in the
-MCP instructions.
-
 ## U16 - First the reference application session
 Build verified 2026-08-20: `dotnet build App.Droid.csproj -c Debug
 -p:EnableDiagnostics=true` succeeds on this machine (4.5 min, Android SDK

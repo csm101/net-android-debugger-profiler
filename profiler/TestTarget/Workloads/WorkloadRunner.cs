@@ -20,6 +20,9 @@ public sealed class WorkloadRunner
     {
         var r = new WorkloadRunner();
         r._thread.Start();
+        // Second thread with the leaf-attribution probe (U15); light enough not to
+        // disturb the main workload's share of the profile.
+        LeafProbe.Start();
         return r;
     }
 

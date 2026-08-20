@@ -168,6 +168,18 @@ parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
   to IL offsets / source lines. Method tokens (0x06xxxxxx) are in the
   rundown, so source mapping works at method granularity: token -> portable
   pdb sequence points -> line range. **[verified - NetTraceProbe iloffsets]**
+- **Leaf attribution characterized (U15, controlled experiment)**: the MonoVM
+  sampler attributes samples to the innermost method that owns a real frame,
+  and very short leaf methods never get one. TestTarget's LeafProbe runs two
+  shapes of equal cost: a single long-bodied call (`LongLeaf`) and a tight
+  loop calling a tiny method (`CallTinyLeaf` -> `TinyLeaf`, both NoInlining).
+  A 15 s Debug session reports `CallTinyLeaf` 1300 exclusive == 1300
+  inclusive and `LongLeaf` 504 exclusive, while `TinyLeaf` does not appear at
+  all - not even in inclusive counts. Consequence for every report we
+  produce: a method's exclusive samples include the time of its trivial
+  callees, so hotspot lists are exact at "method plus its short callees"
+  granularity. Long-bodied methods are attributed correctly.
+  **[verified - device test Sampling_attributes_a_long_running_leaf_method]**
 - AOT vs JIT attribution: with the default profiled-AOT Release build a
   NoInlining leaf method (`CpuBurner.Mix`, 2M calls per iteration) never
   appears in sampled stacks although the rundown lists it as compiled - its

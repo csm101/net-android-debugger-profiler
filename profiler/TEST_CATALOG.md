@@ -43,7 +43,8 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Name split (namespace/type/name/signature/module) - `Method_names_are_split_into_namespace_type_name`
 - [x] Thread attribution - `Threads_are_reported_with_sample_counts`
 - [ ] Symbolication of generic methods and async state machines
-- [ ] AOT build: leaf attribution caveat reported (U15)
+- [x] Leaf attribution characterized on device (long leaf attributed, tiny leaf folded into its caller) - `Sampling_attributes_a_long_running_leaf_method`
+- [ ] AOT build: leaf attribution caveat surfaced as a session warning
 - [x] Method tokens -> portable pdb source ranges (Fast/PortablePdbSymbolsTests): `Loads_testtarget_pdb_and_lists_its_documents`, `Methods_in_document_have_line_ranges`, `Sampled_method_tokens_resolve_to_source_ranges`, `Unknown_module_or_token_returns_null`
 
 ## C. Memory analysis

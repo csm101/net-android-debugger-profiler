@@ -113,6 +113,31 @@ public class SessionTests
         Assert.True(record!.CountFrom > 1000 && record.CountTo > 1000, $"{record.CountFrom} -> {record.CountTo}");
     }
 
+    /// <summary>
+    /// U15: does the sampler attribute samples to the true leaf method? The probe runs
+    /// one long-bodied leaf and one tiny leaf called in a tight loop, with comparable
+    /// CPU cost. The long leaf must show exclusive samples; what happens to the tiny
+    /// one characterizes the sampler and is reported, not asserted.
+    /// </summary>
+    [Fact]
+    public async Task Sampling_attributes_a_long_running_leaf_method()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Sampling, Duration: TimeSpan.FromSeconds(15)));
+        Assert.Equal(SessionState.Ready, s.State);
+        var hot = s.Results.Hotspots(40, exclusive: true, cpuOnly: true);
+        foreach (var h in hot.Where(h => h.FullName.Contains("LeafProbe")))
+            Console.WriteLine($"U15 {h.Exclusive,6} excl {h.Inclusive,6} incl  {h.FullName}");
+
+        var longLeaf = hot.SingleOrDefault(h => h.FullName.Contains("LeafProbe.LongLeaf"));
+        Assert.NotNull(longLeaf);
+        Assert.True(longLeaf!.ExclusiveCpu > 0, "a long-bodied leaf must own exclusive samples");
+
+        var caller = hot.SingleOrDefault(h => h.FullName.Contains("LeafProbe.CallTinyLeaf"));
+        var tiny = hot.SingleOrDefault(h => h.FullName.Contains("LeafProbe.TinyLeaf"));
+        Console.WriteLine($"U15 tiny-leaf visible: {tiny is not null} (caller visible: {caller is not null})");
+        Assert.NotNull(caller); // the loop that calls the tiny leaf must be attributed somewhere
+    }
+
     [Fact]
     public async Task Sampling_attach_to_running_debug_app_without_restart()
     {
