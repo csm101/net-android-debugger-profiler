@@ -71,9 +71,14 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Restart with warm-up).
 - Mcp: stdio server over ProfilerSession, tool set below (frozen for P1).
   register-mcp.cmd publishes and registers it in Claude Code.
-- Weaver instrumenting (P3 plan B) works end-to-end on device: Cecil weaves
-  the app assemblies in the override dir, collector writes .napw files,
-  WeaveAnalyzer -> timing_* tables; the net9 provider bug (U20) is bypassed.
+- Weaver instrumenting (P3 plan B) works end-to-end on device **and on the
+  real target**: Cecil weaves the app assemblies in the fast-deployment
+  directory, the collector writes .napw files, WeaveAnalyzer -> timing_*
+  tables; the net9 provider bug (U20) is bypassed. First the reference application timings:
+  AppApplication..ctor 8.78 s, OnCreate 4.54 s / 4.02 s self. App-side
+  prerequisites (both detected and reported by the engine):
+  EmbedAssembliesIntoApk=false and no stale .pdb next to the woven assembly
+  (the deployer moves it aside during the session).
 - Tests: 23 fast (recorded traces + pdb) + 1 TODO-RED (U13) + 6 device
   (Category=Device).
 - Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
