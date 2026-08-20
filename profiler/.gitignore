@@ -12,3 +12,4 @@ TestResults/
 !tests/**/recorded/*.nettrace
 !tests/**/recorded/*.gcdump
 *.etlx
+build/tools/

@@ -146,10 +146,14 @@ App.Droid; both are handled now and a weaver session on the reference applicatio
    component). The deployer now moves `<assembly>.pdb` aside for the duration
    of the session and restores it afterwards. This was the last blocker.
 
-## U22 - Weaver at build time for embedded-assembly apps
-the reference application ships with EmbedAssembliesIntoApk=True; profiling it with the weaver
-currently requires a profiling build with fast deployment. Design an MSBuild
-task (`WeaveAssembliesTask`) that runs after compilation and before packaging,
-weaves the selected assemblies in the intermediate output with a callspec from
-a property, and drops the id map next to the APK for the analyzer. Then the
-profiler consumes the map instead of weaving on device.
+## U22 - CLOSED: build-time weaving
+Implemented 2026-08-20 and verified on TestTarget: `nap-weave`
+(src/NetAndroidProfiler.Weave) plus build/NetAndroidProfiler.Weaving.targets
+weave the app assembly in the intermediate output before packaging, copy the
+collector next to the output and write nap-weave.map. A session with
+Engine=Weaver and WeaveMapPath consumes that map and touches nothing on the
+device (device test `Build_time_weaving_session_uses_the_build_map`). This is
+the path for apps that keep EmbedAssembliesIntoApk=true, such as the reference application.
+Open follow-ups: exercise it on the reference application itself; decide whether to ship the
+tool as a NuGet package with the targets file instead of a published folder.
+

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Command-line weaver invoked from a build (see build/NetAndroidProfiler.Weaving.targets).
+      A console tool rather than an MSBuild task on purpose: an Exec-based hook works
+      identically under `dotnet build` and Visual Studio's MSBuild, with no constraints
+      on the task assembly's target framework.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NetAndroidProfiler.Weave</RootNamespace>
+    <AssemblyName>nap-weave</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
+  </ItemGroup>
+
+</Project>

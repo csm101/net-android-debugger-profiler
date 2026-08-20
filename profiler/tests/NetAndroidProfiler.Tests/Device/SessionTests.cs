@@ -128,6 +128,38 @@ public class SessionTests
         Assert.NotEmpty(tree);
     }
 
+    /// <summary>
+    /// Build-time weaving (U22): the app was woven by the build
+    /// (-p:NapWeave=true -p:NapCallspec=...), so the session only consumes the map
+    /// the build wrote and never rewrites anything on the device. Requires TestTarget
+    /// to have been installed from such a build; NAP_WEAVE_MAP overrides the path.
+    /// </summary>
+    [SkippableFact]
+    public async Task Build_time_weaving_session_uses_the_build_map()
+    {
+        string map = Environment.GetEnvironmentVariable("NAP_WEAVE_MAP")
+            ?? Path.Combine(RepoRoot(), "TestTarget", "bin", "Debug", "net10.0-android", "nap-weave.map");
+        Skip.IfNot(File.Exists(map), $"build TestTarget with -p:NapWeave=true first (no map at {map})");
+
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(8),
+            Engine: InstrumentingEngine.Weaver,
+            WeaveMapPath: map));
+        Assert.Equal(SessionState.Ready, s.State);
+        var timings = s.Results.Timings(20);
+        Assert.NotEmpty(timings);
+        Assert.All(timings, t => Assert.StartsWith("TestTarget.Workloads", t.FullName));
+        Assert.Contains(timings, t => t.FullName == "TestTarget.Workloads.CpuBurner.Mix");
+    }
+
+    private static string RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidProfiler.slnx")))
+            dir = dir.Parent;
+        return dir?.FullName ?? AppContext.BaseDirectory;
+    }
+
     [Fact]
     public async Task Session_restores_app_environment_and_leaves_no_dsrouter()
     {

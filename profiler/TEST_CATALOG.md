@@ -64,7 +64,9 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
 - [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
 - [ ] Async method timing attributed across await points (state machines skipped in v1 - U8)
+- [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map`
 - [ ] Weaver skips getters/setters on request (config)
+- [ ] Build-time weaving exercised on the reference application
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)
 - [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`

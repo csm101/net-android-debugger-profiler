@@ -42,7 +42,8 @@ public sealed record SessionSpec(
     bool KeepAppRunning = false,
     InstrumentingEngine Engine = InstrumentingEngine.RuntimeProvider,
     IReadOnlyList<string>? WeaveAssemblies = null,
-    IReadOnlyList<string>? WeaveReferenceDirs = null);
+    IReadOnlyList<string>? WeaveReferenceDirs = null,
+    string? WeaveMapPath = null);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -251,17 +252,31 @@ public sealed class ProfilerSession : IAsyncDisposable
     private async Task PrepareWeaverAsync(DeviceInfo device, AppPrerequisites prereq, CancellationToken ct)
     {
         if (!prereq.IsDebuggable)
-            throw new ProfilerException("Weaver instrumenting needs a debuggable (Debug/fast-deployment) build: it rewrites the app assemblies in the app's private override directory, which requires run-as.");
+            throw new ProfilerException("Weaver instrumenting needs a debuggable build: the profiler configures the app and reads its results through run-as.");
         if (prereq.HasAotLibraries)
             _warnings.Add("The app contains AOT assemblies; only assemblies present as .dll in the override directory can be woven.");
-        var assemblies = Spec.WeaveAssemblies is { Count: > 0 } ? Spec.WeaveAssemblies : InferAssemblies();
-        var filter = WeaveFilter.Parse(string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec!);
-
         await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
         _weaveDeployer = new WeaveDeployer(_adb, device.Serial, Spec.Package, device.Abi, Directory);
-        Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
-        _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs).ConfigureAwait(false);
-        Log($"woven {_weaveMap.Count} methods; collector + assemblies deployed");
+
+        if (!string.IsNullOrWhiteSpace(Spec.WeaveMapPath))
+        {
+            // The app was woven at build time (nap-weave + build/NetAndroidProfiler.Weaving.targets):
+            // nothing to rewrite on the device, we only need the id map the build produced.
+            if (!File.Exists(Spec.WeaveMapPath))
+                throw new ProfilerException($"Weave map not found: {Spec.WeaveMapPath}. It is written by the build (default: <OutDir>nap-weave.map).");
+            _weaveMap = CecilWeaver.ReadMap(Spec.WeaveMapPath!);
+            if (_weaveMap.Count == 0)
+                throw new ProfilerException($"Weave map {Spec.WeaveMapPath} is empty: the build wove no method.");
+            Log($"using build-time weave map: {_weaveMap.Count} methods ({Spec.WeaveMapPath})");
+        }
+        else
+        {
+            var assemblies = Spec.WeaveAssemblies is { Count: > 0 } ? Spec.WeaveAssemblies : InferAssemblies();
+            var filter = WeaveFilter.Parse(string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec!);
+            Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
+            _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs).ConfigureAwait(false);
+            Log($"woven {_weaveMap.Count} methods; collector + assemblies deployed");
+        }
 
         // The collector writes to a private events dir; wipe stale files, then point the app at it.
         string eventsDir = _weaveDeployer.RemoteEventsDir;
@@ -317,7 +332,9 @@ public sealed class ProfilerSession : IAsyncDisposable
                 "in the fast-deployment directory are ignored - rebuild with -p:EmbedAssembliesIntoApk=false and reinstall; " +
                 "(2) the weave filter is too wide - instrumenting thousands of methods makes startup far slower than this " +
                 "timeout (measured on the reference application: ~7900 methods had not reached managed code after 2 minutes, while a single " +
-                "type starts normally), so narrow the callspec to the types you are investigating. See docs/APP_SETUP.md.");
+                "type starts normally), so narrow the callspec to the types you are investigating. " +
+                "Apps that must keep their assemblies embedded can be woven at build time instead " +
+                "(build/NetAndroidProfiler.Weaving.targets + WeaveMapPath). See docs/APP_SETUP.md.");
         Log("collector marker seen: woven code is running");
         SetState(SessionState.Collecting);
         _started = DateTimeOffset.UtcNow;

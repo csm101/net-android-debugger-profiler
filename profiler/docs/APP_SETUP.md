@@ -45,6 +45,31 @@ The weaver also needs the original `.pdb` of a rewritten assembly out of the
 way; the profiler moves it aside for the duration of the session and restores
 it afterwards - nothing to do on your side.
 
+### Apps that must keep their assemblies embedded: weave at build time
+
+When `EmbedAssembliesIntoApk=true` cannot be changed, weave during the build
+instead. Publish the tool once and import the targets file in the app project:
+
+```
+dotnet publish src/NetAndroidProfiler.Weave -c Release -o build/tools     # once
+```
+
+```xml
+<Import Project="<net-android-profiler>\build\NetAndroidProfiler.Weaving.targets" />
+```
+
+```
+dotnet build -c Debug -t:Install -p:EnableDiagnostics=true \
+  -p:NapWeave=true -p:NapCallspec="T:My.App.Services.SyncService"
+```
+
+The build rewrites the app assembly before packaging, copies the collector next
+to the output and writes `nap-weave.map` in the output folder. Profile it with
+the weaver engine pointing at that map (MCP: `engine=weaver`,
+`weaveMapPath=<OutDir>\nap-weave.map`): the profiler then changes nothing on the
+device, it only configures the run and reads the results. Nothing is woven
+unless `NapWeave=true`, so normal builds are unaffected.
+
 **Keep the weave filter narrow.** Every woven method costs an Enter/Leave pair
 per call, and the cost is paid from the very first line of startup. Measured on
 the reference application (emulator): weaving one type (15 methods) runs normally, weaving the

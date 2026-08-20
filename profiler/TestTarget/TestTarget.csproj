@@ -22,6 +22,9 @@
     the target csproj (CustomAfterMicrosoftCommonTargets import adding an
     AndroidEnvironment item, or an AndroidEnvironment file next to the project).
   -->
+  <!-- Build-time IL weaving (opt-in: -p:NapWeave=true -p:NapCallspec=...). -->
+  <Import Project="$(MSBuildThisFileDirectory)..\build\NetAndroidProfiler.Weaving.targets" />
+
   <Target Name="_AddMonoDiagnosticsEnvironment" BeforeTargets="_GenerateEnvironmentFiles" Condition="'$(MonoDiagnostics)' != ''">
     <ItemGroup>
       <_GeneratedAndroidEnvironment Include="MONO_DIAGNOSTICS=$(MonoDiagnostics)" />

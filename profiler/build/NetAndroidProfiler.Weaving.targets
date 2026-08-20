@@ -1,0 +1,91 @@
+<Project>
+
+  <!--
+    Build-time IL weaving for net-android-profiler.
+
+    Import this file from an Android app project (or from Directory.Build.targets)
+    and build with -p:NapWeave=true to produce an instrumented app. Needed only for
+    apps that ship their assemblies inside the APK (EmbedAssembliesIntoApk=true),
+    where the profiler cannot rewrite the deployed copies on the device; a normal
+    fast-deployment Debug build does not need this file at all.
+
+        <Import Project="$(NetAndroidProfilerDir)build\NetAndroidProfiler.Weaving.targets" />
+
+        dotnet build -c Debug -t:Install \
+          -p:EnableDiagnostics=true -p:NapWeave=true \
+          -p:NapCallspec="T:My.App.Services.SyncService"
+
+    Properties:
+      NapWeave        true to weave this build (default: false)
+      NapCallspec     which methods to weave (same grammar as the profiler's
+                      callspec: all, N:Namespace, T:Type, M:Type:Method, '-' excludes).
+                      Keep it narrow: instrumenting thousands of methods makes
+                      startup unusably slow.
+      NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file)
+      NapMapPath      where the id map is written (default: $(OutDir)nap-weave.map)
+      NapExtraAssemblies  additional assemblies to weave (semicolon separated paths)
+
+    The app's own assembly is woven in the intermediate output, before the Android
+    packaging steps, so both embedded and fast-deployed layouts get the woven code.
+    The collector assembly is copied next to the output and referenced so that the
+    packaging includes it.
+  -->
+
+  <PropertyGroup>
+    <NapWeave Condition="'$(NapWeave)' == ''">false</NapWeave>
+    <NapCallspec Condition="'$(NapCallspec)' == ''"></NapCallspec>
+    <NapWeaveTool Condition="'$(NapWeaveTool)' == ''">$(MSBuildThisFileDirectory)tools\nap-weave.dll</NapWeaveTool>
+    <NapCollectorAssembly Condition="'$(NapCollectorAssembly)' == ''">$(MSBuildThisFileDirectory)tools\NetAndroidProfiler.Collector.dll</NapCollectorAssembly>
+    <!-- NapMapPath defaults to $(OutDir)nap-weave.map, but OutDir is only known later:
+         it is computed inside the target below. -->
+  </PropertyGroup>
+
+  <!-- The collector must be part of the app so the woven calls resolve at run time. -->
+  <ItemGroup Condition="'$(NapWeave)' == 'true'">
+    <Reference Include="NetAndroidProfiler.Collector">
+      <HintPath>$(NapCollectorAssembly)</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="NapValidateWeaving" Condition="'$(NapWeave)' == 'true'">
+    <Error Condition="'$(NapCallspec)' == ''"
+           Text="NapWeave is true but NapCallspec is empty. Pass -p:NapCallspec=&quot;T:My.App.Type&quot; (or N:My.Namespace). Weaving everything makes the app unusably slow." />
+    <Error Condition="!Exists('$(NapWeaveTool)')"
+           Text="nap-weave was not found at $(NapWeaveTool). Publish it (dotnet publish src/NetAndroidProfiler.Weave) or set NapWeaveTool." />
+    <Error Condition="!Exists('$(NapCollectorAssembly)')"
+           Text="The collector assembly was not found at $(NapCollectorAssembly). Set NapCollectorAssembly to NetAndroidProfiler.Collector.dll." />
+  </Target>
+
+  <!--
+    Runs after the compiler has produced the intermediate assembly and before anything
+    copies or packages it. The tool keeps a .naporig backup and always weaves from it,
+    so incremental builds never double-instrument.
+  -->
+  <Target Name="NapWeaveAssemblies"
+          Condition="'$(NapWeave)' == 'true'"
+          DependsOnTargets="NapValidateWeaving"
+          AfterTargets="CoreCompile">
+    <PropertyGroup>
+      <NapMapPath Condition="'$(NapMapPath)' == ''">$(OutDir)nap-weave.map</NapMapPath>
+      <_NapAssemblyArgs>--assembly "@(IntermediateAssembly->'%(FullPath)')"</_NapAssemblyArgs>
+      <_NapExtraArgs Condition="'$(NapExtraAssemblies)' != ''">@(NapExtraAssemblyItems->'--assembly "%(Identity)"', ' ')</_NapExtraArgs>
+    </PropertyGroup>
+    <ItemGroup>
+      <NapExtraAssemblyItems Include="$(NapExtraAssemblies)" />
+      <NapReferenceDirs Include="@(ReferencePath->'%(RootDir)%(Directory)'->Distinct())" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)" />
+    <!--
+      Directory arguments end with a path separator, and a backslash before the closing
+      quote would escape it for the command processor: a trailing "." keeps the path
+      valid and the quoting intact.
+    -->
+    <Exec Command="dotnet &quot;$(NapWeaveTool)&quot; $(_NapAssemblyArgs) $(_NapExtraArgs) --callspec &quot;$(NapCallspec)&quot; --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs->'--reference-dir &quot;%(Identity).&quot;', ' ')"
+          StandardOutputImportance="high" />
+    <ItemGroup>
+      <FileWrites Include="$(NapMapPath)" />
+    </ItemGroup>
+  </Target>
+
+</Project>
