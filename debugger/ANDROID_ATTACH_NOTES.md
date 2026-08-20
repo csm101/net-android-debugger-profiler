@@ -288,6 +288,32 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Long debugger pause (U6, measured 2026-08-20):** stopped at a breakpoint
+  on **thread 1 (the UI thread)** and held for **4.5 minutes** on the
+  emulator, foreground:
+  - Both processes survive the whole pause: no ANR, no `has died`, no
+    lowmemorykiller, no "Application Not Responding" — Android does not kill
+    an app whose managed threads are all suspended by the debugger, as long
+    as nothing demands input from it. **[verified]**
+  - After the resume the app keeps running; over the next 3.5 minutes the
+    watchdog did **not** restart threads and no bug report was produced.
+    **[verified — but see the caveat below]**
+  - **Caveat: this emulator cannot reach the the reference application backend**
+    (`an internal backend host` → `SocketTimeoutException` /
+    `ETIMEDOUT`), so the sync threads never work normally and MQTT is down
+    regardless of the debugger. The `MqttClientDisconnectedException` seen on
+    resume therefore proves nothing about pause-induced keepalive loss, and
+    the watchdog's "thread bloccato" branch was never exercised. The
+    MQTT/watchdog half of this question needs a device on a network that
+    reaches the backend. **[unverified]**
+  - Risk found by reading the source (`the sync library's watchdog`):
+    the watchdog loops every 60 s and decides "thread bloccato" from
+    wall-clock deltas (2-minute thresholds, 4 consecutive iterations). After a
+    long pause those deltas are huge, so on resume it can call
+    `BugReportingEngine.PrepareBugReport(...).Send()` — **a real bug report
+    sent from the device** — and restart all sync threads. It skips this while
+    `Manager.NeedManualLogon`. Keep debugger pauses on a logged-on device
+    short, or expect spurious bug reports. **[source-verified]**
 - **Debugged through the MCP server (2026-08-20):** attach (= restart with
   agent) works on the installed Debug build (fast deployment, assemblies in
   `.__override__/x86_64`); PDB paths are the `C:\Work\ReferenceApp\...` sources,

@@ -44,10 +44,39 @@ server is still the PRE-fix build: the user must rerun register-mcp.cmd
 - Suite runs: NAD_DEVICE_SERIAL=emulator-5554, NAD_SKIP_DEPLOY=1 when
   TestTarget unchanged. emulator-5556 belongs to the user - never touch.
 
+## U6 experiment DONE (2026-08-20)
+Result: 4.5-min pause on the reference application's UI thread is harmless (no ANR, both
+processes alive, no watchdog restart / bug report in the 3.5 min after
+resume). BUT this emulator cannot reach the the reference application backend
+(an internal backend host times out), so the MQTT/watchdog half is
+unanswerable here - U6 narrowed to "needs a logged-on device with backend
+reachable". Script kept as DevTools/scripts/pause-survival-watch.sh.
+Lesson for my own scripts: inside a quoted heredoc do NOT write \" in awk -
+it lands literally and the field comes out empty (my second watch script
+printed no pids and briefly looked like the app had died).
+
+## (previous, for context) U6 experiment in flight (2026-08-20 18:10)
+the reference application launched via MCP (server build = 18dc11f, pre-90b154c fixes),
+breakpoint ControlloNumeratoriProgressiviImpl.cs:62 hit on thread 1 (the UI
+thread), then held paused ~4.5 min while a background script
+(scratchpad/u6watch.sh -> u6_watch.log) samples pids and greps logcat for
+ANR / watchdog / bugreport / MQTT / process death.
+Source reading done first (facts, not guesses):
+- the sync library's watchdog: loop every 60 s
+  (AttendiSecondi(60)); DevoRiavviareIThread() uses wall-clock thresholds
+  (2 min, 4 consecutive iterations) -> if it decides threads are stuck it
+  calls BugReportingEngine.PrepareBugReport(...).Send() AND restarts all
+  sync threads. So a long debugger pause can make a real the reference application device
+  send spurious bug reports on resume. It skips this when
+  Manager.NeedManualLogon (not logged on).
+- App.Sync/MQTT/.../MqttServiceImpl.cs: WithAutoReconnectDelay
+  5 s, so MQTT should heal by itself after the pause.
+
 ## Next action if interrupted right now
-Commit (if not yet done), then user reruns register-mcp.cmd. Next chunks:
-- U6 experiment on the reference application: break in main, stay paused 3-5 min, observe
-  watchdog/MQTT/process survival (via MCP tools after republish).
+Read scratchpad/u6_watch.log, resume the app (remove bp + continue), watch
+another ~90 s of logcat, then record the findings in ANDROID_ATTACH_NOTES
+(the reference application section) and close/narrow U6. Then: user reruns register-mcp.cmd
+(server is still pre-90b154c). Remaining chunks:
 - U11 probe: does a wedged evaluation thread heal after Continue + next
   stop? Warm-up invoke idea.
 - U12: engine policy for repeated unhandled-exception stops.
