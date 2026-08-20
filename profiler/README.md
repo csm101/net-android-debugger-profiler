@@ -61,20 +61,26 @@ session), `get_app_output`. Sessions are stored under
 
 ## Status
 
-P1 in progress: Core (collection + analysis + SQLite store) and the MCP
-server work end-to-end on the emulator for sampling, instrumenting with
-exact allocations, and heap snapshots. See `PROJECT_STATE.md` for milestones, `ARCHITECTURE.md` for
-the design, `ANDROID_PROFILING_NOTES.md` for the collection know-how.
+Working end-to-end on the emulator and on the first real app (the reference application):
+CPU sampling, memory (exact allocation events, heap snapshots and growth
+diffs) and instrumenting through either the runtime provider or the IL
+weaver, all exposed over MCP. See `PROJECT_STATE.md` for milestones,
+`ARCHITECTURE.md` for the design, `ANDROID_PROFILING_NOTES.md` for the
+collection know-how and `KNOWN_UNKNOWNS.md` for what is still open.
 
 ## Layout
 
 ```
-src/NetAndroidProfiler.Core    engine: orchestration + analysis (frontend-neutral)
-src/NetAndroidProfiler.Mcp     MCP stdio server frontend
-tests/NetAndroidProfiler.Tests integration + recorded-trace tests (xUnit)
-DevTools/                      argv-driven diagnostic probes
-TestTarget/                    minimal Android app used by the test suite
-gui/                           Delphi + DevExpress GUI (future)
+src/NetAndroidProfiler.Core       engine: orchestration + analysis (frontend-neutral)
+src/NetAndroidProfiler.Mcp        MCP stdio server frontend
+src/NetAndroidProfiler.Collector  tiny runtime library the woven code calls (netstandard2.0)
+src/NetAndroidProfiler.Weave      nap-weave: build-time IL weaver
+build/                            MSBuild targets for build-time weaving
+tests/NetAndroidProfiler.Tests    fast (recorded traces) + device tests (xUnit)
+tests/WeaveSample                 assembly used as weaving input in tests
+DevTools/                         argv-driven diagnostic probes
+TestTarget/                       Android app used by the test suite
+gui/                              Delphi + DevExpress GUI (future)
 ```
 
 ## Build
