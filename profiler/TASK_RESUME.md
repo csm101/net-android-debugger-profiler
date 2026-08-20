@@ -1,8 +1,9 @@
 # Task resume
 
 ## Current task
-P0 spike - DONE (2026-08-20). Next: P1 design proposal (ProfilerSession API +
-SQLite schema v1) - proposal only, waiting for user review before coding.
+P0 spike DONE. P1 design: user decisions recorded in PROJECT_STATE.md
+(no rebuild by the profiler; separate tables; pdb via Desymbolicate approach).
+Revised proposal given in chat; waiting for go-ahead to start P1 coding.
 
 ## Current substep
 Spike results recorded; committing. Then write the P1 proposal in the reply
@@ -24,8 +25,9 @@ Spike results recorded; committing. Then write the P1 proposal in the reply
 7. Recorded traces copied to tests/NetAndroidProfiler.Tests/recorded/.
 
 ## Next action if interrupted right now
-Commit + push the spike; then reply with the P1 proposal (ProfilerSession
-API signature + SQLite schema v1) and stop.
+If user said go: start P1 with U17 test (Debug build + EnableDiagnostics;
+debug.mono.env on Debug runtime), then Core skeleton (ProfilerSession,
+AndroidCollector prerequisites check, TraceAnalyzer, ResultStore schema v1).
 
 ## What works
 - Whole collection+analysis chain on emulator for sampling, gcdump,

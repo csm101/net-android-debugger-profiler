@@ -80,10 +80,28 @@ the reference application is net9.0-android35.0; this machine has only the net10
 workload pack. Verify `dotnet build` of App.Droid works (net9 runtime pack
 download) before the first P1 integration run against it.
 
-## U17 - Engine-side environment injection
-The spike bakes MONO_DIAGNOSTICS through a target inside TestTarget.csproj.
-The engine must do it without touching the user's csproj:
-CustomAfterMicrosoftCommonTargets import that appends to
-`_GeneratedAndroidEnvironment` / adds an `AndroidEnvironment` item, and it
-must force a clean obj/ when the value changes (incremental-build trap).
-Validate on the reference application.
+## U17 - Instrumenting without rebuilding (decision: profiler never rebuilds)
+Sampling needs no rebuild beyond EnableDiagnostics (setprop
+debug.mono.profile does the rest). Instrumenting needs MONO_DIAGNOSTICS in
+the app environment: today only a baked env file (user-side build step:
+we ship a props/targets snippet + instructions). Open: does a **Debug**
+build honor `debug.mono.env` (the release libmonodroid lacks it; the debug
+runtime variant may have it) - that would allow instrumenting with zero
+build changes on Debug APKs. Also: does EnableDiagnostics work with Debug +
+fast deployment (docs only mention Release)? Test first thing in P1.
+
+## U18 - APK prerequisite inspection
+How the engine checks the APK/installed app before a session: presence of
+libmono-component-diagnostics_tracing.so, libaot-* (AOT warning), the
+baked environment (`__environment__.txt` content is inside libxamarin-app.so
+- readable? or require the user's build to also drop a marker?), package
+name/activity to launch. Source: APK on disk (aapt/zip) vs installed
+package (`adb shell pm path` + pull).
+
+## U19 - the reference application existing profiling assets
+the reference application already has a Metalama-based method timing aspect
+(C:\Work\ReferenceApp\Metalama.Profiling, ProfileMethodAttribute /
+ProfileFabric, "Profiling" build configuration) and Desymbolicate (pdb ->
+line numbers, symbol server per build). Evaluate reuse: Metalama weaving as
+P3 plan B instead of Cecil; Desymbolicate's symbol-server lookup for
+annotate_source on Jenkins builds.

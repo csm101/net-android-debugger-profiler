@@ -31,6 +31,20 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 - AndroidCollector duplicated from the debugger's AndroidLauncher at first;
   shared library extraction deferred (U11).
 
+- P1 design decisions (2026-08-20, user):
+  - **The profiler never rebuilds the target app.** It profiles the APK as
+    the user built it (Debug included - the main use case; the reference application already
+    builds with RunAOTCompilation=false). It checks prerequisites on the
+    installed/selected APK (diagnostics component present, JIT vs AOT,
+    baked environment) and fails with a message explaining how to configure
+    the build (EnableDiagnostics, MONO_DIAGNOSTICS env file for
+    instrumenting); AOT code only triggers a warning (leaf attribution).
+  - SQLite: separate tables per profiling kind (sampling vs instrumenting
+    vs memory), never mixed units in one table.
+  - Source-line annotation reuses the pdb approach of the reference application's
+    Desymbolicate tool (Microsoft.DiaSymReader + portable pdb, method token
+    + IL offset -> sequence points, pdbs fetched per build from the
+    company symbol server): C:\Work\ReferenceApp\ExternalTools\Desymbolicate.
 - Licensing (2026-08-20): proprietary closed source, copyright MCA Software
   s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
   MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
