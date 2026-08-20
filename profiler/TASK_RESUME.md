@@ -6,8 +6,8 @@ P0 spike DONE. P1 design: user decisions recorded in PROJECT_STATE.md
 Revised proposal given in chat; waiting for go-ahead to start P1 coding.
 
 ## Current substep
-Spike results recorded; committing. Then write the P1 proposal in the reply
-(not in code).
+User-facing setup doc written: docs/APP_SETUP.md (Profiling configuration +
+profiling.env recipe). Waiting for go-ahead on P1.
 
 ## Done in P0 (all facts in ANDROID_PROFILING_NOTES.md)
 1. Tools 9.0.661903 installed (dotnet-trace / dsrouter / gcdump).

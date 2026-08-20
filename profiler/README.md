@@ -34,6 +34,12 @@ Sibling project: [net-android-debugger](https://github.com/csm101/net-android-de
 same architecture family (frontend-neutral core, thin frontends, living
 specification documents, TDD with integration tests).
 
+## Preparing your app
+
+See [docs/APP_SETUP.md](docs/APP_SETUP.md): what each profiling mode
+requires from the app build (EnableDiagnostics, MONO_DIAGNOSTICS environment
+file for instrumenting, pdbs) and how to keep it out of normal Debug builds.
+
 ## Status
 
 Early scaffold. See `PROJECT_STATE.md` for milestones, `ARCHITECTURE.md` for
