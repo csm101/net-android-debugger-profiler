@@ -41,7 +41,8 @@ public sealed record SessionSpec(
     string? Name = null,
     bool KeepAppRunning = false,
     InstrumentingEngine Engine = InstrumentingEngine.RuntimeProvider,
-    IReadOnlyList<string>? WeaveAssemblies = null);
+    IReadOnlyList<string>? WeaveAssemblies = null,
+    IReadOnlyList<string>? WeaveReferenceDirs = null);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -259,7 +260,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
         _weaveDeployer = new WeaveDeployer(_adb, device.Serial, Spec.Package, device.Abi, Directory);
         Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
-        _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct).ConfigureAwait(false);
+        _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs).ConfigureAwait(false);
         Log($"woven {_weaveMap.Count} methods; collector + assemblies deployed");
 
         // The collector writes to a private events dir; wipe stale files, then point the app at it.

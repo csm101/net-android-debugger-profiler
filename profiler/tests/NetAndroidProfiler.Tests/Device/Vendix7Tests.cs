@@ -61,6 +61,26 @@ public class ReferenceAppTests
     }
 
     [SkippableFact]
+    public async Task Weaver_instrumenting_session_on_the reference application()
+    {
+        Skip.IfNot(Enabled, "set NAP_REFAPP=1 to run against the reference application");
+        string callspec = Environment.GetEnvironmentVariable("NAP_REFAPP_CALLSPEC") ?? "N:App.Droid";
+        var asms = (Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_ASMS") ?? "App.Droid").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(25),
+            Callspec: callspec,
+            Engine: InstrumentingEngine.Weaver,
+            WeaveAssemblies: asms,
+            WeaveReferenceDirs: [SymbolsDir]));
+        Assert.Equal(SessionState.Ready, s.State);
+        var timings = s.Results.Timings(40);
+        Console.WriteLine(string.Join(Environment.NewLine, timings.Take(25).Select(t => $"{t.Calls,8} {t.TotalNs / 1e6,10:F2}ms {t.SelfNs / 1e6,10:F2}ms {t.FullName}")));
+        Assert.NotEmpty(timings);
+        Assert.All(timings, t => Assert.StartsWith("App.Droid", t.FullName));
+        Assert.True(s.Results.Count("timing_tree") > 0);
+    }
+
+    [SkippableFact]
     public void the reference application_pdbs_load_and_map_tokens()
     {
         Skip.IfNot(Enabled && Directory.Exists(SymbolsDir), "set NAP_REFAPP=1 and build App.Droid Debug");

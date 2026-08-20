@@ -36,7 +36,7 @@ public sealed class WeaveDeployer
     /// <paramref name="filter"/> and deploy them plus the collector. Returns the
     /// weaver id map. The app must be stopped.
     /// </summary>
-    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct)
+    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null)
     {
         string pulled = Path.Combine(_workDir, "pulled");
         string wovenDir = Path.Combine(_workDir, "woven");
@@ -44,18 +44,33 @@ public sealed class WeaveDeployer
         Directory.CreateDirectory(wovenDir);
 
         var weaver = new CecilWeaver(filter);
+        // Resolve references (constants' types etc.) by pulling siblings from the
+        // override dir on demand instead of pulling all ~150 deployed assemblies.
+        var resolver = new DeviceAssemblyResolver(pulled, (dllName, localPath) =>
+            PullFromOverrideSync(dllName, localPath, ct));
+        // Most app assemblies live inside the APK's assembly store, not as files on the
+        // device, so references are resolved from local directories (typically the app's
+        // build output) when provided.
+        foreach (var dir in referenceSearchDirs ?? [])
+            if (Directory.Exists(dir)) resolver.AddSearchDirectory(dir);
         var deployedNow = new List<(string remote, string localWoven)>();
         foreach (var name in assemblies)
         {
             ct.ThrowIfCancellationRequested();
             string dll = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? name : name + ".dll";
             string remote = $"{OverrideDir}/{dll}";
+            // A previous session may have left a woven copy in place (restore failed):
+            // put the pristine assembly back before weaving, never weave a woven file.
+            if (await RemoteExistsAsync(remote + ".naporig", ct).ConfigureAwait(false))
+            {
+                await RestoreOneAsync(remote, ct).ConfigureAwait(false);
+            }
             if (!await RemoteExistsAsync(remote, ct).ConfigureAwait(false))
                 throw new ToolException($"Assembly {dll} is not in the app override directory ({OverrideDir}); it may be AOT-only, merged, or not fast-deployed. Deploy a Debug build.");
             string local = Path.Combine(pulled, dll);
             await CatToLocalAsync(remote, local, ct).ConfigureAwait(false);
             string woven = Path.Combine(wovenDir, dll);
-            var result = weaver.Weave(local, woven);
+            var result = weaver.Weave(local, woven, resolver);
             if (result.Methods.Count == 0) { File.Delete(woven); continue; }
             deployedNow.Add((remote, woven));
         }
@@ -81,12 +96,8 @@ public sealed class WeaveDeployer
     {
         foreach (var remote in _deployed)
         {
-            string backup = remote + ".naporig";
-            try
-            {
-                await _adb.RunAsAsync(_serial, _package, $"test -f {backup} && rm -f {remote} && mv {backup} {remote} && chmod 400 {remote}", ct).ConfigureAwait(false);
-            }
-            catch (Exception) { /* best effort; next deploy rewrites it anyway */ }
+            try { await RestoreOneAsync(remote, ct).ConfigureAwait(false); }
+            catch (Exception e) { RestoreErrors.Add($"{remote}: {e.Message}"); }
         }
         _deployed.Clear();
         if (_collectorDeployed)
@@ -96,6 +107,21 @@ public sealed class WeaveDeployer
             _collectorDeployed = false;
         }
     }
+
+    /// <summary>Restore one assembly from its .naporig backup (removes the backup on success).</summary>
+    private async Task RestoreOneAsync(string remote, CancellationToken ct)
+    {
+        string backup = remote + ".naporig";
+        // chmod first: the files are 0400, and a plain mv/rm can fail on some devices.
+        string cmd = $"chmod 600 {remote} 2>/dev/null; chmod 600 {backup} 2>/dev/null; " +
+                     $"if [ -f {backup} ]; then cp {backup} {remote} && rm -f {backup} && chmod 400 {remote} && echo RESTORED; else echo NOBACKUP; fi";
+        string outp = await _adb.RunAsAsync(_serial, _package, cmd, ct).ConfigureAwait(false);
+        if (!outp.Contains("RESTORED", StringComparison.Ordinal))
+            throw new ToolException($"restore did not confirm ({outp.Trim()})");
+    }
+
+    /// <summary>Failures encountered by the last <see cref="RestoreAsync"/> (empty = clean).</summary>
+    public List<string> RestoreErrors { get; } = new();
 
     /// <summary>Pull every *.napw event file the collector wrote into <paramref name="remoteEventsDir"/> to <paramref name="localDir"/>.</summary>
     public async Task<int> PullEventsAsync(string remoteEventsDir, string localDir, CancellationToken ct)
@@ -114,6 +140,21 @@ public sealed class WeaveDeployer
     public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed;
 
     public string RemoteEventsDir => $"files/nap-events";
+
+    /// <summary>Synchronous pull of one dll from the override dir (for the Cecil resolver callback). Returns false when absent.</summary>
+    private bool PullFromOverrideSync(string dllName, string localPath, CancellationToken ct)
+    {
+        try
+        {
+            string remote = $"{OverrideDir}/{dllName}";
+            if (!RemoteExistsAsync(remote, ct).GetAwaiter().GetResult()) return false;
+            var data = _adb.ExecOutAsync(_serial, $"run-as {_package} cat {remote}", ct).GetAwaiter().GetResult();
+            if (data.Length == 0) return false;
+            File.WriteAllBytes(localPath, data);
+            return true;
+        }
+        catch { return false; }
+    }
 
     private async Task<bool> RemoteExistsAsync(string relPath, CancellationToken ct)
     {

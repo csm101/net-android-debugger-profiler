@@ -70,9 +70,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("restart: leave the app running after the session (default: stop it, so it does not reconnect to the next session)")] bool keepAppRunning = false,
         [Description("Instrumenting engine: provider (Mono runtime callspec; crashes net9 runtimes) or weaver (Mono.Cecil IL weaving of the app assemblies; works on net9 Debug builds)")] string engine = "provider",
         [Description("Weaver: assembly names to weave, comma-separated (e.g. 'App.Droid,App.Core'); inferred from the callspec when omitted")] string? weaveAssemblies = null,
+        [Description("Weaver: local directories with the app's reference assemblies (usually its bin/<Config>/<tfm> folder); needed because most assemblies live in the APK assembly store, not on the device")] string? weaveReferenceDirs = null,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -96,9 +97,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Optional friendly name")] string? name = null,
         [Description("restart: leave the app running after the session")] bool keepAppRunning = false,
         [Description("Instrumenting engine: provider or weaver")] string engine = "provider",
-        [Description("Weaver: assembly names to weave, comma-separated")] string? weaveAssemblies = null)
+        [Description("Weaver: assembly names to weave, comma-separated")] string? weaveAssemblies = null,
+        [Description("Weaver: local reference directories (app bin folder)")] string? weaveReferenceDirs = null)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies);
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs);
         if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
         var live = host.Create(spec);
         live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
@@ -347,7 +349,7 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
@@ -376,6 +378,7 @@ public sealed class ProfilerTools(SessionHost host)
             : weaveAssemblies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         return new SessionSpec(deviceSerial.Trim(), packageName.Trim(), pm, lm,
             durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
-            suspendOnStart, callspec, trackAllocations, name, keepAppRunning, eng, asms);
+            suspendOnStart, callspec, trackAllocations, name, keepAppRunning, eng, asms,
+            string.IsNullOrWhiteSpace(weaveReferenceDirs) ? null : weaveReferenceDirs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList());
     }
 }

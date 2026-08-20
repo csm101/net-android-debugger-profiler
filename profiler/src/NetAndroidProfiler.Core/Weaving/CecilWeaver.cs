@@ -42,14 +42,23 @@ public sealed class CecilWeaver
     /// <summary>Methods woven so far across all assemblies.</summary>
     public IReadOnlyList<WovenMethod> Map => _map;
 
-    /// <summary>Weave <paramref name="assemblyPath"/> into <paramref name="outputPath"/> (must differ). Returns the per-assembly result; zero methods = nothing matched.</summary>
-    public WeaveResult Weave(string assemblyPath, string outputPath)
+    /// <summary>Methods that matched the filter but could not be safely woven (skipped, left original).</summary>
+    public int SkippedCount { get; private set; }
+
+    /// <summary>Weave <paramref name="assemblyPath"/> into <paramref name="outputPath"/> (must differ). Returns the per-assembly result; zero methods = nothing matched. Pass a custom <paramref name="resolver"/> to satisfy references that are not next to the input (e.g. pulled from a device on demand).</summary>
+    public WeaveResult Weave(string assemblyPath, string outputPath, IAssemblyResolver? resolver = null)
     {
         if (Path.GetFullPath(assemblyPath).Equals(Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase))
             throw new ArgumentException("Output path must differ from the input path");
 
-        var resolver = new DefaultAssemblyResolver();
-        resolver.AddSearchDirectory(Path.GetDirectoryName(Path.GetFullPath(assemblyPath))!);
+        if (resolver is DefaultAssemblyResolver dar)
+            dar.AddSearchDirectory(Path.GetDirectoryName(Path.GetFullPath(assemblyPath))!);
+        else if (resolver is null)
+        {
+            var d = new DefaultAssemblyResolver();
+            d.AddSearchDirectory(Path.GetDirectoryName(Path.GetFullPath(assemblyPath))!);
+            resolver = d;
+        }
         using var assembly = AssemblyDefinition.ReadAssembly(assemblyPath, new ReaderParameters { AssemblyResolver = resolver, ReadSymbols = false });
         var module = assembly.MainModule;
         string moduleName = Path.GetFileNameWithoutExtension(assemblyPath);
@@ -65,11 +74,25 @@ public sealed class CecilWeaver
             string ns = type.Namespace ?? "";
             foreach (var method in type.Methods)
             {
-                if (!method.HasBody || method.IsAbstract || method.IsPInvokeImpl) continue;
-                if (method.Name == ".cctor") continue;
+                if (!CanWeave(method)) continue;
                 if (!_filter.Matches(ns, type.FullName, method.Name)) continue;
-                int id = _nextId++;
-                WeaveMethod(method, id, enterRef, leaveRef);
+                int id = _nextId;
+                var snapshot = BodySnapshot.Capture(method.Body);
+                try
+                {
+                    WeaveMethod(method, id, enterRef, leaveRef);
+                    // Validate the rewritten body: this is where malformed control flow surfaces.
+                    method.Body.OptimizeMacros();
+                }
+                catch (Exception)
+                {
+                    // A method shape the weaver cannot handle (unusual control flow, protected
+                    // regions, switches): restore it untouched and skip. Never abort the whole run.
+                    snapshot.Restore(method.Body);
+                    SkippedCount++;
+                    continue;
+                }
+                _nextId++;
                 var entry = new WovenMethod(id, moduleName, method.MetadataToken.ToInt32(), $"{type.FullName}.{method.Name}");
                 woven.Add(entry);
                 _map.Add(entry);
@@ -118,22 +141,29 @@ public sealed class CecilWeaver
         return method;
     }
 
-    /// <summary>Wrap the body in Enter/try/finally/Leave, exception-safe.</summary>
+    /// <summary>Methods the weaver cannot safely wrap and skips.</summary>
+    internal static bool CanWeave(MethodDefinition method)
+    {
+        if (!method.HasBody || method.IsAbstract || method.IsPInvokeImpl) return false;
+        if (method.Name is ".cctor") return false;
+        if (method.Body.Instructions.Count == 0) return false;
+        // ref-returning methods: the return value cannot be stashed in a local for the finally tail.
+        if (method.ReturnType.IsByReference) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// Wrap the body in <c>Enter(id); try { ... } finally { Leave(id); } return</c>,
+    /// exception-safe. Every original <c>ret</c> is turned into a branch out of
+    /// the try by mutating the instruction in place (so existing branch targets
+    /// that pointed at it stay valid), storing the return value in a local first.
+    /// </summary>
     private static void WeaveMethod(MethodDefinition method, int id, MethodReference enterRef, MethodReference leaveRef)
     {
         var body = method.Body;
         body.SimplifyMacros();
         var il = body.GetILProcessor();
 
-        // Prologue: Profiler.Enter(id) before everything.
-        var oldFirst = body.Instructions[0];
-        il.InsertBefore(oldFirst, il.Create(OpCodes.Ldc_I4, id));
-        il.InsertBefore(oldFirst, il.Create(OpCodes.Call, enterRef));
-
-        // Epilogue skeleton:
-        //   <body with every ret replaced by leave -> loadRet>
-        //   finallyStart: ldc.i4 id; call Leave; endfinally
-        //   loadRet: (ldloc retVal)? ret
         bool hasRet = method.ReturnType.MetadataType != MetadataType.Void;
         VariableDefinition? retVal = null;
         if (hasRet)
@@ -143,31 +173,34 @@ public sealed class CecilWeaver
             body.InitLocals = true;
         }
 
-        Instruction loadRet = hasRet ? il.Create(OpCodes.Ldloc, retVal) : il.Create(OpCodes.Nop);
+        var oldFirst = body.Instructions[0];
+
+        // Tail after the finally: (ldloc retVal)? ret
+        Instruction loadRet = hasRet ? il.Create(OpCodes.Ldloc, retVal) : Instruction.Create(OpCodes.Nop);
         Instruction finalRet = il.Create(OpCodes.Ret);
         Instruction finallyStart = il.Create(OpCodes.Ldc_I4, id);
         Instruction callLeave = il.Create(OpCodes.Call, leaveRef);
         Instruction endFinally = il.Create(OpCodes.Endfinally);
 
-        // Replace every ret inside the (future) try block with stloc + leave.
-        var rets = body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList();
-        foreach (var ret in rets)
+        // Turn every original ret into "store (if value) + leave loadRet", mutating in place
+        // so branches targeting the ret still hit a valid instruction.
+        foreach (var ins in body.Instructions.Where(i => i.OpCode == OpCodes.Ret).ToList())
         {
             if (hasRet)
             {
-                // ret pops the value: store it first, then leave.
-                var stloc = il.Create(OpCodes.Stloc, retVal);
-                il.InsertBefore(ret, stloc);
-                var leave = il.Create(OpCodes.Leave, loadRet);
-                il.Replace(ret, leave);
+                // ins currently: ret (value on stack). Become: stloc retVal ; leave loadRet.
+                ins.OpCode = OpCodes.Stloc;
+                ins.Operand = retVal;
+                il.InsertAfter(ins, il.Create(OpCodes.Leave, loadRet));
             }
             else
             {
-                il.Replace(ret, il.Create(OpCodes.Leave, loadRet));
+                ins.OpCode = OpCodes.Leave;
+                ins.Operand = loadRet;
             }
         }
 
-        // Append: finally handler + tail.
+        // Append the finally handler and the tail.
         var last = body.Instructions[^1];
         il.InsertAfter(last, finallyStart);
         il.InsertAfter(finallyStart, callLeave);
@@ -175,17 +208,48 @@ public sealed class CecilWeaver
         il.InsertAfter(endFinally, loadRet);
         il.InsertAfter(loadRet, finalRet);
 
-        var tryStart = oldFirst; // Enter stays outside the try: a failed Enter must not fire Leave.
-        var handler = new ExceptionHandler(ExceptionHandlerType.Finally)
+        // Prologue: Profiler.Enter(id) before the (now protected) body. Enter stays
+        // outside the try so a failed Enter cannot trigger Leave.
+        il.InsertBefore(oldFirst, il.Create(OpCodes.Ldc_I4, id));
+        il.InsertBefore(oldFirst, il.Create(OpCodes.Call, enterRef));
+
+        body.ExceptionHandlers.Add(new ExceptionHandler(ExceptionHandlerType.Finally)
         {
-            TryStart = tryStart,
+            TryStart = oldFirst,
             TryEnd = finallyStart,
             HandlerStart = finallyStart,
             HandlerEnd = loadRet,
-        };
-        // Existing handlers must stay inside the new try block: ours goes last.
-        body.ExceptionHandlers.Add(handler);
+        });
+    }
 
-        body.OptimizeMacros();
+    /// <summary>Captured state of a method body, to roll back a failed weave.</summary>
+    private sealed class BodySnapshot
+    {
+        private readonly List<(Instruction ins, OpCode op, object? operand)> _instructions;
+        private readonly List<VariableDefinition> _variables;
+        private readonly List<ExceptionHandler> _handlers;
+        private readonly bool _initLocals;
+
+        private BodySnapshot(List<(Instruction, OpCode, object?)> ins, List<VariableDefinition> vars, List<ExceptionHandler> handlers, bool initLocals)
+        {
+            _instructions = ins; _variables = vars; _handlers = handlers; _initLocals = initLocals;
+        }
+
+        public static BodySnapshot Capture(MethodBody body)
+        {
+            var ins = body.Instructions.Select(i => (i, i.OpCode, i.Operand)).ToList();
+            return new BodySnapshot(ins, body.Variables.ToList(), body.ExceptionHandlers.ToList(), body.InitLocals);
+        }
+
+        public void Restore(MethodBody body)
+        {
+            body.Instructions.Clear();
+            foreach (var (ins, op, operand) in _instructions) { ins.OpCode = op; ins.Operand = operand; body.Instructions.Add(ins); }
+            body.Variables.Clear();
+            foreach (var v in _variables) body.Variables.Add(v);
+            body.ExceptionHandlers.Clear();
+            foreach (var h in _handlers) body.ExceptionHandlers.Add(h);
+            body.InitLocals = _initLocals;
+        }
     }
 }
