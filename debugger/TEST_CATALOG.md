@@ -60,8 +60,10 @@ Conventions (mirroring the Delphi project's discipline):
       process is stopped at a breakpoint is attached on its own port, and its
       own breakpoint is hit — `ProcessSpawnedWhileMainIsStopped_IsAttachedOnItsOwnPort`
       (also covers three processes holding three distinct ports)
-- [ ] Helper that exits and is respawned by Android is re-attached on a new port
-- [ ] `GetProcesses` reports a helper that died (`HasExited`)
+- [x] A killed sticky helper is reported gone and the process Android starts in
+      its place is attached on a new port —
+      `KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt`
+- [x] `GetProcesses` reports a helper that died (`HasExited`) — same test
 - [ ] A foreign Mono app process starting during the session is NOT attached
       (warning logged, port rotated) — needs a second installed .NET app;
       `ForeignMonoProcess_IsNotAttached` (observed live with the reference application, suite run 12)

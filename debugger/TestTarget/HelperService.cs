@@ -4,6 +4,24 @@ using Android.OS;
 namespace TestTarget;
 
 /// <summary>
+/// Lives in the ":helper" process and kills it on request, so tests can watch Android restart a
+/// sticky service and the debugger re-attach the new process:
+/// <c>adb shell am broadcast -a net.androiddebugger.testtarget.KILL_HELPER</c>.
+/// </summary>
+[BroadcastReceiver(Name = "net.androiddebugger.testtarget.HelperKillReceiver", Exported = true, Process = ":helper")]
+[IntentFilter([HelperKillReceiver.KillAction])]
+public class HelperKillReceiver : BroadcastReceiver
+{
+    public const string KillAction = "net.androiddebugger.testtarget.KILL_HELPER";
+
+    public override void OnReceive(Context? context, Intent? intent)
+    {
+        Android.Util.Log.Debug("TestTarget", "helper process killing itself on request");
+        Android.OS.Process.KillProcess(Android.OS.Process.MyPid());
+    }
+}
+
+/// <summary>
 /// Runs in a third process (":late"), started by Android when the broadcast arrives — not by
 /// the app's main process. That is what makes it usable to test a process appearing *while the
 /// main process is suspended at a breakpoint*:

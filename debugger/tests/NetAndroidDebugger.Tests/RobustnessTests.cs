@@ -238,6 +238,73 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
     }
 
     [Fact]
+    public async Task KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        var adb = new AdbClient();
+        var session = await LaunchAsync(cts.Token);
+        try
+        {
+        // Wait for the sticky helper service to be attached.
+        var helper = await WaitForAsync(() => session.GetProcesses().FirstOrDefault(p => p.Name.EndsWith(":helper", StringComparison.Ordinal) && !p.HasExited),
+            TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(helper);
+        output.WriteLine($"helper attached: pid {helper.Pid} port {helper.SdbPort}");
+
+        var pkg = TestEnvironment.TestTargetPackage;
+        await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.KILL_HELPER -p {pkg}", cts.Token);
+
+        // The engine must notice the process is gone...
+        var gone = await WaitForAsync(() => session.GetProcesses().FirstOrDefault(p => p.Pid == helper.Pid && p.HasExited),
+            TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(gone);
+
+        // ...and attach the one Android starts in its place, on a port of its own.
+        var restarted = await WaitForAsync(() => session.GetProcesses().FirstOrDefault(p => p.Name.EndsWith(":helper", StringComparison.Ordinal) && p.Pid != helper.Pid && !p.HasExited),
+            TimeSpan.FromSeconds(90), cts.Token);
+        output.WriteLine(string.Join("\n", session.GetProcesses().Select(p => $"{p.Pid} {p.Name} port={p.SdbPort} exited={p.HasExited}")));
+        Assert.NotNull(restarted);
+        Assert.NotEqual(helper.SdbPort, restarted.SdbPort);
+        }
+        finally
+        {
+            // This test deliberately makes Android restart a sticky service. Tear the app down
+            // and wait for it to be really gone, or those restarts spill into the next test.
+            await session.DisposeAsync();
+            var pkg = TestEnvironment.TestTargetPackage;
+            await adb.ForceStopAsync(device.Serial, pkg, CancellationToken.None);
+            var gone = await WaitForAsync(
+                async () => (await adb.ListPackageProcessesAsync(device.Serial, pkg, CancellationToken.None)).Count == 0 ? "gone" : null,
+                TimeSpan.FromSeconds(30), CancellationToken.None);
+            output.WriteLine($"teardown: app processes {(gone is null ? "still present" : "gone")}");
+        }
+    }
+
+    private static async Task<T?> WaitForAsync<T>(Func<Task<T?>> probe, TimeSpan timeout, CancellationToken ct) where T : class
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var value = await probe();
+            if (value is not null) return value;
+            await Task.Delay(500, ct);
+        }
+        return null;
+    }
+
+    private static async Task<T?> WaitForAsync<T>(Func<T?> probe, TimeSpan timeout, CancellationToken ct) where T : class
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            var value = probe();
+            if (value is not null) return value;
+            await Task.Delay(500, ct);
+        }
+        return null;
+    }
+
+    [Fact]
     public async Task SteppingOneProcess_LeavesTheOtherStopped()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));

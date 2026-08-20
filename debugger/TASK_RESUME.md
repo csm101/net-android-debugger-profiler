@@ -1,76 +1,60 @@
 # Task resume
 
 ## Current task
-M2/M3 hardening done for this session; suite fully green. Last commit about
-to land: robustness work after suite runs 9-17 (see below). Registered MCP
-server is still the PRE-fix build: the user must rerun register-mcp.cmd
-(with MCP sessions closed) to pick up the fixes.
+Overnight autonomous session (2026-08-20 → 21). M1/M2 engine work is done and
+the suite is the safety net; the current loop is: pick a gap from
+TEST_CATALOG.md, write the named test, fix whatever it exposes, keep the
+specs in the same change set, commit.
 
-## State (2026-08-20, end of session)
-- Suite: 32/32 green in 3.6 min on emulator-5554 (hardware GPU), device
-  clean after every run (property, processes, forwards).
-- Engine hardening landed since commit 18dc11f:
-  - Attach deduplicated per pid; process exposed only after the SDB
-    handshake (fixes pause-during-connect NRE).
-  - Foreign Mono processes (other apps reading the device-global
-    debug.mono.extra, e.g. the reference application auto-started at boot) are NOT attached:
-    ps name lookup, WARNING log, port still rotated. Default
-    PropertyLifetime 3 min; launch_app has propertyLifetimeSeconds.
-  - Evaluation: EvaluationTimeout 12 s / MemberEvaluationTimeout 18 s
-    (an invoke ABORTED on timeout wedges the stopped thread - root cause of
-    the flaky expansion timeouts; first DateTime.ToString = ICU init is the
-    trigger); RunBounded 60 s around every synchronous inspection call;
-    SetEvaluationOptions + MCP set_evaluation_options to tune / disable
-    ToString-invokes on slow targets.
-  - Exception stops: type + stack trace captured at stop time on the event
-    thread (no evaluation there - "vm is not suspended"); message resolved
-    lazily on the caller thread via $exception._message; survives the
-    process dying right after an unhandled exception.
-  - Values still evaluating after the wait window are reported as
-    "<evaluation timed out>" [error], no expansion handle for them or nulls.
-  - Unnamed threads labelled ("Main" for id 1, "Thread N" otherwise).
-  - Culture-invariant rendering in frontends (it-IT host produced "0,5").
-- Tests: 32 across 4 files (LaunchAndBreakpoint 10, InspectionAndBreakpoint
-  10, Robustness 8, McpEndToEnd 4). Timing-sensitive asserts made robust
-  (1 s Tick timer races, tick-number-agnostic, unhandled-exception
-  continue behavior observed not asserted - U12).
+## State
+- Suite: 41 tests in four files. Last full runs: 40/40 and 39/40 (the one
+  failure was a genuine engine bug, fixed in 06f0a9b). ~4 min per run on the
+  headless emulator.
+- Commits tonight, newest last: 247cede (stop location falls back to the user
+  frame; U11 measured), 9735b4a (one unhandled exception per process; slow
+  probe isolated), e93abc0 (async/await coverage), eabb4d0 (structured app
+  output; headless emulator), 06f0a9b (**disarm breakpoints during any
+  debuggee invocation** — the root cause of the evening's flakiness), 32f444a
+  (honest hit-count assertion + U13).
+- The registered MCP server is older than these commits: the user must rerun
+  register-mcp.cmd (with MCP sessions closed) before the tools reflect them.
+  Everything above is verified through the test suite, not through the server.
 
-## Environment lessons (also in ANDROID_ATTACH_NOTES.md)
-- Stop the emulator with `adb -s emulator-5554 emu kill`; taskkill by PID
-  silently fails and a second same-AVD launch refuses to start.
-- `-gpu host` fast (one qemu crash in 4 h, NVIDIA GL); swiftshader stable
-  but so slow that invokes time out and the suite gets flaky; angle falls
-  back to swiftshader on this machine. Current: `-gpu host -cores 4`.
-- Suite runs: NAD_DEVICE_SERIAL=emulator-5554, NAD_SKIP_DEPLOY=1 when
-  TestTarget unchanged. emulator-5556 belongs to the user - never touch.
+## Environment rules (also in ANDROID_ATTACH_NOTES.md / TEST_CATALOG.md)
+- Only ever touch `emulator-5554`; `emulator-5556` is the user's other AVD
+  (`devicepersviluppoprofiler`).
+- `bash DevTools/scripts/ensure-emulator.sh` before unattended runs: headless
+  (a windowed emulator cannot start while the desktop is locked) and with the
+  hardware GPU (a software GPU is slow enough to make evaluation time out).
+  It also clears the locks and snapshot a crashed qemu leaves behind.
+- qemu crashed three times tonight; the script recovers it. If a run fails
+  with "device offline"/"device not found", restart and repeat the run.
+- Suite env: `NAD_DEVICE_SERIAL=emulator-5554`, `NAD_SKIP_DEPLOY=1` when
+  TestTarget is unchanged.
 
-## U6 experiment DONE (2026-08-20)
-Result (two runs): a 4.5-min pause on the UI thread of a non-connected app, and a 5-min explicit pause on a FULLY OPERATIONAL install (logged on, backend up, MQTT connected), are both harmless: no ANR, no death, MQTT self-reconnects after one failed attempt, watchdog never fires (no bug report, no thread restart) in the 6.5 min after resume. U6 answered; only very long pauses (tens of minutes) and the app's own android:process remain unmeasured.
-Method: breakpoint (run 1) / pause_execution (run 2) via the MCP tools, with
-DevTools/scripts/pause-survival-watch.sh sampling pids and grepping logcat
-for ANR / watchdog / bug report / MQTT / process death. Full findings in
-ANDROID_ATTACH_NOTES.md (the reference application section); U6 closed in KNOWN_UNKNOWNS.
-the reference application was restarted without the debugger afterwards, as the user had it.
-Two lessons for my own scripts: inside a quoted heredoc do NOT write \" in
-awk (it lands literally and the field comes out empty - my first watch
-script printed no pids and briefly looked like the app had died), and do
-not "fix" a multi-line section with sed unless the pattern covers all of it.
+## Next steps (in order)
+1. Read the last test-runner report; fix anything genuinely red.
+2. Remaining TEST_CATALOG gaps worth doing next: step over a call that throws;
+   generic type display; app exit reported as session end; second launch_app
+   closes the previous session; launch_app with deploy=true.
+3. U13: confirm whether a per-process breakpoint store stabilises hit counts
+   (log `CurrentHitCount` per stop first — cheap experiment).
+4. When the user is back and the server is republished: re-drive the reference application
+   through the MCP tools, mainly to see the breakpoint-disarm fix under a real
+   app full of timers and services.
+5. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
+   When merged: point .gitmodules back to upstream, bump the submodule,
+   update ARCHITECTURE.md.
 
-## Next action if interrupted right now
-User reruns register-mcp.cmd (registered server is still pre-90b154c, so
-the MCP tools I am using lack the newest engine fixes). Remaining chunks:
-- U11 probe: does a wedged evaluation thread heal after Continue + next
-  stop? Warm-up invoke idea.
-- U12: engine policy for repeated unhandled-exception stops.
-- Logcat filtering polish, SourceResolver (only when a PDB path mismatch
-  actually shows up, e.g. CI-built the reference application APKs).
-- PR mono/debugger-libs#419 pending; when merged: .gitmodules back to
-  upstream, bump submodule, update ARCHITECTURE.md.
-- Pending in-session: claude-code-guide agent answer on disabling the
-  Fable->Opus model fallback (user demand, memory saved).
-
-## Traps (permanent ones live in the docs; these are the active few)
-- Consumers of the vendored libs must reference Mono.Cecil 0.10.1.
-- debug.mono.extra is device-global and read at process start only: no late
-  attach; foreign apps read it too (see above).
+## Traps worth keeping in mind
+- Consumers of the vendored libs must reference Mono.Cecil 0.10.1 explicitly.
+- `debug.mono.extra` is device-global and read at process start: no late
+  attach, and other Mono apps starting meanwhile read it too (the launcher
+  refuses to attach them and rotates the burnt port).
 - Detach == terminate on Mono Android.
+- `adb shell am broadcast` waits for the receiver, so a breakpoint inside a
+  receiver hangs the adb command until you resume: fire it without waiting.
+- Killing a sticky service makes Android restart it asynchronously; a test
+  that does so must tear the app down and wait, or the restarts spill into
+  the next test.
+- Never run `python` here (not installed): a heredoc into it hangs the shell.

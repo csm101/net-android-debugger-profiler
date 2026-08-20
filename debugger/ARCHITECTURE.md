@@ -96,6 +96,16 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   costs every expansion of that object. Keep deliberately slow members out of
   frames the rest of the suite inspects (TestTarget isolates `SlowProbe` in
   its own method).
+- **Every operation that invokes debuggee code disarms the breakpoints first**
+  (`WithBreakpointsDisarmed`). Mono resumes all threads for the duration of an
+  invocation and only disables breakpoints on the invoking thread, so a
+  breakpoint hit by another thread meanwhile suspends the VM with the
+  invocation in flight: it never returns, is aborted on timeout, and the abort
+  can kill the process. Hits that would have occurred during an evaluation are
+  lost by design — an evaluation is not a resume.
+- The breakpoint store is shared by all processes of the app, which is what
+  makes a breakpoint apply everywhere; the known cost is that Mono's hit
+  counter restarts when another process attaches (KNOWN_UNKNOWNS U13).
 - Value formatting is culture-sensitive in Mono.Debugging; frontends set
   `InvariantCulture` at startup so numeric/date output is stable for machine
   consumers (MCP server `Program.cs`; tests via a `[ModuleInitializer]`).
