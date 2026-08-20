@@ -88,6 +88,32 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task Two_heap_snapshots_support_a_growth_diff()
+    {
+        var adb = new AdbClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        if (await adb.PidOfAsync(Serial, Package, cts.Token) is null)
+        {
+            await adb.LaunchAsync(Serial, Package, cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(8), cts.Token);
+        }
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.HeapSnapshot,
+            Launch: LaunchMode.Attach, SnapshotCount: 2, SnapshotInterval: TimeSpan.FromSeconds(5)));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var snapshots = s.Results.HeapSnapshots();
+        Assert.Equal(2, snapshots.Count);
+        Assert.All(snapshots, x => Assert.True(x.objects > 1000));
+
+        var diff = s.Results.HeapDiff(snapshots[0].id, snapshots[1].id, 20);
+        Assert.NotEmpty(diff);
+        // The retained record set is bounded, so it must be present in both snapshots.
+        var record = diff.SingleOrDefault(d => d.TypeName == "TestTarget.Workloads.AllocHeavyRecord");
+        Assert.NotNull(record);
+        Assert.True(record!.CountFrom > 1000 && record.CountTo > 1000, $"{record.CountFrom} -> {record.CountTo}");
+    }
+
+    [Fact]
     public async Task Sampling_attach_to_running_debug_app_without_restart()
     {
         var adb = new AdbClient();

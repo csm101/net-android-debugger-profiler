@@ -72,9 +72,11 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: assembly names to weave, comma-separated (e.g. 'App.Droid,App.Core'); inferred from the callspec when omitted")] string? weaveAssemblies = null,
         [Description("Weaver: local directories with the app's reference assemblies (usually its bin/<Config>/<tfm> folder); needed because most assemblies live in the APK assembly store, not on the device")] string? weaveReferenceDirs = null,
         [Description("Weaver: path of nap-weave.map from a build-time weaving build (-p:NapWeave=true). With it nothing is woven or deployed on the device: the installed app already carries the instrumentation.")] string? weaveMapPath = null,
+        [Description("heap mode: how many snapshots to take (2 enables heap_diff, i.e. leak hunting)")] int snapshots = 1,
+        [Description("heap mode: seconds between snapshots")] int snapshotIntervalSeconds = 30,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -206,6 +208,23 @@ public sealed class ProfilerTools(SessionHost host)
     {
         using var s = host.OpenResults(sessionId, out _);
         return TextFormat.Heap(s.HeapByType(snapshot, top));
+    }
+
+    [McpServerTool(Name = "heap_diff", ReadOnly = true), Description(
+        "Compares two heap snapshots of a memory session (profile_run with mode=heap and snapshots=2): live objects and bytes " +
+        "per type in each snapshot with the growth, ordered by bytes gained. The types at the top are the leak candidates.")]
+    public string HeapDiff(
+        [Description("Session id (default: current/last)")] string? sessionId = null,
+        [Description("First snapshot id")] int from = 1,
+        [Description("Second snapshot id")] int to = 2,
+        [Description("Rows")] int top = 30,
+        [Description("Order by object growth instead of bytes")] bool byCount = false)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        var snapshots = s.HeapSnapshots();
+        if (snapshots.Count < 2)
+            throw new McpException($"The session has {snapshots.Count} heap snapshot(s); a diff needs two. Run profile_run with mode=heap and snapshots=2.");
+        return TextFormat.HeapDiff(snapshots, s.HeapDiff(from, to, top, byCount));
     }
 
     [McpServerTool(Name = "profile_threads", ReadOnly = true), Description("Threads seen in the session with their sample counts.")]
@@ -351,7 +370,7 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
@@ -382,6 +401,8 @@ public sealed class ProfilerTools(SessionHost host)
             durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
             suspendOnStart, callspec, trackAllocations, name, keepAppRunning, eng, asms,
             string.IsNullOrWhiteSpace(weaveReferenceDirs) ? null : weaveReferenceDirs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
-            string.IsNullOrWhiteSpace(weaveMapPath) ? null : weaveMapPath.Trim());
+            string.IsNullOrWhiteSpace(weaveMapPath) ? null : weaveMapPath.Trim(),
+            Math.Max(1, snapshots),
+            TimeSpan.FromSeconds(Math.Max(1, snapshotIntervalSeconds)));
     }
 }

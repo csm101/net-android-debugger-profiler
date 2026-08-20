@@ -75,6 +75,37 @@ public class ResultStoreTests
     }
 
     [Fact]
+    public void Heap_diff_reports_growth_and_disappearance()
+    {
+        string db = Recorded.TempDb("heapdiff");
+        using (var w = ResultStore.Create(db, "test"))
+        {
+            w.WriteHeapSnapshot(DateTimeOffset.UtcNow, null, [("Leaking", 100, 4000), ("Stable", 10, 400), ("GoesAway", 5, 200)]);
+            w.WriteHeapSnapshot(DateTimeOffset.UtcNow, null, [("Leaking", 900, 36000), ("Stable", 10, 400), ("NewType", 3, 120)]);
+        }
+        using var s = ResultStore.Open(db);
+        var snapshots = s.HeapSnapshots();
+        Assert.Equal(2, snapshots.Count);
+
+        var diff = s.HeapDiff(snapshots[0].id, snapshots[1].id, 10);
+        var leaking = diff.Single(d => d.TypeName == "Leaking");
+        Assert.Equal(800, leaking.DeltaCount);
+        Assert.Equal(32000, leaking.DeltaBytes);
+        Assert.Equal("Leaking", diff[0].TypeName);          // ordered by bytes gained
+
+        var stable = diff.Single(d => d.TypeName == "Stable");
+        Assert.Equal(0, stable.DeltaCount);
+
+        var gone = diff.Single(d => d.TypeName == "GoesAway");
+        Assert.Equal(-5, gone.DeltaCount);
+        Assert.Equal(0, gone.CountTo);
+
+        var added = diff.Single(d => d.TypeName == "NewType");
+        Assert.Equal(0, added.CountFrom);
+        Assert.Equal(3, added.CountTo);
+    }
+
+    [Fact]
     public void Open_rejects_wrong_schema_version()
     {
         string db = Recorded.TempDb("bad");

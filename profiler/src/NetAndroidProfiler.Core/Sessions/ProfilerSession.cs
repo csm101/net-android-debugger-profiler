@@ -43,7 +43,9 @@ public sealed record SessionSpec(
     InstrumentingEngine Engine = InstrumentingEngine.RuntimeProvider,
     IReadOnlyList<string>? WeaveAssemblies = null,
     IReadOnlyList<string>? WeaveReferenceDirs = null,
-    string? WeaveMapPath = null);
+    string? WeaveMapPath = null,
+    int SnapshotCount = 1,
+    TimeSpan? SnapshotInterval = null);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -389,14 +391,26 @@ public sealed class ProfilerSession : IAsyncDisposable
                     Log($"heap snapshot: warming up {warmUp.TotalSeconds:F0}s after launch");
                     await Task.Delay(warmUp, ct).ConfigureAwait(false);
                 }
-                _heapSnapshot = await collector.TakeHeapSnapshotAsync(TimeSpan.FromSeconds(120), ct).ConfigureAwait(false);
+                int count = Math.Max(1, Spec.SnapshotCount);
+                var interval = Spec.SnapshotInterval ?? TimeSpan.FromSeconds(30);
+                for (int i = 0; i < count; i++)
+                {
+                    if (i > 0)
+                    {
+                        Log($"waiting {interval.TotalSeconds:F0}s before snapshot {i + 1}/{count}");
+                        await Task.Delay(interval, ct).ConfigureAwait(false);
+                    }
+                    var snap = await collector.TakeHeapSnapshotAsync(TimeSpan.FromSeconds(120), ct).ConfigureAwait(false);
+                    _heapSnapshots.Add(snap);
+                    Log($"snapshot {i + 1}/{count}: {snap.TotalObjects} objects, {snap.TotalBytes} bytes");
+                }
                 break;
             }
         }
         _ended = DateTimeOffset.UtcNow;
     }
 
-    private HeapSnapshot? _heapSnapshot;
+    private readonly List<HeapSnapshot> _heapSnapshots = new();
 
     private async Task AnalyzeAsync(CancellationToken ct)
     {
@@ -426,9 +440,11 @@ public sealed class ProfilerSession : IAsyncDisposable
             }
             case ProfilingMode.HeapSnapshot:
             {
-                var s = _heapSnapshot!;
-                store.WriteHeapSnapshot(s.TakenUtc, null, s.ByType);
-                Log($"heap snapshot: objects={s.TotalObjects} bytes={s.TotalBytes} types={s.ByType.Count}");
+                foreach (var snap in _heapSnapshots)
+                {
+                    int id = store.WriteHeapSnapshot(snap.TakenUtc, null, snap.ByType);
+                    Log($"heap snapshot {id}: objects={snap.TotalObjects} bytes={snap.TotalBytes} types={snap.ByType.Count}");
+                }
                 break;
             }
         }

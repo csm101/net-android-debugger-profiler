@@ -115,9 +115,9 @@ list_devices, check_app, profile_run (one shot; mode sampling | instrumenting
 profile_status (long sessions), profile_sessions, profile_hotspots,
 profile_flat, profile_tree, profile_callers / profile_callees,
 profile_timings, alloc_report, heap_report, profile_threads, profile_report,
-profile_annotate_source, get_app_output. profile_run/profile_start take
-engine=provider|weaver and weaveAssemblies for P3 weaving. Planned: memory diff
-between snapshots (P2).
+profile_annotate_source, heap_diff, get_app_output. profile_run/profile_start take
+engine=provider|weaver and weaveAssemblies for P3 weaving. Memory sessions take N snapshots
+(snapshots/snapshotIntervalSeconds) so heap_diff can hunt leaks.
 
 ## Stable commands
 

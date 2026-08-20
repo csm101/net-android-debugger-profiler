@@ -39,6 +39,13 @@ public sealed record AllocSiteRow(int TypeId, string TypeName, int MethodId, str
 /// <summary>Thread row.</summary>
 public sealed record ThreadRow(int Id, int OsTid, string? Name, long Samples, double? FirstMs, double? LastMs);
 
+/// <summary>One type compared between two heap snapshots.</summary>
+public sealed record HeapDiffRow(string TypeName, long CountFrom, long CountTo, long BytesFrom, long BytesTo)
+{
+    public long DeltaCount => CountTo - CountFrom;
+    public long DeltaBytes => BytesTo - BytesFrom;
+}
+
 /// <summary>Per-method figures of either kind, for source annotation (zeros when the kind was not collected).</summary>
 public sealed record MethodFigures(int MethodId, int Token, string FullName, long Inclusive, long Exclusive, long InclusiveCpu, long ExclusiveCpu, long Calls, long TotalNs, long SelfNs);
 
@@ -366,6 +373,46 @@ public sealed class ResultStore : IDisposable
         using var rd = cmd.ExecuteReader();
         var list = new List<(int, string, long, long)>();
         while (rd.Read()) list.Add((rd.GetInt32(0), rd.GetString(1), rd.GetInt64(2), rd.GetInt64(3)));
+        return list;
+    }
+
+    /// <summary>
+    /// Compare two heap snapshots of this session: per type, live objects and bytes
+    /// in each snapshot. Types missing from one side count as zero, so both growth
+    /// and disappearance show up. Ordered by byte growth (descending) by default.
+    /// </summary>
+    public IReadOnlyList<HeapDiffRow> HeapDiff(int fromSnapshot, int toSnapshot, int top, bool byCount = false)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = $"""
+            SELECT t.name,
+                   COALESCE(a.count, 0), COALESCE(b.count, 0),
+                   COALESCE(a.bytes, 0), COALESCE(b.bytes, 0)
+            FROM type t
+            LEFT JOIN heap_by_type a ON a.type_id = t.id AND a.snapshot_id = $from
+            LEFT JOIN heap_by_type b ON b.type_id = t.id AND b.snapshot_id = $to
+            WHERE a.type_id IS NOT NULL OR b.type_id IS NOT NULL
+            ORDER BY ({(byCount ? "COALESCE(b.count,0) - COALESCE(a.count,0)" : "COALESCE(b.bytes,0) - COALESCE(a.bytes,0)")}) DESC
+            LIMIT $n
+            """;
+        cmd.Parameters.AddWithValue("$from", fromSnapshot);
+        cmd.Parameters.AddWithValue("$to", toSnapshot);
+        cmd.Parameters.AddWithValue("$n", top);
+        using var rd = cmd.ExecuteReader();
+        var list = new List<HeapDiffRow>();
+        while (rd.Read())
+            list.Add(new HeapDiffRow(rd.GetString(0), rd.GetInt64(1), rd.GetInt64(2), rd.GetInt64(3), rd.GetInt64(4)));
+        return list;
+    }
+
+    /// <summary>Snapshots stored in this session (id, taken time, totals).</summary>
+    public IReadOnlyList<(int id, DateTimeOffset takenUtc, long objects, long bytes)> HeapSnapshots()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT id, taken_utc, total_objects, total_bytes FROM heap_snapshot ORDER BY id";
+        using var rd = cmd.ExecuteReader();
+        var list = new List<(int, DateTimeOffset, long, long)>();
+        while (rd.Read()) list.Add((rd.GetInt32(0), DateTimeOffset.Parse(rd.GetString(1)), rd.GetInt64(2), rd.GetInt64(3)));
         return list;
     }
 

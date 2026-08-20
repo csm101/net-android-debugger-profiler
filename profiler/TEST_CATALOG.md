@@ -51,8 +51,8 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Alloc events attributed to innermost instrumented frame - `Allocations_are_attributed_to_the_innermost_instrumented_frame`
 - [x] Unresolved pre-session vtables get placeholders - `Pre_session_vtables_get_placeholder_names_not_exceptions`
 - [ ] TODO-RED U13: pre-session types resolve to names - `Pre_session_types_resolve_to_names` (skipped)
-- [ ] Heap snapshot from live session: allocation-heavy type visible (device)
-- [ ] Two snapshots diff (growth report)
+- [x] Heap snapshot from live session: allocation-heavy type visible (device) - `Heap_snapshot_of_running_app_shows_retained_records`
+- [x] Two snapshots in one session + growth diff - `Two_heap_snapshots_support_a_growth_diff` (device) and `Heap_diff_reports_growth_and_disappearance` (fast: growth, stability, disappearance, new types)
 
 ## D. Instrumenting (Fast/MonoProfilerAnalyzerTests, recorded testtarget-monoprofiler-4s)
 - [x] Enter/leave/alloc event counts exact - `Enter_leave_and_allocation_counts_match_the_recorded_trace`

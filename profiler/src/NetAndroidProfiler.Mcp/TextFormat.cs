@@ -96,6 +96,19 @@ internal static class TextFormat
         return sb.ToString().TrimEnd();
     }
 
+    public static string HeapDiff(IReadOnlyList<(int id, DateTimeOffset takenUtc, long objects, long bytes)> snapshots, IReadOnlyList<HeapDiffRow> rows)
+    {
+        var sb = new StringBuilder();
+        foreach (var s in snapshots)
+            sb.AppendLine($"snapshot {s.id}: {s.objects} objects, {s.bytes} bytes ({s.takenUtc:HH:mm:ss} UTC)");
+        if (rows.Count == 0) return sb.Append("No types in common.").ToString();
+        sb.AppendLine();
+        sb.AppendLine($"{"count1",10} {"count2",10} {"dCount",10} {"bytes1",12} {"bytes2",12} {"dBytes",12}  type");
+        foreach (var r in rows)
+            sb.AppendLine($"{r.CountFrom,10} {r.CountTo,10} {r.DeltaCount,10} {r.BytesFrom,12} {r.BytesTo,12} {r.DeltaBytes,12}  {r.TypeName}");
+        return sb.ToString().TrimEnd();
+    }
+
     public static string Threads(IReadOnlyList<ThreadRow> rows)
     {
         var sb = new StringBuilder();
