@@ -1,53 +1,50 @@
 # Task resume
 
 ## Current task
-P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
+Autonomous overnight session (user away, following from phone; explicit
+instruction: do not stop for confirmations, only for real decisions).
 
-## Current substep
-P3 weaver works END-TO-END on device (TestTarget): weave app dll in override
-dir -> collector .napw -> WeaveAnalyzer -> timing tables; originals restored.
-Collector must avoid System.Diagnostics.Process (silently disabled itself on
-Android). MCP engine=weaver wired. Committing.
+## Overnight plan (in order, commit+push after each step)
+1. [done] V7 weaver with a narrow two-type callspec: green
+   (AppApplication..ctor 7.1 s, IsMainProcess 5.3 s, OnCreate 1.85 s).
+2. [in progress] MCP end-to-end tests (TEST_CATALOG section F): spawn the MCP
+   server over stdio from xunit against a prepared sessions root, assert
+   initialize/tools/list and the read-only tools, plus error paths.
+3. U22 - build-time weaving: MSBuild task that weaves selected assemblies
+   after compilation and before packaging, writing the id map next to the
+   APK, so apps that keep EmbedAssembliesIntoApk=true (the reference application) can be
+   instrumented without a special deployment. Engine consumes the map.
+4. P2 memory: diff between two heap snapshots (growth report) + MCP tool;
+   attempt U13 (type names for pre-session vtables).
+5. U15 experiment: controlled TestTarget workload (long leaf vs tiny leaf) to
+   characterize MonoVM sampling leaf attribution.
+6. Weaver quality: option to skip property accessors; async/iterator MoveNext
+   attribution (U8) if the rest lands early.
 
 ## Next action if interrupted right now
-Run full suite via test-runner. Then P3 hardening: weaver on the reference application
-(WeaveAssemblies App.Droid[,App.Core], callspec N:App.Droid) - the instrumenting
-path that actually works on net9; async/iterator MoveNext attribution (U8);
-Release-build weaving (assemblies embedded, not in override dir). Then P2
-memory tools, or GUI (P4).
-
-## P1 plan (in order)
-1. [done] U17 Debug-build test.
-2. [done] Core: 2a analysis+store; 2b devices/apps/collection/session.
-3. [done] Fast tests on recorded traces (23 + 1 skipped U13).
-4. [done] Device tests (6).
-5. [done] MCP server (thin) with the P1 tool set + register-mcp.cmd.
-6. [done] annotate_source via portable pdb (per method).
-7. Register MCP server for Claude Code and exercise it on TestTarget; first
-   the reference application session.
+Continue at the first unfinished item; run the full suite through the
+test-runner agent before the final commit of the night.
 
 ## What works
-- ProfilerSession end-to-end on emulator-5556 / TestTarget Debug build for
-  Sampling (Restart + Attach), Instrumenting (Restart, callspec, allocations
-  with type names), HeapSnapshot (Attach; Restart with warm-up).
-- MCP server over stdio with the P1 tool set incl. annotate_source
-  (smoke-tested: Busy [753 753 753] on CpuBurner.cs lines 10-17).
+- Sampling, heap snapshots, runtime-provider instrumenting (net10 targets),
+  weaver instrumenting (TestTarget and the reference application with a narrow callspec).
+- MCP server registered in Claude Code (register-mcp.cmd); tool set complete
+  for P1 plus engine=weaver.
+- Fast suite 25 passed / 1 skipped (U13).
 
-## What is failing
-- Nothing open. Leaf-frame loss in sampling tracked as U15 (not a bug of
-  ours; MonoVM sampler behavior).
+## What is failing / known limits
+- U20: runtime-provider instrumenting crashes the net9 MonoVM (callspec
+  option). The weaver is the instrumenting path there.
+- Weave scope: whole-namespace weaving on the reference application (7882 methods) never
+  reaches managed code within 240 s; narrow filters only.
+- the reference application weaver needs EmbedAssembliesIntoApk=false until U22 lands.
 
 ## Traps / hypotheses
-- Session DBs created before 2026-08-20 15:50 lack method.token (schema
-  still v1, no external consumer yet): delete old test sessions under
-  %TEMP%\net-android-profiler-tests\sessions if a tool errors on them.
-- A stray dotnet-dsrouter.exe holds port 9000 -> sessions hang in
-  WaitingForApp: kill it (taskkill /F /IM dotnet-dsrouter.exe).
-- Heap dump requested right after app launch yields nothing (retry/warm-up
-  handle it); MonoVM never signals dump completion -> quiescence.
-- debug.mono.env >90 bytes aborts the app: never use it for MONO_DIAGNOSTICS.
-- Override env file is 0400: rm + cp + chmod 400 via run-as.
-- Git Bash converts /data/... paths: MSYS_NO_PATHCONV=1 for adb commands.
-- Incremental build after env change -> broken APK: wipe obj/ bin/.
-- msbuild -p: commas -> %2C.
-- AppInspector pulls every APK of the package per session (U18: cache).
+- Stale .pdb next to a woven assembly silently disables it (deployer moves it
+  aside now).
+- adb exec-out reads must drain stdout before waiting for exit; sizes are
+  verified against stat.
+- Collector static ctor must not touch JNI (deadlocks the UI thread).
+- `am start -W` times out on instrumented apps.
+- A stray dotnet-dsrouter holds port 9000: taskkill before device runs.
+- Git Bash mangles /data/... paths: MSYS_NO_PATHCONV=1.

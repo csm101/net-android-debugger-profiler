@@ -23,6 +23,8 @@
     <ProjectReference Include="..\..\src\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
     <ProjectReference Include="..\..\src\NetAndroidProfiler.Collector\NetAndroidProfiler.Collector.csproj" />
     <ProjectReference Include="..\WeaveSample\WeaveSample.csproj" />
+    <!-- Build order only: the MCP end-to-end tests spawn the server as a process. -->
+    <ProjectReference Include="..\..\src\NetAndroidProfiler.Mcp\NetAndroidProfiler.Mcp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

@@ -73,12 +73,13 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
 - [ ] Large tree insert performance guard (U6)
 
-## F. MCP end-to-end
-- [~] stdio handshake + tools/list + list_devices + profile_sessions + profile_report (manual smoke run 2026-08-20; automate as a test spawning the server)
-- [ ] profile_run on TestTarget -> profile_hotspots returns busy method
+## F. MCP end-to-end (Fast/McpServerTests: the server is spawned as a process over stdio)
+- [x] initialize + tools/list expose the P1 tool surface - `Initialize_and_tools_list_expose_the_P1_tool_surface`
+- [x] Read-only tools answer from a prepared sessions root (sessions, hotspots, report, tree, callers, threads) - `Read_only_tools_answer_from_the_prepared_session`
+- [x] Error paths return MCP errors and the server stays alive - `Error_paths_return_mcp_errors_instead_of_hanging`
+- [ ] profile_run on TestTarget through MCP (device test)
 - [ ] profile_start / profile_stop round trip
-- [ ] profile_annotate_source maps samples onto source lines
-- [ ] Error paths return MCP errors, never hang (unknown device, missing package, bad mode)
+- [ ] profile_annotate_source through MCP on a prepared session
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
