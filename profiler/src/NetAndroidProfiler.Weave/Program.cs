@@ -78,8 +78,10 @@ try
 
     if (weaver.Map.Count == 0)
     {
-        Console.Error.WriteLine($"nap-weave: the filter '{callspec}' matched no method in {string.Join(", ", assemblies.Select(Path.GetFileName))}");
-        return 1;
+        // Not an error: the same targets file may be imported for several projects.
+        // A session that finds no map fails with a clear message of its own.
+        Console.WriteLine($"nap-weave: warning: the filter '{callspec}' matched no method in {string.Join(", ", assemblies.Select(Path.GetFileName))}; nothing was woven");
+        return 0;
     }
     weaver.WriteMap(mapPath);
     if (!quiet)

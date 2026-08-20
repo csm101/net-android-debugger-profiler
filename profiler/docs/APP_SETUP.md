@@ -58,9 +58,13 @@ dotnet publish src/NetAndroidProfiler.Weave -c Release -o build/tools     # once
 <Import Project="<net-android-profiler>\build\NetAndroidProfiler.Weaving.targets" />
 ```
 
+Or, without editing the app project at all, hand the targets file to MSBuild
+for that one build with `-p:CustomAfterMicrosoftCommonTargets=<path>`:
+
 ```
 dotnet build -c Debug -t:Install -p:EnableDiagnostics=true \
-  -p:NapWeave=true -p:NapCallspec="T:My.App.Services.SyncService"
+  -p:NapWeave=true -p:NapCallspec="T:My.App.Services.SyncService" \
+  -p:CustomAfterMicrosoftCommonTargets="C:\tools\net-android-profiler\build\NetAndroidProfiler.Weaving.targets"
 ```
 
 The build rewrites the app assembly before packaging, copies the collector next

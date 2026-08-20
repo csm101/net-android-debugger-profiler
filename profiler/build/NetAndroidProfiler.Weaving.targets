@@ -15,6 +15,10 @@
           -p:EnableDiagnostics=true -p:NapWeave=true \
           -p:NapCallspec="T:My.App.Services.SyncService"
 
+    Only the Android application project is woven: the targets check
+    $(AndroidApplication), so importing this file for the whole build (e.g. with
+    -p:CustomAfterMicrosoftCommonTargets=...) leaves referenced class libraries alone.
+
     Properties:
       NapWeave        true to weave this build (default: false)
       NapCallspec     which methods to weave (same grammar as the profiler's
@@ -41,14 +45,14 @@
   </PropertyGroup>
 
   <!-- The collector must be part of the app so the woven calls resolve at run time. -->
-  <ItemGroup Condition="'$(NapWeave)' == 'true'">
+  <ItemGroup Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'">
     <Reference Include="NetAndroidProfiler.Collector">
       <HintPath>$(NapCollectorAssembly)</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
 
-  <Target Name="NapValidateWeaving" Condition="'$(NapWeave)' == 'true'">
+  <Target Name="NapValidateWeaving" Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'">
     <Error Condition="'$(NapCallspec)' == ''"
            Text="NapWeave is true but NapCallspec is empty. Pass -p:NapCallspec=&quot;T:My.App.Type&quot; (or N:My.Namespace). Weaving everything makes the app unusably slow." />
     <Error Condition="!Exists('$(NapWeaveTool)')"
@@ -63,7 +67,7 @@
     so incremental builds never double-instrument.
   -->
   <Target Name="NapWeaveAssemblies"
-          Condition="'$(NapWeave)' == 'true'"
+          Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'"
           DependsOnTargets="NapValidateWeaving"
           AfterTargets="CoreCompile">
     <PropertyGroup>
