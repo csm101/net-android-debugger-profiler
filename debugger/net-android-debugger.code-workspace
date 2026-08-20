@@ -1,0 +1,14 @@
+{
+  "folders": [
+    { "name": "net-android-debugger", "path": "." },
+    { "name": "the reference application (debug target, read-only)", "path": "../../Work/ReferenceApp" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/bin": true,
+      "**/obj": true,
+      "**/.vs": true
+    },
+    "dotnet.defaultSolution": "NetAndroidDebugger.slnx"
+  }
+}
