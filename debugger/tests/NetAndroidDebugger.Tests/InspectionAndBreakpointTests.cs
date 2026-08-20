@@ -132,11 +132,12 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
     public async Task AbortedSlowInvoke_LeavesTheThreadUsable()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var probeLine = TestEnvironment.LineOf(Main, "Android.Util.Log.Verbose(\"TestTarget\", $\"probe {fast}\");");
         await using var session = await LaunchAsync(cts.Token, s =>
         {
             // Short timeouts so SlowProbe.SlowValue (8 s getter) is certainly aborted.
             s.SetEvaluationOptions(evaluationTimeoutMs: 1500, memberEvaluationTimeoutMs: 1500);
-            s.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+            s.SetBreakpoint(new BreakpointSpec(Main, probeLine));
         });
 
         var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);

@@ -20,6 +20,7 @@ public sealed class DebugSession : IAsyncDisposable
     private readonly BreakpointStore _store = new();
     private readonly Dictionary<int, ProcessDebuggerEntry> _processes = new();
     private readonly Dictionary<int, Task> _attaching = new();
+    private readonly HashSet<int> _unhandledReported = new();
     private readonly Dictionary<int, (BreakpointSpec Spec, Breakpoint Bp)> _breakpoints = new();
     private readonly List<string> _appOutput = new();
     private readonly List<string> _debuggerOutput = new();
@@ -268,6 +269,22 @@ public sealed class DebugSession : IAsyncDisposable
 
     private void OnProcessStopped(Engine.ProcessDebugger pd)
     {
+        // An unhandled exception tears the process down, and the runtime usually raises further
+        // unhandled exceptions on other threads while it dies. Only the first one is the failure
+        // the caller cares about: report that one and resume the rest automatically, so the app
+        // reaches its end and the session settles on Exited instead of asking for N continues.
+        if (pd.LastStopReason == StopReason.UnhandledException)
+        {
+            bool alreadyReported;
+            lock (_lock) alreadyReported = !_unhandledReported.Add(pd.Pid);
+            if (alreadyReported)
+            {
+                _log($"pid {pd.Pid}: further unhandled exception while the process is dying - resumed automatically (the first one is kept in the exception details)");
+                pd.Continue();
+                return;
+            }
+        }
+
         StopEvent ev;
         lock (_lock)
         {

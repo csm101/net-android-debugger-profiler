@@ -87,6 +87,15 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   logcat `AgentDetected` event race on the first process; both await the same
   in-flight task, and a process is exposed in `_processes` only after its SDB
   handshake completes, so pause/continue never touch a half-connected VM.
+- An unhandled exception is reported once per process: the runtime raises more
+  of them on other threads while the process dies, and those extra stops are
+  resumed automatically (`_unhandledReported`) so one Continue is enough and
+  the reported details stay those of the first, real failure.
+- Reading a frame's locals invokes nothing by itself, but expanding a value
+  invokes its property getters in the debuggee — one slow getter therefore
+  costs every expansion of that object. Keep deliberately slow members out of
+  frames the rest of the suite inspects (TestTarget isolates `SlowProbe` in
+  its own method).
 - Value formatting is culture-sensitive in Mono.Debugging; frontends set
   `InvariantCulture` at startup so numeric/date output is stable for machine
   consumers (MCP server `Program.cs`; tests via a `[ModuleInitializer]`).

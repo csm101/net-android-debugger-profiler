@@ -52,8 +52,8 @@ public class MainActivity : Activity
         // (must surface as app output, not debugger log).
         object? nothing = _ticks < 0 ? new object() : null;
         var sample = new Sample(_ticks);
-        var slow = new SlowProbe();
         string described = Describe(sample);
+        EvaluationProbe();
         // Test hook: `adb shell run-as <pkg> touch files/crash-on-tick` makes the next tick
         // throw an unhandled exception on this timer thread (kills the process).
         if (File.Exists(Path.Combine(FilesDir!.AbsolutePath, "crash-on-tick")))
@@ -74,6 +74,18 @@ public class MainActivity : Activity
         System.Diagnostics.Debug.WriteLine($"trace {message}");
         Console.WriteLine($"console {message}");
         Android.Util.Log.Debug("TestTarget", message);
+    }
+
+    /// <summary>
+    /// Own frame for the slow-getter scenario: a <see cref="SlowProbe"/> local must never sit in
+    /// <see cref="Tick"/>, or every test that reads Tick's locals pays for (and aborts) an
+    /// 8-second invocation.
+    /// </summary>
+    private void EvaluationProbe()
+    {
+        var slow = new SlowProbe();
+        int fast = slow.FastValue;
+        Android.Util.Log.Verbose("TestTarget", $"probe {fast}");
     }
 
     private static string Describe(Sample sample)

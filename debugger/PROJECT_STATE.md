@@ -98,6 +98,10 @@ applicable to SDB - dropped unless a need appears.
   deadline); the engine owns the attach dance, msbuild only deploys.
 - Consumers of the vendored libs must reference Mono.Cecil 0.10.1 explicitly.
 - Emulator-based integration tests are viable: ~8 s per restart+connect+hit.
+- Debuggee invocation is the fragile part of inspection: expanding a value
+  invokes its getters, an invocation that outlasts the timeout is aborted (the
+  thread survives, the member reads as an error), and unattended emulators must
+  be headless. Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md.
 - Multi-process apps (the reference application spawns `:crash_report_process` at init): every
   process reads the same property; same port → helper dies in a respawn loop.
   Port rotation (rewrite the property right after the main process has read

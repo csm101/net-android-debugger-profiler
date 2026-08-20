@@ -155,14 +155,27 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
             if (details.Value.Message.Length > 0)
                 Assert.Contains("unhandled failure requested", details.Value.Message);
 
-            // Note: whether the app dies at the unhandled-exception stop or stays suspended until
-            // Continue is timing-dependent (see KNOWN_UNKNOWNS U12); this test only verifies that
-            // the exception is reported with details. Resume best-effort and log the outcome.
+            // One Continue must be enough: further unhandled exceptions raised while the process
+            // dies are resumed automatically by the engine, so the crashing process reaches its
+            // end without further intervention. (The session only reports Exited once *every*
+            // process is gone, and the sticky :helper service can outlive the main one.)
             session.Continue();
-            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
-            while (session.State != SessionState.Exited && DateTime.UtcNow < deadline)
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(45);
+            ProcessSnapshot? mainProc;
+            do
+            {
+                mainProc = session.GetProcesses().FirstOrDefault(p => p.Name == pkg);
+                if (session.State == SessionState.Exited || mainProc is null || mainProc.HasExited) break;
                 await Task.Delay(250, cts.Token);
-            output.WriteLine($"after continue: state={session.State}");
+            } while (DateTime.UtcNow < deadline);
+            output.WriteLine($"after continue: state={session.State} main={mainProc}");
+            Assert.True(session.State == SessionState.Exited || mainProc is null || mainProc.HasExited,
+                $"the crashing process should have died; state={session.State} main={mainProc}");
+            Assert.NotEqual(SessionState.Stopped, session.State);
+            // The details still describe the first (real) exception, not a teardown one.
+            var still = session.GetExceptionDetails();
+            Assert.NotNull(still);
+            Assert.Contains("ApplicationException", still.Value.Type);
         }
         finally
         {

@@ -248,7 +248,16 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
   Stop it with `adb -s emulator-5554 emu kill` (targeted by serial; killing
   the qemu PID from a non-elevated shell silently fails and a second launch
   then refuses to start: "multiple emulators with the same AVD").
-  GPU: `-gpu host` (NVIDIA GL) is fast but crashed qemu once after 4 h;
+  **Unattended runs must be headless**: a windowed emulator cannot start once
+  the desktop session is locked or the display sleeps — it logs `Unable to
+  open monitor interface to \\.\DISPLAY1`, never registers with adb, and just
+  hangs. `-no-window -gpu swiftshader_indirect` starts fine in that state.
+  `DevTools/scripts/ensure-emulator.sh` defaults to that and also clears the
+  stale `hardware-qemu.ini.lock` / `multiinstance.lock` / `read-snapshot.txt`
+  a crashed instance leaves behind (clearing them does not touch installed
+  apps or user data; a corrupted `snapshots/default_boot` also blocks boot,
+  hence `-no-snapshot`).
+  GPU: `-gpu host` (NVIDIA GL) is fast but crashed qemu twice in one day;
   `-gpu swiftshader_indirect` is stable but so slow that debuggee invokes
   time out and the suite becomes flaky (runs 10-11); `-gpu angle_indirect`
   silently falls back to SwiftShader here. **[verified 2026-08-20]**

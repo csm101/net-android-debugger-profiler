@@ -20,6 +20,13 @@ Conventions (mirroring the Delphi project's discipline):
 
 ## Running the suite
 
+- Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
+  the AVD headless (a windowed emulator cannot start while the desktop is
+  locked) and clears the locks a crashed qemu leaves behind.
+- TestTarget is shared by every test: a member that is deliberately slow or
+  throwing must live in its own method, or every test that touches that frame
+  pays for it (see `SlowProbe` / `EvaluationProbe`).
+
 - Needs a booted device/emulator with TestTarget deployable. Select it with
   `NAD_DEVICE_SERIAL=<serial>` (mandatory when more than one device is
   attached; the suite never relies on the adb default device).
@@ -131,6 +138,9 @@ Conventions (mirroring the Delphi project's discipline):
 ## G. Exceptions
 - [x] First-chance filter with type, message and stack via GetExceptionDetails —
       `FirstChanceExceptionFilter_StopsOnThrow_WithDetails`
+- [x] Only the first unhandled exception per process is reported; the ones the
+      runtime raises while the process dies are resumed automatically, so one
+      continue is enough — `UnhandledException_IsReported_ThenAppExits` (U12)
 - [x] Unhandled exception reported with type + stack trace, then the app exits —
       `UnhandledException_IsReported_ThenAppExits` (details captured at stop
       time from the backtrace, since the process dies right after; message is

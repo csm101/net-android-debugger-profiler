@@ -45,7 +45,7 @@ near-term concern for net9; track when the reference application retargets.
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
 
-## U11 - ANSWERED (kept until the suite confirms it, then delete)
+## U11 - ANSWERED (delete once the entry stops being useful context)
 Measured 2026-08-20 on a healthy emulator with the current engine: a debuggee
 invocation that is aborted on timeout (TestTarget `SlowProbe.SlowValue`, an
 8 s getter with a 1.5 s timeout) leaves the stopped thread **fully usable** -
@@ -56,26 +56,13 @@ emulator (invokes so slow that the abort itself could not complete), not a
 structural defect; the current timeouts (12 s / 18 s) and RunBounded cover it.
 No warm-up invoke needed. Covered by `AbortedSlowInvoke_LeavesTheThreadUsable`.
 
-## U11 (original text, for context)
-Recovering from a wedged evaluation thread
-After an aborted invoke (timeout) on the stopped thread, all further invokes
-on that thread fail (ANDROID_ATTACH_NOTES.md, "Method invocation ... can
-wedge"). Open: does a Continue + next stop heal it (new invoke context) or is
-the thread unusable for the rest of the process lifetime? Can invokes be
-routed to another stopped thread? Is it specific to culture/ICU init (first
-DateTime.ToString) - if so, a one-time warm-up invoke right after attach
-(e.g. evaluate `System.DateTime.Now.ToString()` with a long timeout while
-nothing else is pending) would remove the trigger. Measure on the emulator
-and on a real device before designing more.
-
-## U12 - Continue after an unhandled exception; multiple unhandled stops
-An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw.
-Observed (suite run 16): after Continue the runtime raises a SECOND
-UnhandledException on another thread (thread 5, e.g. inside monitor/teardown)
-which re-suspends before the process dies; sometimes the process instead dies
-immediately at the first stop. So "Continue once -> app exits" is not reliable.
-Open: should the engine auto-continue repeated unhandled-exception stops until
-the process exits (with a cap), or expose them as distinct stops? For now the
-frontend/user resumes until Exited, or calls terminate. Decide when a real app
-scenario needs it; the SDB semantics (can an unhandled exception even be
-resumed meaningfully?) need confirming against dotnet/android behavior.
+## U12 - DECIDED (delete once the entry stops being useful context)
+An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw,
+and while the process dies the runtime raises further unhandled exceptions on
+other threads, each of which suspended it again - so "Continue once and the
+app exits" did not hold. Decision (implemented in DebugSession, 2026-08-20):
+only the FIRST unhandled exception per process is reported; later ones are
+resumed automatically and logged, and the reported details keep describing the
+first one. One Continue is therefore enough. Note the session still reports
+Exited only when every process is gone, and the sticky `:helper` service can
+outlive the crashing main process.
