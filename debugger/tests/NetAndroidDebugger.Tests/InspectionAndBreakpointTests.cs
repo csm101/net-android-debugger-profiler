@@ -108,6 +108,54 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.NotEmpty(session.GetThreads(stop.Pid));
     }
 
+    [Fact]
+    public async Task StopLocation_IsAlwaysTheUserLine_EvenWhenStoppedInsideAnExternalCall()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        // TickLine calls Android.Util.Log.Debug: the stop event is sometimes delivered with the
+        // JNI callee on top of the stack, which used to be reported as the stop location.
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        for (int i = 0; i < 6; i++)
+        {
+            Assert.NotNull(stop);
+            output.WriteLine($"stop {i}: {stop.Location?.Method} {stop.Location?.File}:{stop.Location?.Line}");
+            Assert.EndsWith("MainActivity.cs", stop.Location?.File);
+            Assert.Equal(TickLine, stop.Location?.Line);
+            Assert.Contains("Tick", stop.Location?.Method);
+            stop = await session.ContinueAndWaitAsync(StopTimeout, cts.Token);
+        }
+    }
+
+    [Fact]
+    public async Task AbortedSlowInvoke_LeavesTheThreadUsable()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            // Short timeouts so SlowProbe.SlowValue (8 s getter) is certainly aborted.
+            s.SetEvaluationOptions(evaluationTimeoutMs: 1500, memberEvaluationTimeoutMs: 1500);
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+        });
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal("7", Eval(session, stop, "slow.FastValue"));
+
+        var timedOut = session.Evaluate(stop.Pid, stop.ThreadId, 0, "slow.SlowValue");
+        Assert.True(timedOut.IsError);
+
+        // The aborted invocation must not poison the stopped thread: further evaluation,
+        // object expansion and resuming all keep working (KNOWN_UNKNOWNS U11).
+        Assert.Equal("7", Eval(session, stop, "slow.FastValue"));
+        var probe = session.GetLocals(stop.Pid, stop.ThreadId).Single(l => l.Name == "slow");
+        var children = session.ExpandVariable(probe.ExpansionHandle!).ToDictionary(c => c.Name);
+        Assert.Equal("7", children["FastValue"].Value);
+        Assert.True(children["SlowValue"].IsError);
+        Assert.NotNull(await session.ContinueAndWaitAsync(StopTimeout, cts.Token));
+    }
+
     // ------------------------------------------------------------------ stepping
 
     [Fact]

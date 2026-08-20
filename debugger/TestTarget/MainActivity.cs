@@ -52,6 +52,7 @@ public class MainActivity : Activity
         // (must surface as app output, not debugger log).
         object? nothing = _ticks < 0 ? new object() : null;
         var sample = new Sample(_ticks);
+        var slow = new SlowProbe();
         string described = Describe(sample);
         // Test hook: `adb shell run-as <pkg> touch files/crash-on-tick` makes the next tick
         // throw an unhandled exception on this timer thread (kills the process).
@@ -80,6 +81,26 @@ public class MainActivity : Activity
         int count = sample.Numbers.Count;
         string text = $"{sample.Name}:{sample.Kind}:{count}";
         return text;
+    }
+}
+
+/// <summary>
+/// Evaluation-robustness fodder: a property whose getter is slower than any sane
+/// evaluation timeout, next to a fast one. Used to study what an *aborted* debuggee
+/// invocation does to the stopped thread (KNOWN_UNKNOWNS U11). Kept out of
+/// <see cref="Sample"/> so expanding `sample` never triggers the slow getter.
+/// </summary>
+public sealed class SlowProbe
+{
+    public int FastValue => 7;
+
+    public int SlowValue
+    {
+        get
+        {
+            Thread.Sleep(8000);
+            return 42;
+        }
     }
 }
 

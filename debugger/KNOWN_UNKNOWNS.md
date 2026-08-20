@@ -45,7 +45,19 @@ near-term concern for net9; track when the reference application retargets.
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
 
-## U11 - Recovering from a wedged evaluation thread
+## U11 - ANSWERED (kept until the suite confirms it, then delete)
+Measured 2026-08-20 on a healthy emulator with the current engine: a debuggee
+invocation that is aborted on timeout (TestTarget `SlowProbe.SlowValue`, an
+8 s getter with a 1.5 s timeout) leaves the stopped thread **fully usable** -
+further evaluation returns correct values, object expansion reports the slow
+member as `[error]` while still reading the others, and Continue works. The
+"wedged thread" seen in suite runs 10-11 was the degraded software-GPU
+emulator (invokes so slow that the abort itself could not complete), not a
+structural defect; the current timeouts (12 s / 18 s) and RunBounded cover it.
+No warm-up invoke needed. Covered by `AbortedSlowInvoke_LeavesTheThreadUsable`.
+
+## U11 (original text, for context)
+Recovering from a wedged evaluation thread
 After an aborted invoke (timeout) on the stopped thread, all further invokes
 on that thread fail (ANDROID_ATTACH_NOTES.md, "Method invocation ... can
 wedge"). Open: does a Continue + next stop heal it (new invoke context) or is

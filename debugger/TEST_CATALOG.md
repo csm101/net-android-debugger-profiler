@@ -87,6 +87,9 @@ Conventions (mirroring the Delphi project's discipline):
       `CallStack_TopFrameIsUserCode_WithExternalFramesBelow`
 - [x] Threads listed when stopped, including the stopping thread —
       `Threads_AreListed_WhenStopped`
+- [x] Stop location is always the user's line, even when the stop is delivered
+      inside an external call (JNI callee on top) —
+      `StopLocation_IsAlwaysTheUserLine_EvenWhenStoppedInsideAnExternalCall`
 - [ ] Stack of a thread other than the stopping one
 - [x] Main/UI thread identified ("Main" label, OnCreate stops on it) —
       `MainThread_IsLabelledMain_AndOnCreateRunsOnIt`; unnamed threads get
@@ -109,8 +112,9 @@ Conventions (mirroring the Delphi project's discipline):
       completes instead (runs 7-15).
 - [ ] `set_evaluation_options(allowToStringCalls=false)` makes a DateTime
       render as a struct without invoking — `EvaluationOptions_NoToString_RendersWithoutInvoke`
-- [ ] Warm-up after a wedged thread: Continue + next stop makes invokes work
-      again (U11) — `WedgedInvoke_RecoversAfterContinue`
+- [x] An aborted slow invocation leaves the thread usable (evaluation,
+      expansion and continue all keep working; the slow member shows as
+      `[error]`) — `AbortedSlowInvoke_LeavesTheThreadUsable` (answers U11)
 - [~] Dictionary<K,V> expansion — `DictionaryExpansion_ShowsEntries` (flaky on
       the software-GPU emulator: depends on the first DateTime.ToString not
       exceeding the invoke timeout, see U11)

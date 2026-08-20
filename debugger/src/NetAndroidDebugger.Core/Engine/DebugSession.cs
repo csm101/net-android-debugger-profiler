@@ -832,13 +832,31 @@ public sealed class DebugSession : IAsyncDisposable
         return bt.GetFrame(frameIndex);
     }
 
+    /// <summary>
+    /// Where a stop happened, as a caller wants to see it: the topmost frame, unless that frame
+    /// has no source — a breakpoint on a line that calls into external code can be delivered with
+    /// the callee on top (e.g. `Java.Interop.JniPeerMembers.get_StaticMethods` for a line calling
+    /// `Android.Util.Log.Debug`). In that case report the nearest frame below that does have
+    /// source, so the location is always the user's line when there is one.
+    /// </summary>
     private static SourceLocationInfo? TryDescribeLocation(Backtrace? bt)
     {
         try
         {
             if (bt is null || bt.FrameCount == 0) return null;
-            var loc = bt.GetFrame(0).SourceLocation;
-            return loc is null ? null : new SourceLocationInfo(loc.FileName, loc.Line, loc.Column, loc.MethodName);
+            var top = bt.GetFrame(0).SourceLocation;
+            if (!string.IsNullOrEmpty(top?.FileName))
+                return new SourceLocationInfo(top.FileName, top.Line, top.Column, top.MethodName);
+
+            var limit = Math.Min(bt.FrameCount, 20);
+            for (int i = 1; i < limit; i++)
+            {
+                var loc = bt.GetFrame(i).SourceLocation;
+                if (!string.IsNullOrEmpty(loc?.FileName))
+                    return new SourceLocationInfo(loc.FileName, loc.Line, loc.Column, loc.MethodName);
+            }
+            // No frame carries source: report the top frame as-is (pause inside runtime code).
+            return top is null ? null : new SourceLocationInfo(top.FileName, top.Line, top.Column, top.MethodName);
         }
         catch { return null; }
     }
