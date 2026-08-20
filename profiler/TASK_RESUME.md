@@ -19,9 +19,18 @@ agent for final validation.
 6. Weaver refinements: property accessors skipped by default, async stubs
    counted and warned about; docs (ARCHITECTURE engines + .napw format,
    README, docs/USAGE.md).
+7. Weaver allocation tracking: newobj/newarr in woven methods report their
+   type, collector writes nap-types.txt, analyzer fills alloc_by_type /
+   alloc_by_site - the net9 path now has memory data too (fast + device).
+8. Build-time weaving scoped to the Android app project so the targets file
+   can be imported build-wide without touching the app csproj.
 
 ## Next action if interrupted right now
-Read the test-runner report; fix anything red. Then pick from the queue below.
+Check the background build of the reference application with build-time weaving
+(-p:NapWeave=true -p:NapCallspec="T:App.Droid.AppApplication"
+-p:CustomAfterMicrosoftCommonTargets=<repo>/build/NetAndroidProfiler.Weaving.targets,
+assemblies stay embedded), then run a weaver session with
+WeaveMapPath=<V7 bin>/nap-weave.map and confirm timings. Then the queue below.
 
 ## Queue (highest value first)
 - U13: type names for allocations of types loaded before the session (attach
@@ -29,9 +38,8 @@ Read the test-runner report; fix anything red. Then pick from the queue below.
   keywords at session start.
 - U8: async/iterator attribution by weaving the compiler-generated MoveNext
   and stitching resumptions per state machine instance.
-- Weaver allocations: record allocation events from the weaver engine so the
-  net9 path has memory data too.
-- the reference application: build-time weaving on the real app (needs a build with NapWeave).
+- the reference application: confirm the build-time weaving session (build running).
+- U8: async/iterator attribution (weave the state machine MoveNext).
 - U6: call-tree storage at scale (query latency for the GUI).
 - P4: Delphi GUI (reads session.db).
 
