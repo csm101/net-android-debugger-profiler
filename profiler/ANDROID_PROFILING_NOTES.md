@@ -337,6 +337,13 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   rewritten assembly must be moved aside or the runtime silently does not use
   the woven copy. **[verified - App.Droid: AppApplication..ctor 8.78 s,
   OnCreate 4.54 s recorded]**
+- **An app with embedded assemblies must not get an override environment
+  file**: writing `files/.__override__/<abi>/environment` creates that
+  directory, the runtime then expects to load its assemblies from there and
+  the app stops starting (no crash in logcat). Build-time weaving therefore
+  bakes `NAP_PROFILER_OUT` / `NAP_PROFILER_MARKER_DIR` into the app through
+  an `@(AndroidEnvironment)` file, and the session injects nothing.
+  **[verified - V7 build-time session green only after this change]**
 - **Switching an app between fast deployment and embedded assemblies leaves a
   stale `files/.__override__/<abi>/` behind** (441 files observed on V7 after
   moving back to `EmbedAssembliesIntoApk=true`): the runtime keeps preferring

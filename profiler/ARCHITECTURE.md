@@ -99,9 +99,12 @@ Two deployment shapes:
   backups, moves the stale `.pdb` aside, injects the environment, and restores
   everything at the end. Requires a fast-deployment build.
 - **at build time** (`nap-weave` + `build/NetAndroidProfiler.Weaving.targets`):
-  the build rewrites the assembly before packaging and writes `nap-weave.map`;
-  the session consumes the map (`SessionSpec.WeaveMapPath`) and touches nothing
-  on the device. This is the path for apps that embed their assemblies.
+  the build rewrites the assembly before packaging, bakes the collector's
+  output directory into the app environment and writes `nap-weave.map`; the
+  session consumes the map (`SessionSpec.WeaveMapPath`), injects nothing and
+  only launches the app and reads its results. This is the path for apps that
+  embed their assemblies - injecting an override environment file would stop
+  such an app from starting at all.
 
 ## SQLite schema contract
 

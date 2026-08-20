@@ -290,6 +290,20 @@ public sealed class ProfilerSession : IAsyncDisposable
         await _adb.RunAsAsync(device.Serial, Spec.Package, $"rm -rf {eventsDir} && mkdir -p {eventsDir}", ct).ConfigureAwait(false);
         string absoluteEvents = await _adb.RunAsAsync(device.Serial, Spec.Package, $"cd {eventsDir} && pwd", ct).ConfigureAwait(false);
 
+        if (!string.IsNullOrWhiteSpace(Spec.WeaveMapPath))
+        {
+            // Build-time weaving: the app already carries NAP_PROFILER_OUT from its build.
+            // Writing an override environment file here would create
+            // files/.__override__/, which an app with embedded assemblies must not have.
+            Log($"build-time weaving: environment comes from the app build (events in {absoluteEvents.Trim()})");
+            await _weaveDeployer.ClearCollectorMarkerAsync(ct).ConfigureAwait(false);
+            await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
+            await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+            _appLaunchedByUs = true;
+            Log("app launched (weaver, build-time)");
+            return;
+        }
+
         _env = new AppEnvironment(_adb, device.Serial, Spec.Package, device.Abi);
         string eventsAbs = absoluteEvents.Trim();
         string markerDir = eventsAbs.Contains('/') ? eventsAbs[..eventsAbs.LastIndexOf('/')] : eventsAbs;

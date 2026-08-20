@@ -50,6 +50,30 @@
          it is computed inside the target below. -->
   </PropertyGroup>
 
+  <!--
+    The woven app must know where to write its events. Injecting that variable on the
+    device means writing into files/.__override__/, which an app with embedded
+    assemblies must not have (the runtime then expects to find its assemblies there
+    and stops starting), so the environment is baked into this build instead. The
+    path follows the same convention the profiler reads.
+  -->
+  <Target Name="NapWriteEnvironment"
+          Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'"
+          BeforeTargets="_GenerateJavaStubs;_GenerateEnvironmentFiles">
+    <PropertyGroup>
+      <_NapEnvFile>$(IntermediateOutputPath)nap-profiler.env</_NapEnvFile>
+      <_NapEventsDir>/data/user/0/$(ApplicationId)/files/nap-events</_NapEventsDir>
+      <_NapFilesDir>/data/user/0/$(ApplicationId)/files</_NapFilesDir>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_NapEnvFile)"
+                      Lines="NAP_PROFILER_OUT=$(_NapEventsDir);NAP_PROFILER_MARKER_DIR=$(_NapFilesDir)"
+                      Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <AndroidEnvironment Include="$(_NapEnvFile)" />
+      <FileWrites Include="$(_NapEnvFile)" />
+    </ItemGroup>
+  </Target>
+
   <!-- The collector must be part of the app so the woven calls resolve at run time. -->
   <ItemGroup Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'">
     <Reference Include="NetAndroidProfiler.Collector">
