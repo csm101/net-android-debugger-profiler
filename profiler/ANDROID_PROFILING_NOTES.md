@@ -337,6 +337,12 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   rewritten assembly must be moved aside or the runtime silently does not use
   the woven copy. **[verified - App.Droid: AppApplication..ctor 8.78 s,
   OnCreate 4.54 s recorded]**
+- **Switching an app between fast deployment and embedded assemblies leaves a
+  stale `files/.__override__/<abi>/` behind** (441 files observed on V7 after
+  moving back to `EmbedAssembliesIntoApk=true`): the runtime keeps preferring
+  those copies and the app can stop starting entirely, with no crash in
+  logcat. Clear the directory (`run-as <pkg> rm -rf files/.__override__`) or
+  uninstall before reinstalling in the other shape. **[verified]**
 - Reading files out of the app sandbox: `adb exec-out run-as ... cat` must
   drain stdout to EOF *before* waiting for the process to exit, otherwise the
   payload can be truncated (2 KB of a 6656-byte assembly observed); the engine

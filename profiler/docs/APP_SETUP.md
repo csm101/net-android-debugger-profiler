@@ -76,6 +76,11 @@ the weaver engine pointing at that map (MCP: `engine=weaver`,
 device, it only configures the run and reads the results. Nothing is woven
 unless `NapWeave=true`, so normal builds are unaffected.
 
+If you switch an app between fast deployment and embedded assemblies, clear the
+old fast-deployment copies first (`adb shell run-as <package> rm -rf
+files/.__override__`, or simply uninstall): the runtime prefers whatever is in
+that directory, and stale assemblies can stop the app from starting at all.
+
 **Keep the weave filter narrow.** Every woven method costs an Enter/Leave pair
 per call, and the cost is paid from the very first line of startup. Measured on
 the reference application (emulator): weaving one type (15 methods) runs normally, weaving the
