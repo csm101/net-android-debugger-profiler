@@ -74,9 +74,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: path of nap-weave.map from a build-time weaving build (-p:NapWeave=true). With it nothing is woven or deployed on the device: the installed app already carries the instrumentation.")] string? weaveMapPath = null,
         [Description("heap mode: how many snapshots to take (2 enables heap_diff, i.e. leak hunting)")] int snapshots = 1,
         [Description("heap mode: seconds between snapshots")] int snapshotIntervalSeconds = 30,
+        [Description("Weaver: also instrument property getters/setters (skipped by default: they are trivial and called everywhere)")] bool weavePropertyAccessors = false,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -370,7 +371,7 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
@@ -403,6 +404,7 @@ public sealed class ProfilerTools(SessionHost host)
             string.IsNullOrWhiteSpace(weaveReferenceDirs) ? null : weaveReferenceDirs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
             string.IsNullOrWhiteSpace(weaveMapPath) ? null : weaveMapPath.Trim(),
             Math.Max(1, snapshots),
-            TimeSpan.FromSeconds(Math.Max(1, snapshotIntervalSeconds)));
+            TimeSpan.FromSeconds(Math.Max(1, snapshotIntervalSeconds)),
+            weavePropertyAccessors);
     }
 }

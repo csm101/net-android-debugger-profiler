@@ -28,6 +28,38 @@ public class WeaveFilterTests
 /// process, so the environment variable must be set before anything touches
 /// it and every scenario shares one event directory.
 /// </summary>
+public class WeaverShapeTests
+{
+    private static string Input => Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll");
+    private static string Out(string name) => Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"), name);
+
+    [Fact]
+    public void Property_accessors_are_skipped_by_default_and_can_be_included()
+    {
+        var byDefault = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"));
+        byDefault.Weave(Input, Out("WeaveSample.dll"));
+        Assert.DoesNotContain(byDefault.Map, m => m.FullName.Contains("get_") || m.FullName.Contains("set_"));
+        Assert.True(byDefault.SkippedAccessorCount >= 3, $"expected the Counter/Doubled accessors to be skipped, got {byDefault.SkippedAccessorCount}");
+
+        var withAccessors = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 1, weavePropertyAccessors: true);
+        withAccessors.Weave(Input, Out("WeaveSample.dll"));
+        Assert.Contains(withAccessors.Map, m => m.FullName.Contains("get_Counter"));
+        Assert.Equal(0, withAccessors.SkippedAccessorCount);
+        Assert.True(withAccessors.Map.Count > byDefault.Map.Count);
+    }
+
+    [Fact]
+    public void Async_methods_are_woven_and_counted_as_stubs()
+    {
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"));
+        weaver.Weave(Input, Out("WeaveSample.dll"));
+        Assert.Contains(weaver.Map, m => m.FullName.EndsWith("Shapes.AddAsync"));
+        // The woven method is the stub that starts the state machine: the session warns
+        // that its timing is the synchronous part only.
+        Assert.Equal(1, weaver.AsyncStubCount);
+    }
+}
+
 public class WeaverTests
 {
     [Fact]

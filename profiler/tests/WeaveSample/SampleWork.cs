@@ -40,6 +40,20 @@ public class SampleWork
     }
 }
 
+/// <summary>Property accessors and an async method, for the weaver's filtering rules.</summary>
+public class Shapes
+{
+    public int Counter { get; set; }
+
+    public int Doubled => Counter * 2;
+
+    public async Task<int> AddAsync(int a, int b)
+    {
+        await Task.Yield();
+        return a + b;
+    }
+}
+
 /// <summary>Type excluded by the test filter: must never be woven.</summary>
 public class Untouched
 {

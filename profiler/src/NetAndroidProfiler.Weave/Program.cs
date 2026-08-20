@@ -16,7 +16,7 @@ var assemblies = new List<string>();
 var referenceDirs = new List<string>();
 string? callspec = null, mapPath = null, collectorOut = null;
 int firstId = 1;
-bool quiet = false;
+bool quiet = false, weaveAccessors = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -31,6 +31,7 @@ for (int i = 0; i < args.Length; i++)
         case "--collector-out": collectorOut = Next(a); break;
         case "--first-id": firstId = int.Parse(Next(a)); break;
         case "--quiet": quiet = true; break;
+        case "--property-accessors": weaveAccessors = true; break;
         case "-h" or "--help": Usage(); return 0;
         default: Console.Error.WriteLine($"nap-weave: unknown argument '{a}'"); Usage(); return 2;
     }
@@ -46,7 +47,7 @@ if (assemblies.Count == 0 || callspec is null || mapPath is null)
 try
 {
     var filter = WeaveFilter.Parse(callspec);
-    var weaver = new CecilWeaver(filter, firstId);
+    var weaver = new CecilWeaver(filter, firstId, weaveAccessors);
     var resolver = new Mono.Cecil.DefaultAssemblyResolver();
     foreach (var dir in referenceDirs)
         if (Directory.Exists(dir)) resolver.AddSearchDirectory(dir);
@@ -80,7 +81,12 @@ try
         return 1;
     }
     weaver.WriteMap(mapPath);
-    if (!quiet) Console.WriteLine($"nap-weave: map written to {mapPath} ({weaver.Map.Count} methods)");
+    if (!quiet)
+    {
+        Console.WriteLine($"nap-weave: map written to {mapPath} ({weaver.Map.Count} methods, {weaver.SkippedAccessorCount} property accessors skipped)");
+        if (weaver.AsyncStubCount > 0)
+            Console.WriteLine($"nap-weave: {weaver.AsyncStubCount} woven methods are async - their timing is the synchronous part up to the first await");
+    }
 
     if (collectorOut is not null)
     {
@@ -109,4 +115,5 @@ static void Usage() => Console.Error.WriteLine("""
       --map            output file mapping method ids to names (the profiler reads it).
       --reference-dir  extra directories for resolving the assemblies' references.
       --collector-out  copy NetAndroidProfiler.Collector.dll into this directory.
+      --property-accessors  also weave property getters/setters (skipped by default).
     """);

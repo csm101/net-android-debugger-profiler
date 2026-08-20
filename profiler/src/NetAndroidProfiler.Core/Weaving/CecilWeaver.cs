@@ -30,14 +30,31 @@ public sealed class CecilWeaver
     private const string CollectorTypeName = "Profiler";
 
     private readonly WeaveFilter _filter;
+    private readonly bool _weavePropertyAccessors;
     private readonly List<WovenMethod> _map = new();
     private int _nextId;
 
-    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1)
+    /// <param name="weavePropertyAccessors">
+    /// Property getters and setters are usually trivial and called everywhere, so they
+    /// are skipped by default: instrumenting them multiplies the event volume without
+    /// adding information the caller's own figures do not already carry.
+    /// </param>
+    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false)
     {
         _filter = filter;
         _nextId = firstMethodId;
+        _weavePropertyAccessors = weavePropertyAccessors;
     }
+
+    /// <summary>Property accessors that matched the filter but were skipped.</summary>
+    public int SkippedAccessorCount { get; private set; }
+
+    /// <summary>
+    /// Woven methods that are async stubs: their body only starts the state machine, so
+    /// their recorded time is the synchronous part up to the first await, not the whole
+    /// asynchronous operation (KNOWN_UNKNOWNS U8).
+    /// </summary>
+    public int AsyncStubCount { get; private set; }
 
     /// <summary>Methods woven so far across all assemblies.</summary>
     public IReadOnlyList<WovenMethod> Map => _map;
@@ -76,6 +93,7 @@ public sealed class CecilWeaver
             {
                 if (!CanWeave(method)) continue;
                 if (!_filter.Matches(ns, type.FullName, method.Name)) continue;
+                if (!_weavePropertyAccessors && IsPropertyAccessor(method)) { SkippedAccessorCount++; continue; }
                 int id = _nextId;
                 var snapshot = BodySnapshot.Capture(method.Body);
                 try
@@ -93,6 +111,8 @@ public sealed class CecilWeaver
                     continue;
                 }
                 _nextId++;
+                if (method.CustomAttributes.Any(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.AsyncStateMachineAttribute"))
+                    AsyncStubCount++;
                 var entry = new WovenMethod(id, moduleName, method.MetadataToken.ToInt32(), $"{type.FullName}.{method.Name}");
                 woven.Add(entry);
                 _map.Add(entry);
@@ -140,6 +160,12 @@ public sealed class CecilWeaver
         method.Parameters.Add(new ParameterDefinition(module.TypeSystem.Int32));
         return method;
     }
+
+    /// <summary>True for get_/set_ methods bound to a property.</summary>
+    internal static bool IsPropertyAccessor(MethodDefinition method) =>
+        method.IsGetter || method.IsSetter ||
+        method.Name.StartsWith("get_", StringComparison.Ordinal) ||
+        method.Name.StartsWith("set_", StringComparison.Ordinal);
 
     /// <summary>Methods the weaver cannot safely wrap and skips.</summary>
     internal static bool CanWeave(MethodDefinition method)

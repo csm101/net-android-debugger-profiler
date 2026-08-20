@@ -64,9 +64,10 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver: exception paths balanced by finally-based Leave - same test (Boom / CatchAndReturn)
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
 - [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
-- [ ] Async method timing attributed across await points (state machines skipped in v1 - U8)
+- [ ] Async method timing across await points: the state machine MoveNext is not woven yet (U8)
 - [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map`
-- [ ] Weaver skips getters/setters on request (config)
+- [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
+- [x] Async methods woven as stubs and counted (session warns their timing is the synchronous part) - `Async_methods_are_woven_and_counted_as_stubs`
 - [ ] Build-time weaving exercised on the reference application
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)

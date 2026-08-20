@@ -30,10 +30,15 @@ GUI grids. When does schema v1 freeze?
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
 
-## U8 - Weaver design (P3)
-Fody-based vs raw Mono.Cecil MSBuild task; async/await state machines
-(MoveNext attribution); iterator methods; generic instantiations; on-device
-collector transport (socket vs file) and its overhead.
+## U8 - Weaver: async/iterator attribution
+Decided and done: raw Mono.Cecil (no Fody, no Metalama), file-based collector
+transport, build-time weaving through nap-weave + targets (U22). Still open:
+async and iterator methods are woven at their stub, so the recorded time is
+the synchronous part up to the first await/yield (the session warns about it
+and nap-weave prints the count). To attribute the whole operation the weaver
+must instrument the compiler-generated MoveNext and stitch the resumptions
+together per state machine instance; compiler-generated types are skipped
+today. Generic instantiations share one method id, which is what we want.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships
