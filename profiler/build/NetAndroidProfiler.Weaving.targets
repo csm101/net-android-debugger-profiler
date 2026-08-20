@@ -28,8 +28,8 @@
       NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file)
       NapMapPath      where the id map is written (default: $(OutDir)nap-weave.map)
       NapExtraAssemblies  additional assemblies to weave (semicolon separated paths)
-      NapWeaveArgs    extra arguments for nap-weave, e.g. --allocations or the
-                      experimental --async-bodies
+      NapWeaveArgs    extra arguments passed straight to nap-weave (see its
+                      help for the option names, e.g. allocation tracking)
 
     Republish the tool (dotnet publish src/NetAndroidProfiler.Weave -c Release -o
     build/tools) after updating the profiler: the build uses the published copy,
