@@ -79,7 +79,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
 - [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
 - [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
-- [ ] Large tree insert performance guard (U6)
+- [x] Large tree (200k nodes, 5k methods): write and GUI queries stay interactive - `Large_call_tree_stays_queryable`
 
 ## F. MCP end-to-end (Fast/McpServerTests: the server is spawned as a process over stdio)
 - [x] initialize + tools/list expose the P1 tool surface - `Initialize_and_tools_list_expose_the_P1_tool_surface`

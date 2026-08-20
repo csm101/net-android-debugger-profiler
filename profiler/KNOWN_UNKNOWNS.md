@@ -22,10 +22,6 @@ on TestTarget. Realistic .nettrace sizes for minutes-long the reference applicat
 streaming (EventPipe session via DiagnosticsClient) vs post-mortem file
 analysis; rotation strategy.
 
-## U6 - SQLite schema at scale
-Call-tree storage for millions of nodes: schema, indexing, query latency for
-GUI grids. When does schema v1 freeze?
-
 ## U7 - GUI/Core control contract
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.

@@ -135,6 +135,13 @@ one table. Shared dictionaries are `method`, `thread`, `type`.
 Indexes: `method(full_name)`, `sample_tree(parent_id)`, `sample_tree(method_id)`,
 `sample_edge(callee_method_id)`, `timing_tree(parent_id)`, `timing_tree(method_id)`.
 
+Scale (U6, measured): a synthetic session with 5,000 methods and 200,000 tree
+nodes is written and then queried - hotspots, thread roots, expanding a node,
+callers - in about a second in total on this machine, with every query under
+half a second. The adjacency-list call tree with its `parent_id` index is
+therefore adequate for the GUI; no nested-set or materialized-path rewrite is
+needed. Guarded by `ResultStoreScaleTests.Large_call_tree_stays_queryable`.
+
 Core reader API over the same tables: `ResultStore.Hotspots / SampleTreeChildren /
 Callers / Callees / Timings / TimingTreeChildren / AllocationsByType /
 AllocationsBySite / HeapByType / Threads / FindMethodId`. The GUI reads the
