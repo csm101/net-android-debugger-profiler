@@ -30,15 +30,17 @@ GUI grids. When does schema v1 freeze?
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
 
-## U8 - Weaver: async/iterator attribution
-Decided and done: raw Mono.Cecil (no Fody, no Metalama), file-based collector
-transport, build-time weaving through nap-weave + targets (U22). Still open:
-async and iterator methods are woven at their stub, so the recorded time is
-the synchronous part up to the first await/yield (the session warns about it
-and nap-weave prints the count). To attribute the whole operation the weaver
-must instrument the compiler-generated MoveNext and stitch the resumptions
-together per state machine instance; compiler-generated types are skipped
-today. Generic instantiations share one method id, which is what we want.
+## U8 - CLOSED for async; iterators still open
+Async methods are now woven twice: the stub (synchronous part up to the first
+await) and the compiler-generated state machine's MoveNext, reported as
+"<Type>.<Method> (async body)" - its calls are the resumptions and its time is
+what the method actually executed, excluding the awaits it was suspended on.
+Verified in-process (Task.Yield produces exactly 2 resumptions) and enabled by
+default (WeaveAsyncBodies / --no-async-bodies to turn it off).
+Still open: iterator methods (yield return) use the same state-machine shape
+but are not detected yet - IteratorStateMachineAttribute would extend the same
+pass; and wall-clock duration of an async operation (first enter to final
+completion) is not reconstructed, only executed time.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

@@ -46,7 +46,8 @@ public sealed record SessionSpec(
     string? WeaveMapPath = null,
     int SnapshotCount = 1,
     TimeSpan? SnapshotInterval = null,
-    bool WeavePropertyAccessors = false);
+    bool WeavePropertyAccessors = false,
+    bool WeaveAsyncBodies = true);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -277,10 +278,11 @@ public sealed class ProfilerSession : IAsyncDisposable
             var assemblies = Spec.WeaveAssemblies is { Count: > 0 } ? Spec.WeaveAssemblies : InferAssemblies();
             var filter = WeaveFilter.Parse(string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec!);
             Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
-            _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs, Spec.WeavePropertyAccessors, Spec.TrackAllocations).ConfigureAwait(false);
+            _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs, Spec.WeavePropertyAccessors, Spec.TrackAllocations, Spec.WeaveAsyncBodies).ConfigureAwait(false);
             Log($"woven {_weaveMap.Count} methods (skipped {_weaveDeployer.LastSkippedAccessorCount} property accessors); collector + assemblies deployed");
             if (_weaveDeployer.LastAsyncStubCount > 0)
-                _warnings.Add($"{_weaveDeployer.LastAsyncStubCount} woven methods are async: their timing covers the synchronous part up to the first await, not the whole operation.");
+                _warnings.Add($"{_weaveDeployer.LastAsyncStubCount} woven methods are async: the entry named after the method times its synchronous part up to the first await, " +
+                              $"while '<method> (async body)' ({_weaveDeployer.LastAsyncBodyCount} of them) times what the method actually executed across its resumptions.");
         }
 
         // The collector writes to a private events dir; wipe stale files, then point the app at it.

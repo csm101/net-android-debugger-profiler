@@ -37,14 +37,14 @@ public sealed class WeaveDeployer
     /// <paramref name="filter"/> and deploy them plus the collector. Returns the
     /// weaver id map. The app must be stopped.
     /// </summary>
-    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false, bool trackAllocations = false)
+    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = true)
     {
         string pulled = Path.Combine(_workDir, "pulled");
         string wovenDir = Path.Combine(_workDir, "woven");
         Directory.CreateDirectory(pulled);
         Directory.CreateDirectory(wovenDir);
 
-        var weaver = new CecilWeaver(filter, 1, weavePropertyAccessors, trackAllocations);
+        var weaver = new CecilWeaver(filter, 1, weavePropertyAccessors, trackAllocations, weaveAsyncBodies);
         // Resolve references (constants' types etc.) by pulling siblings from the
         // override dir on demand instead of pulling all ~150 deployed assemblies.
         var resolver = new DeviceAssemblyResolver(pulled, (dllName, localPath) =>
@@ -89,6 +89,7 @@ public sealed class WeaveDeployer
             await PushIntoOverrideAsync(woven, remote, backup: true, ct).ConfigureAwait(false);
             LastSkippedAccessorCount = weaver.SkippedAccessorCount;
             LastAsyncStubCount = weaver.AsyncStubCount;
+            LastAsyncBodyCount = weaver.AsyncBodyCount;
             _deployed.Add(remote);
             // The original .pdb no longer matches the rewritten assembly; move it aside
             // for the duration of the session (a stale pdb can upset the debugger
@@ -166,6 +167,9 @@ public sealed class WeaveDeployer
 
     /// <summary>Async stubs woven by the last weave (their time is the synchronous part only).</summary>
     public int LastAsyncStubCount { get; private set; }
+
+    /// <summary>Async state machines woven by the last weave ("... (async body)" entries).</summary>
+    public int LastAsyncBodyCount { get; private set; }
 
     /// <summary>Marker the collector writes the first time a woven method runs.</summary>
     public string MarkerPath => "files/nap-collector-loaded.txt";

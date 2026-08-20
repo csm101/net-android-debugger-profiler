@@ -65,10 +65,11 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
 - [x] Weaver records allocations by type and by allocating method - `Woven_methods_report_their_allocations_by_type_and_site` (fast) and asserted on device
 - [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
-- [ ] Async method timing across await points: the state machine MoveNext is not woven yet (U8)
+- [ ] Iterator methods (yield return) instrumented like async bodies (U8 leftover)
 - [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map` (skips unless TestTarget was installed from a `-p:NapWeave=true` build)
 - [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
-- [x] Async methods woven as stubs and counted (session warns their timing is the synchronous part) - `Async_methods_are_woven_and_counted_as_stubs`
+- [x] Async methods woven as stub + state machine - `Async_methods_are_woven_as_stub_and_state_machine`
+- [x] Async state machine records every resumption - `Async_state_machine_records_every_resumption`
 - [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the reference application`
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)

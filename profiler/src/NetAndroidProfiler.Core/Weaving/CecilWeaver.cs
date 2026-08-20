@@ -32,6 +32,7 @@ public sealed class CecilWeaver
     private readonly WeaveFilter _filter;
     private readonly bool _weavePropertyAccessors;
     private readonly bool _trackAllocations;
+    private readonly bool _weaveAsyncBodies;
     private readonly List<WovenMethod> _map = new();
     private int _nextId;
 
@@ -46,13 +47,22 @@ public sealed class CecilWeaver
     /// gives per-type and per-method allocation counts on runtimes where the MonoProfiler
     /// provider is unusable.
     /// </param>
-    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false)
+    /// <param name="weaveAsyncBodies">
+    /// Also instrument the compiler-generated state machine of matching async methods,
+    /// reported as "Type.Method (async body)": its calls are the resumptions and its
+    /// time is what the method actually executed, excluding the awaits.
+    /// </param>
+    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = true)
     {
         _filter = filter;
         _nextId = firstMethodId;
         _weavePropertyAccessors = weavePropertyAccessors;
         _trackAllocations = trackAllocations;
+        _weaveAsyncBodies = weaveAsyncBodies;
     }
+
+    /// <summary>Async state machines woven ("... (async body)" entries in the map).</summary>
+    public int AsyncBodyCount { get; private set; }
 
     /// <summary>Allocation sites instrumented by the last weave.</summary>
     public int AllocationSiteCount { get; private set; }
@@ -131,6 +141,9 @@ public sealed class CecilWeaver
             }
         }
 
+        if (_weaveAsyncBodies)
+            WeaveAsyncStateMachines(module, moduleName, woven, enterRef, leaveRef, allocRef);
+
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
         assembly.Write(outputPath, new WriterParameters { WriteSymbols = false });
         return new WeaveResult(assemblyPath, outputPath, woven);
@@ -171,6 +184,52 @@ public sealed class CecilWeaver
         var method = new MethodReference(name, module.TypeSystem.Void, declaring) { HasThis = false };
         method.Parameters.Add(new ParameterDefinition(module.TypeSystem.Int32));
         return method;
+    }
+
+    /// <summary>
+    /// Weave the <c>MoveNext</c> of the state machines belonging to matching async
+    /// methods. Each resumption is one call, so the recorded time is what the method
+    /// actually spent executing, excluding the awaits it was suspended on - the
+    /// complement of the stub's "synchronous part up to the first await".
+    /// </summary>
+    private void WeaveAsyncStateMachines(ModuleDefinition module, string moduleName, List<WovenMethod> woven, MethodReference enterRef, MethodReference leaveRef, MethodReference? allocRef)
+    {
+        foreach (var type in module.GetTypes())
+        {
+            if (type.CustomAttributes.Any(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.CompilerGeneratedAttribute"))
+                continue;
+            string ns = type.Namespace ?? "";
+            foreach (var method in type.Methods.ToList())
+            {
+                var attribute = method.CustomAttributes.FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.AsyncStateMachineAttribute");
+                if (attribute is null || attribute.ConstructorArguments.Count == 0) continue;
+                if (!_filter.Matches(ns, type.FullName, method.Name)) continue;
+                if (!_weavePropertyAccessors && IsPropertyAccessor(method)) continue;
+                if (attribute.ConstructorArguments[0].Value is not TypeReference smRef) continue;
+                var stateMachine = smRef.Resolve();
+                var moveNext = stateMachine?.Methods.FirstOrDefault(m => m.Name == "MoveNext" && m.HasBody);
+                if (moveNext is null) continue;
+
+                int id = _nextId;
+                var snapshot = BodySnapshot.Capture(moveNext.Body);
+                try
+                {
+                    AllocationSiteCount += WeaveMethod(moveNext, id, enterRef, leaveRef, allocRef);
+                    moveNext.Body.OptimizeMacros();
+                }
+                catch (Exception)
+                {
+                    snapshot.Restore(moveNext.Body);
+                    SkippedCount++;
+                    continue;
+                }
+                _nextId++;
+                AsyncBodyCount++;
+                var entry = new WovenMethod(id, moduleName, moveNext.MetadataToken.ToInt32(), $"{type.FullName}.{method.Name} (async body)");
+                woven.Add(entry);
+                _map.Add(entry);
+            }
+        }
     }
 
     /// <summary>True for get_/set_ methods bound to a property.</summary>

@@ -68,8 +68,10 @@ profile_run ... mode=instrumenting engine=weaver weaveMapPath="...\bin\Debug\net
 ```
 
 Notes: property accessors are skipped by default (`weavePropertyAccessors=true`
-to include them); async methods are woven at their stub, so their time is the
-synchronous part up to the first await - the session says so in its warnings.
+to include them). Async methods appear twice: the method's own entry times the
+synchronous part up to the first await, and `<method> (async body)` times what
+it actually executed across its resumptions, awaits excluded
+(`weaveAsyncBodies=false` to skip the second one).
 
 ## 3. Memory
 

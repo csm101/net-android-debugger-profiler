@@ -73,14 +73,20 @@ public class WeaverShapeTests
     }
 
     [Fact]
-    public void Async_methods_are_woven_and_counted_as_stubs()
+    public void Async_methods_are_woven_as_stub_and_state_machine()
     {
         var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"));
         weaver.Weave(Input, Out("WeaveSample.dll"));
+        // The stub (synchronous part up to the first await) ...
         Assert.Contains(weaver.Map, m => m.FullName.EndsWith("Shapes.AddAsync"));
-        // The woven method is the stub that starts the state machine: the session warns
-        // that its timing is the synchronous part only.
         Assert.Equal(1, weaver.AsyncStubCount);
+        // ... and the state machine body (what the method actually executes).
+        Assert.Contains(weaver.Map, m => m.FullName == "WeaveSample.Shapes.AddAsync (async body)");
+        Assert.Equal(1, weaver.AsyncBodyCount);
+
+        var withoutBodies = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 1, weaveAsyncBodies: false);
+        withoutBodies.Weave(Input, Out("WeaveSample.dll"));
+        Assert.DoesNotContain(withoutBodies.Map, m => m.FullName.Contains("(async body)"));
     }
 }
 
@@ -93,6 +99,29 @@ public class WeaverShapeTests
 [Collection("weaver-collector")]
 public class WeaverAllocationTests(WeaverCollectorFixture fixture)
 {
+    [Fact]
+    public void Async_state_machine_records_every_resumption()
+    {
+        string work = fixture.WorkDir("async");
+        Directory.CreateDirectory(work);
+        string woven = Path.Combine(work, "WeaveSample.dll");
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 900);
+        weaver.Weave(Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll"), woven);
+
+        var asm = System.Reflection.Assembly.LoadFile(woven);
+        var type = asm.GetType("WeaveSample.Shapes")!;
+        object instance = Activator.CreateInstance(type)!;
+        var task = (Task<int>)type.GetMethod("AddAsync")!.Invoke(instance, [2, 3])!;
+        Assert.Equal(5, task.GetAwaiter().GetResult());
+        NetAndroidProfiler.Collector.Profiler.FlushAll();
+
+        var r = new WeaveAnalyzer().Analyze(fixture.EventsDir, weaver.Map);
+        var body = r.Timings.Single(t => r.Method(t.MethodId).FullName == "WeaveSample.Shapes.AddAsync (async body)");
+        // Task.Yield suspends once, so the state machine runs twice.
+        Assert.Equal(2, body.Calls);
+        Assert.True(body.TotalNs > 0);
+    }
+
     [Fact]
     public void Woven_methods_report_their_allocations_by_type_and_site()
     {
