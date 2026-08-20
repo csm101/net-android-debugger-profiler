@@ -2,3 +2,280 @@
 INFO         | Android emulator version 35.5.10.0 (build_id 13402964) (CL:N/A)
 INFO         | Graphics backend: gfxstream
 INFO         | Found systemPath C:\Program Files (x86)\Android\android-sdk\system-images\android-33\google_apis_playstore\x86_64\
+[36372:51024:20260820,213638.303:ERROR filesystem_win.cc:130] GetFileAttributes X:\Temp\\AndroidEmulator\emu-crash-35.5.10.db\attachments\a4cb2c41-cfd3-4005-a1ef-8ba53321eb23: Impossibile trovare il file specificato. (2)
+I0820 21:36:39.026679   56440 opengles.cpp:285] android_startOpenglesRenderer: gpu info
+I0820 21:36:39.026716   56440 opengles.cpp:286] GPU #1
+  Make: 10de
+  Model: NVIDIA Quadro P400
+  Device ID: 1cb3
+
+INFO         | Changing default hw.initialOrientation to portrait
+
+INFO         | Increasing RAM size to 2048MB
+INFO         | IPv4 server found: 10.0.1.45
+INFO         | Ignore IPv6 address: b047:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: b047:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: b047:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: e055:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: e055:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: e055:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: 85c:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: 85c:faf9:b701:0:b047:faf9:b701:0
+INFO         | Ignore IPv6 address: 85c:faf9:b701:0:b047:faf9:b701:0
+INFO         | Checking system compatibility:
+INFO         |   Checking: hasCompatibleHypervisor
+INFO         |      Ok: Hypervisor compatibility to run avd: `pixel_7_-_api_33_0` are met
+INFO         |   Checking: hasSufficientSystem
+INFO         |      Ok: System requirements to run avd: `pixel_7_-_api_33_0` are met
+INFO         |   Checking: hasSufficientHwGpu
+INFO         |      Ok: Hardware GPU requirements to run avd: `pixel_7_-_api_33_0` are passed
+INFO         |   Checking: hasSufficientDiskSpace
+INFO         |      Ok: Disk space requirements to run avd: `pixel_7_-_api_33_0` are met
+INFO         | Storing crashdata in: X:\Temp\\AndroidEmulator\emu-crash-35.5.10.db, detection is enabled for process: 34924
+INFO         | No consent for crashreport a4cb2c41-cfd3-4005-a1ef-8ba53321eb23, deleting.
+INFO         | Guest Driver: Auto (ext controls)
+library_mode host gpu mode host
+INFO         | emuglConfig_get_vulkan_hardware_gpu_support_info: Found physical GPU 'Quadro P400', type: VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU, apiVersion: 1.3.303, driverVersion: 571.59
+
+INFO         | emuglConfig_get_vulkan_hardware_gpu_support_info: Found physical GPU 'Intel(R) UHD Graphics 630', type: VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU, apiVersion: 1.3.215, driverVersion: 0.404.2140
+
+INFO         | GPU device local memory = 2180MB
+INFO         | Initializing hardware OpenGLES emulation support
+INFO         | HealthMonitor disabled.
+INFO         | SharedLibrary::open for [vulkan-1.dll]
+
+INFO         | SharedLibrary::open for [vulkan-1.dll]: not found in map, open for the first time
+
+INFO         | SharedLibrary::open for [vulkan-1.dll] (win32): call LoadLibraryA
+
+INFO         | SharedLibrary::open succeeded for [vulkan-1.dll]. File name: [C:\WINDOWS\SYSTEM32\vulkan-1.dll]
+
+INFO         | Added library: vulkan-1.dll
+INFO         | Selecting Vulkan device: Quadro P400, Version: 1.3.303
+INFO         | SharedLibrary::open for [opengl32.dll]: not found in map, open for the first time
+
+INFO         | SharedLibrary::open for [opengl32.dll] (win32): call LoadLibraryA
+
+INFO         | SharedLibrary::open succeeded for [opengl32.dll]. File name: [C:\WINDOWS\system32\OpenGL32.dll]
+
+INFO         | SharedLibrary::open for [libshadertranslator.dll]: not found in map, open for the first time
+
+INFO         | SharedLibrary::open for [libshadertranslator.dll] (win32): call LoadLibraryA
+
+INFO         | SharedLibrary::open succeeded for [libshadertranslator.dll]. File name: [C:\Program Files (x86)\Android\android-sdk\emulator\lib64\libshadertranslator.dll]
+
+INFO         | Initializing VkEmulation features:
+INFO         |     glInteropSupported: true
+INFO         |     useDeferredCommands: true
+INFO         |     createResourceWithRequirements: true
+INFO         |     useVulkanComposition: false
+INFO         |     useVulkanNativeSwapchain: false
+INFO         |     enable guestRenderDoc: false
+INFO         |     ASTC LDR emulation mode: 2
+INFO         |     enable ETC2 emulation: true
+INFO         |     enable Ycbcr emulation: false
+INFO         |     guestVulkanOnly: false
+INFO         |     useDedicatedAllocations: false
+INFO         | Graphics Adapter Vendor Google (NVIDIA Corporation)
+INFO         | Graphics Adapter Android Emulator OpenGL ES Translator (Quadro P400/PCIe/SSE2)
+INFO         I0820 21:36:39.712718   56440 userspace-boot-properties.cpp:741] Userspace boot properties:
+I0820 21:36:39.712741   56440 userspace-boot-properties.cpp:745]   androidboot.boot_devices=pci0000:00/0000:00:03.0 pci0000:00/0000:00:06.0
+I0820 21:36:39.712749   56440 userspace-boot-properties.cpp:745]   androidboot.dalvik.vm.heapsize=512m
+I0820 21:36:39.712754   56440 userspace-boot-properties.cpp:745]   androidboot.debug.hwui.renderer=skiagl
+I0820 21:36:39.712760   56440 userspace-boot-properties.cpp:745]   androidboot.debug.sf.nobootanimation=1
+I0820 21:36:39.712765   56440 userspace-boot-properties.cpp:745]   androidboot.hardware=ranchu
+I0820 21:36:39.712770   56440 userspace-boot-properties.cpp:745]   androidboot.hardware.gltransport=pipe
+I0820 21:36:39.712776   56440 userspace-boot-properties.cpp:745]   androidboot.hardware.vulkan=ranchu
+I0820 21:36:39.712782   56440 userspace-boot-properties.cpp:745]   androidboot.logcat=*:V
+I0820 21:36:39.712787   56440 userspace-boot-properties.cpp:745]   androidboot.opengles.version=196609
+I0820 21:36:39.712793   56440 userspace-boot-properties.cpp:745]   androidboot.qemu=1
+I0820 21:36:39.712798   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.adb.pubkey=QAAAALc31NT5qaJ12VzupQz1JebhBKQ+oAmmcXk6ylio7Z4EoCIi1cp40khcSUUqe25U6a17/w+ROD9Qd9I2UzcwJiGHtGPwWgkEM27ez27TEwdWrVERdiOXoAZXWGk6JodkhRybmCQ3qSIcRU6ez+ZQIKmTdoUfmuIh79MqmmQ0jUSwBG/arkwyRZqQtXMDGSms2gh7Eh/P/YbKJBKViAlhHqmwnS7oqc9xI/e6ZhgDmbxBOl2YbZs9y9nJYVTlq+ve36Ip0Tmduz9GQ1DjoJaXWXRBr+rOwvI0y710/l5rPLJSt2k4uQGgAEx9VRbMgo2es1Q+XCzSvyHgqeF+RBbtvvKGCAO45qaX2zikIGbZPm5hZjek9T/xjAjUfDo+lZZlqfy3IWVN0on66z3KQPxVedVrKOpv4klRSiKaaYi1FA3ZotH3wICLZ0Yegm6qzZbRB10syEqGhj3vOoRjSwyYRydI8bl4O+V9LfaDGldeqtw4KtV0wj8nxtn9+Qf02ddKkO+4ZVpkZS+B6YaqC6IXTJO6c1sAtOP8h/92eElxCO+hn2wra8YihlfszJqLqV1XWcTIHUrbsMQixfX47bh0rd+b/4cCUWiK2KTGPX/1NB87xakQrPDZASfXJor6jSVCHrDQiGz7+qeYhy5owVEAVh5gBGpratw7fQx955TUSPuNlJ8hogEAAQA= @unknown
+I0820 21:36:39.712805   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.avd_name=pixel_7_-_api_33_0
+I0820 21:36:39.712810   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.camera_hq_edge_processing=0
+I0820 21:36:39.712816   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.camera_protocol_ver=1
+I0820 21:36:39.712821   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.cpuvulkan.version=4202496
+I0820 21:36:39.712827   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.gltransport.drawFlushInterval=800
+I0820 21:36:39.712832   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.gltransport.name=pipe
+I0820 21:36:39.712837   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.hwcodec.avcdec=2
+I0820 21:36:39.712842   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.hwcodec.hevcdec=2
+I0820 21:36:39.712847   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.hwcodec.vpxdec=2
+I0820 21:36:39.712853   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.settings.system.screen_off_timeout=2147483647
+I0820 21:36:39.712858   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.virtiowifi=1
+I0820 21:36:39.712865   56440 userspace-boot-properties.cpp:745]   androidboot.qemu.vsync=60
+I0820 21:36:39.712872   56440 userspace-boot-properties.cpp:745]   androidboot.serialno=EMULATOR35X5X10X0
+I0820 21:36:39.712878   56440 userspace-boot-properties.cpp:745]   androidboot.vbmeta.digest=b097615afe414ae2f91651131b40ccb09554a68626d6dc4334f319d713cb5538
+I0820 21:36:39.712883   56440 userspace-boot-properties.cpp:745]   androidboot.vbmeta.hash_alg=sha256
+I0820 21:36:39.712888   56440 userspace-boot-properties.cpp:745]   androidboot.vbmeta.size=6656
+I0820 21:36:39.712894   56440 userspace-boot-properties.cpp:745]   androidboot.veritymode=enforcing
+| Graphics API Version OpenGL ES 3.0 (4.5.0 NVIDIA 571.59)
+INFO         | Graphics API Extensions GL_OES_EGL_sync GL_OES_EGL_image GL_OES_EGL_image_external GL_OES_depth24 GL_OES_depth32 GL_OES_element_index_uint GL_OES_texture_float GL_OES_texture_float_linear GL_OES_compressed_paletted_texture GL_OES_compressed_ETC1_RGB8_texture GL_OES_depth_texture GL_OES_texture_half_float GL_OES_texture_half_float_linear GL_OES_packed_depth_stencil GL_OES_vertex_half_float GL_OES_texture_npot GL_OES_rgb8_rgba8 GL_OVR_multiview2 GL_EXT_multiview_texture_multisample GL_EXT_color_buffer_float GL_EXT_color_buffer_half_float GL_EXT_texture_format_BGRA8888 GL_APPLE_texture_format_BGRA8888 GL_EXT_texture_buffer 
+INFO         | Graphics Device Extensions N/A
+INFO         | Sending adb public key [QAAAALc31NT5qaJ12VzupQz1JebhBKQ+oAmmcXk6ylio7Z4EoCIi1cp40khcSUUqe25U6a17/w+ROD9Qd9I2UzcwJiGHtGPwWgkEM27ez27TEwdWrVERdiOXoAZXWGk6JodkhRybmCQ3qSIcRU6ez+ZQIKmTdoUfmuIh79MqmmQ0jUSwBG/arkwyRZqQtXMDGSms2gh7Eh/P/YbKJBKViAlhHqmwnS7oqc9xI/e6ZhgDmbxBOl2YbZs9y9nJYVTlq+ve36Ip0Tmduz9GQ1DjoJaXWXRBr+rOwvI0y710/l5rPLJSt2k4uQGgAEx9VRbMgo2es1Q+XCzSvyHgqeF+RBbtvvKGCAO45qaX2zikIGbZPm5hZjek9T/xjAjUfDo+lZZlqfy3IWVN0on66z3KQPxVedVrKOpv4klRSiKaaYi1FA3ZotH3wICLZ0Yegm6qzZbRB10syEqGhj3vOoRjSwyYRydI8bl4O+V9LfaDGldeqtw4KtV0wj8nxtn9+Qf02ddKkO+4ZVpkZS+B6YaqC6IXTJO6c1sAtOP8h/92eElxCO+hn2wra8YihlfszJqLqV1XWcTIHUrbsMQixfX47bh0rd+b/4cCUWiK2KTGPX/1NB87xakQrPDZASfXJor6jSVCHrDQiGz7+qeYhy5owVEAVh5gBGpratw7fQx955TUSPuNlJ8hogEAAQA= @unknown]
+WHPX on Windows 10.0.26200 detected.
+Windows Hypervisor Platform accelerator is operational
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 0]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 2]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 3]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 4]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 5]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 6]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 7]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 8]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 9]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 13]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 15]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 16]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 23]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 24]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 0]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 2]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 3]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 4]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 5]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 6]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 7]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 8]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 9]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 13]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 15]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 16]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 23]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 24]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 0]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 2]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 3]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 4]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 5]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 6]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 7]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 8]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 9]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 13]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 15]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 16]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 23]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 24]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 0]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 2]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 3]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 4]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 5]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 6]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 7]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 8]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 9]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 13]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 15]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 16]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 23]
+host doesn't support requested feature: CPUID.80000001H:EDX [bit 24]
+INFO         | Monitoring duration of emulator setup.
+INFO         | Setting display: 0 configuration to: 1080x2400, dpi: 420x420 
+INFO         | setDisplayActiveConfig 0
+USER_INFO    | Emulator is performing a full startup. This may take upto two minutes, or more.
+INFO         | OpenGL Vendor=[Google (NVIDIA Corporation)]
+INFO         | OpenGL Renderer=[Android Emulator OpenGL ES Translator (Quadro P400/PCIe/SSE2)]
+INFO         | OpenGL Version=[OpenGL ES 3.0 (4.5.0 NVIDIA 571.59)]
+INFO         | Activated packet streamer for bluetooth emulation
+INFO         | Boot completed in 35300 ms
+INFO         | Increasing screen off timeout, logcat buffer size to 2M.
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+INFO         | IPv4 server found: 10.0.1.45
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | IPv4 server found: 10.0.1.45
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | IPv4 server found: 10.0.1.45
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 4054:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 7062:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+INFO         | Ignore IPv6 address: 9868:2896:b701:0:4054:2896:b701:0
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system screen_off_timeout 2147483647 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell logcat -G 2M ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell logcat -G 2M ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell logcat -G 2M ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell logcat -G 2M ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell logcat -G 2M ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system accelerometer_rotation 1 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system accelerometer_rotation 1 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system accelerometer_rotation 1 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system accelerometer_rotation 1 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell settings put system accelerometer_rotation 1 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell cmd overlay list ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell cmd overlay list ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell cmd overlay list ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell cmd overlay list ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell cmd overlay list ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell am broadcast -a com.android.emulator.multidisplay.START -n com.android.emulator.multidisplay/.MultiDisplayServiceReceiver --user 0 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell am broadcast -a com.android.emulator.multidisplay.START -n com.android.emulator.multidisplay/.MultiDisplayServiceReceiver --user 0 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell am broadcast -a com.android.emulator.multidisplay.START -n com.android.emulator.multidisplay/.MultiDisplayServiceReceiver --user 0 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell am broadcast -a com.android.emulator.multidisplay.START -n com.android.emulator.multidisplay/.MultiDisplayServiceReceiver --user 0 ' failed: 'adb.exe: more than one emulator'
+WARNING      | adb command 'C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe -e shell am broadcast -a com.android.emulator.multidisplay.START -n com.android.emulator.multidisplay/.MultiDisplayServiceReceiver --user 0 ' failed: 'adb.exe: more than one emulator'

@@ -81,6 +81,13 @@ arming. Working hypothesis: the Mono `BreakpointStore` is shared by every
 process of the app (one store, N sessions), so when a second process attaches
 the breakpoint is re-registered and Mono's `CurrentHitCount` restarts - which
 also matches the variability (it depends on when `:helper` connects).
+Found in upstream while looking (verified by reading, not yet by experiment):
+`CurrentHitCount` lives on the shared `BreakEvent`, not per session, and
+`DebuggerSession.Breakpoints`'s setter calls `store.ResetBreakpoints()`,
+which zeroes every count. Each `ProcessDebugger` assigns the same store to
+its own session, so the second process attaching is exactly the moment a
+reset could fire. Disarming breakpoints for evaluations removes and re-adds
+break events too, which is another window where hits are not counted.
 To confirm: log `CurrentHitCount` per stop, or give each process its own
 store and see whether the count becomes stable. Until then the test asserts
 "at least N hits" and the limitation is documented for users: hit counts are

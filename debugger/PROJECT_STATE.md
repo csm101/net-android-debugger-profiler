@@ -55,8 +55,11 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   with the full tool list below; integration suite (8 Core tests green, 2 MCP
   end-to-end tests added). Remaining for M1: registration/packaging of the MCP
   server for Claude Code, then run against the reference application (M3 start).
-- M2 - Inspection depth: evaluate, object/array expansion, exception filters,
-  threads, logcat capture, compact debug snapshot.
+- M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
+  expansion, exception filters, threads, structured logcat capture with
+  filters, compact snapshot, evaluation options (timeouts, invoke-free safe
+  mode). 49 integration tests; TEST_CATALOG has 3 open gaps left, each
+  needing hardware or a product decision.
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints
   on startup code (main) and in App.Core (multi-assembly), locals/expansion,
@@ -100,8 +103,14 @@ applicable to SDB - dropped unless a need appears.
 - Emulator-based integration tests are viable: ~8 s per restart+connect+hit.
 - Debuggee invocation is the fragile part of inspection: expanding a value
   invokes its getters, an invocation that outlasts the timeout is aborted (the
-  thread survives, the member reads as an error), and unattended emulators must
-  be headless. Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md.
+  member reads as an error, and the process may or may not survive), and
+  unattended emulators must be headless with a hardware GPU.
+- **Breakpoints are disarmed for the duration of any evaluation**: Mono resumes
+  all threads during an invocation, so a breakpoint hit meanwhile freezes it
+  for good. This was the single biggest source of instability and matters most
+  for apps with periodic work (timers, sync services).
+- Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md; open questions in
+  KNOWN_UNKNOWNS.md (U13 hit-count baseline is the notable one).
 - Multi-process apps (the reference application spawns `:crash_report_process` at init): every
   process reads the same property; same port → helper dies in a respawn loop.
   Port rotation (rewrite the property right after the main process has read
