@@ -3,6 +3,30 @@ using NetAndroidProfiler.Core.Weaving;
 
 namespace NetAndroidProfiler.Tests.Fast;
 
+/// <summary>
+/// The collector reads NAP_PROFILER_OUT once per process, in its static constructor,
+/// so every test that executes woven code must agree on one output directory and run
+/// in the same collection. Events from different tests land in the same files; each
+/// test asserts only on the types and methods it produced.
+/// </summary>
+public sealed class WeaverCollectorFixture
+{
+    public WeaverCollectorFixture()
+    {
+        EventsDir = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"), "events");
+        Directory.CreateDirectory(EventsDir);
+        Environment.SetEnvironmentVariable("NAP_PROFILER_OUT", EventsDir);
+    }
+
+    public string EventsDir { get; }
+
+    public string WorkDir(string name) =>
+        Path.Combine(Path.GetDirectoryName(EventsDir)!, name);
+}
+
+[CollectionDefinition("weaver-collector")]
+public sealed class WeaverCollectorCollection : ICollectionFixture<WeaverCollectorFixture> { }
+
 public class WeaveFilterTests
 {
     [Fact]
@@ -66,15 +90,15 @@ public class WeaverShapeTests
 /// WeaverTests is not needed - both share the collector's single output directory,
 /// so this test only asserts on its own types.
 /// </summary>
-public class WeaverAllocationTests
+[Collection("weaver-collector")]
+public class WeaverAllocationTests(WeaverCollectorFixture fixture)
 {
     [Fact]
     public void Woven_methods_report_their_allocations_by_type_and_site()
     {
-        string work = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"));
+        string work = fixture.WorkDir("alloc");
         Directory.CreateDirectory(work);
-        string eventsDir = Path.Combine(work, "events");
-        Environment.SetEnvironmentVariable("NAP_PROFILER_OUT", eventsDir);
+        string eventsDir = fixture.EventsDir;
 
         string input = Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll");
         string woven = Path.Combine(work, "WeaveSample.dll");
@@ -104,15 +128,15 @@ public class WeaverAllocationTests
     }
 }
 
-public class WeaverTests
+[Collection("weaver-collector")]
+public class WeaverTests(WeaverCollectorFixture fixture)
 {
     [Fact]
     public void Weave_execute_and_analyze_end_to_end()
     {
-        string work = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"));
+        string work = fixture.WorkDir("shapes");
         Directory.CreateDirectory(work);
-        string eventsDir = Path.Combine(work, "events");
-        Environment.SetEnvironmentVariable("NAP_PROFILER_OUT", eventsDir);
+        string eventsDir = fixture.EventsDir;
 
         // --- weave
         string input = Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll");
