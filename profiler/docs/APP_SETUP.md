@@ -119,6 +119,13 @@ Once the profiler has instrumented a method in a session, the
 instrumentation stays until the process exits (later sessions receive the
 events again without a restart).
 
+Practical consequence: `EnableDiagnostics` plus an environment file with
+only `enable` and `callspec` could live in the Debug configuration itself
+at negligible cost (sampling and enter/leave would then work on every Debug
+build); `alloc` is what justifies the separate `Profiling` configuration.
+Until the always-on cost of `alloc` is measured on a real app (U17), keep
+everything in `Profiling`.
+
 ## Traps
 
 - **Clean build after changing the environment file.** Changing
