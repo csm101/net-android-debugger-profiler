@@ -46,37 +46,19 @@ server is still the PRE-fix build: the user must rerun register-mcp.cmd
 
 ## U6 experiment DONE (2026-08-20)
 Result (two runs): a 4.5-min pause on the UI thread of a non-connected app, and a 5-min explicit pause on a FULLY OPERATIONAL install (logged on, backend up, MQTT connected), are both harmless: no ANR, no death, MQTT self-reconnects after one failed attempt, watchdog never fires (no bug report, no thread restart) in the 6.5 min after resume. U6 answered; only very long pauses (tens of minutes) and the app's own android:process remain unmeasured.
-processes alive, no watchdog restart / bug report in the 3.5 min after
-resume). BUT this emulator cannot reach the the reference application backend
-(an internal backend host times out), so the MQTT/watchdog half is
-unanswerable here - U6 narrowed to "needs a logged-on device with backend
-reachable". Script kept as DevTools/scripts/pause-survival-watch.sh.
-Lesson for my own scripts: inside a quoted heredoc do NOT write \" in awk -
-it lands literally and the field comes out empty (my second watch script
-printed no pids and briefly looked like the app had died).
-
-## (previous, for context) U6 experiment in flight (2026-08-20 18:10)
-the reference application launched via MCP (server build = 18dc11f, pre-90b154c fixes),
-breakpoint ControlloNumeratoriProgressiviImpl.cs:62 hit on thread 1 (the UI
-thread), then held paused ~4.5 min while a background script
-(scratchpad/u6watch.sh -> u6_watch.log) samples pids and greps logcat for
-ANR / watchdog / bugreport / MQTT / process death.
-Source reading done first (facts, not guesses):
-- the sync library's watchdog: loop every 60 s
-  (AttendiSecondi(60)); DevoRiavviareIThread() uses wall-clock thresholds
-  (2 min, 4 consecutive iterations) -> if it decides threads are stuck it
-  calls BugReportingEngine.PrepareBugReport(...).Send() AND restarts all
-  sync threads. So a long debugger pause can make a real the reference application device
-  send spurious bug reports on resume. It skips this when
-  Manager.NeedManualLogon (not logged on).
-- App.Sync/MQTT/.../MqttServiceImpl.cs: WithAutoReconnectDelay
-  5 s, so MQTT should heal by itself after the pause.
+Method: breakpoint (run 1) / pause_execution (run 2) via the MCP tools, with
+DevTools/scripts/pause-survival-watch.sh sampling pids and grepping logcat
+for ANR / watchdog / bug report / MQTT / process death. Full findings in
+ANDROID_ATTACH_NOTES.md (the reference application section); U6 closed in KNOWN_UNKNOWNS.
+the reference application was restarted without the debugger afterwards, as the user had it.
+Two lessons for my own scripts: inside a quoted heredoc do NOT write \" in
+awk (it lands literally and the field comes out empty - my first watch
+script printed no pids and briefly looked like the app had died), and do
+not "fix" a multi-line section with sed unless the pattern covers all of it.
 
 ## Next action if interrupted right now
-Read scratchpad/u6_watch.log, resume the app (remove bp + continue), watch
-another ~90 s of logcat, then record the findings in ANDROID_ATTACH_NOTES
-(the reference application section) and close/narrow U6. Then: user reruns register-mcp.cmd
-(server is still pre-90b154c). Remaining chunks:
+User reruns register-mcp.cmd (registered server is still pre-90b154c, so
+the MCP tools I am using lack the newest engine fixes). Remaining chunks:
 - U11 probe: does a wedged evaluation thread heal after Continue + next
   stop? Warm-up invoke idea.
 - U12: engine policy for repeated unhandled-exception stops.
