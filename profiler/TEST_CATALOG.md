@@ -66,6 +66,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver records allocations by type and by allocating method - `Woven_methods_report_their_allocations_by_type_and_site` (fast) and asserted on device
 - [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
 - [ ] Iterator methods (yield return) instrumented like async bodies (U8 leftover)
+- [x] Weaving targets file is valid XML and scoped to the app project - `Targets_file_is_well_formed_xml`, `Targets_only_weave_the_android_application_project`
 - [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map` (skips unless TestTarget was installed from a `-p:NapWeave=true` build)
 - [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
 - [x] Async methods woven as stub + state machine - `Async_methods_are_woven_as_stub_and_state_machine`
