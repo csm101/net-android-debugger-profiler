@@ -17,8 +17,26 @@ two-frontends-over-one-core layout, same development methodology.
 
 ## Status
 
-Early scaffold. See `PROJECT_STATE.md` for milestones and `ARCHITECTURE.md`
-for the design.
+M0 (spike) done, M1 (engine + MCP) in progress: launch/attach with automatic
+attach to helper processes, breakpoints, stepping, call stack, locals,
+evaluation and an MCP stdio server exposing them. See `PROJECT_STATE.md` for
+milestones and `ARCHITECTURE.md` for the design.
+
+## Using the MCP server with Claude Code
+
+```
+register-mcp.cmd
+```
+
+Publishes the server (Release) to `%LOCALAPPDATA%\net-android-debugger`
+(override with `NAD_INSTALL_DIR`) and registers it once at user scope
+(`claude mcp add --scope user net-android-debugger -- dotnet <dir>\NetAndroidDebugger.Mcp.dll`).
+Re-run after changes to republish; stop running sessions first (the dll is locked).
+
+Then: `list_devices` → `launch_app(deviceSerial, packageName[, projectPath, deploy])`
+→ `set_breakpoint(file, line)` → `wait_until_stopped` / `continue_and_wait` →
+`get_locals`, `get_call_stack`, `evaluate_expression`, `step_*` → `terminate_app`.
+Breakpoint file paths must be the absolute paths compiled into the app's PDB.
 
 ## Layout
 
@@ -38,5 +56,9 @@ dotnet build NetAndroidDebugger.slnx
 dotnet test  NetAndroidDebugger.slnx
 ```
 
-Requires: .NET SDK 8+ with the `android` workload, Android SDK platform-tools
-(`adb`), and an emulator or attached device for integration tests.
+Clone with `git clone --recurse-submodules` (debugger-libs is a submodule).
+
+Requires: .NET SDK 10 with the `android` workload, Android SDK platform-tools
+(`adb`), and an emulator or attached device for integration tests. When more
+than one device is attached, select the test device with
+`NAD_DEVICE_SERIAL=<serial>`; `NAD_SKIP_DEPLOY=1` skips redeploying TestTarget.

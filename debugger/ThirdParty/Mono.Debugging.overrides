@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Picked up by ThirdParty/debugger-libs/Mono.Debugging.settings (upstream hook, searched upward
+     from each project). Builds the vendored libraries for the tooling TFM only. -->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+  </PropertyGroup>
+</Project>

@@ -6,4 +6,12 @@
   <Folder Name="/tests/">
     <Project Path="tests/NetAndroidDebugger.Tests/NetAndroidDebugger.Tests.csproj" />
   </Folder>
+  <Folder Name="/DevTools/">
+    <Project Path="DevTools/SdbProbe/SdbProbe.csproj" />
+  </Folder>
+  <Folder Name="/ThirdParty/">
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugger.Soft/Mono.Debugger.Soft.csproj" />
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugging/Mono.Debugging.csproj" />
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugging.Soft/Mono.Debugging.Soft.csproj" />
+  </Folder>
 </Solution>

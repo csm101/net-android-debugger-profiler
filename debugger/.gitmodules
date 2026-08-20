@@ -1,3 +1,4 @@
 [submodule "ThirdParty/debugger-libs"]
 	path = ThirdParty/debugger-libs
-	url = https://github.com/mono/debugger-libs
+	url = https://github.com/csm101/debugger-libs
+	branch = fix/csharp14-field-keyword

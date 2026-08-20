@@ -155,7 +155,7 @@ adb at `C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe`
 
 # Code generation rules
 
-C# (`net8.0` for tooling; TestTarget follows the Android TFM it needs):
+C# (`net10.0` for tooling; TestTarget follows the Android TFM it needs):
 
 - standard .NET conventions: 4-space indent, file-scoped namespaces,
   `nullable enable`, PascalCase public / camelCase locals
@@ -178,3 +178,15 @@ professional technical English. Do not use caveman style. Concise but polished.
 
 After coding work, respond with only: files changed, what changed, build/test
 executed, result, next step.
+
+# Licensing and IP (blocking)
+
+- This is proprietary, closed-source software.
+  Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights
+  reserved. The repository is private and must stay private: never publish
+  sources, never add an open-source license.
+- Dependency policy: MIT / BSD / Apache-2.0 only. GPL is forbidden (viral
+  copyleft); LGPL only with explicit user approval and dynamic linking.
+- The first distributed release must ship a THIRD-PARTY-NOTICES.txt with the
+  license texts of all embedded MIT/BSD/Apache components (debugger-libs,
+  Mono.Cecil, ...).

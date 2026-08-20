@@ -24,22 +24,37 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
 - Official NuGet packages of debugger-libs are stale (2017): vendor sources
   (submodule or pruned copy - see KNOWN_UNKNOWNS U1).
 - Proprietary C# Dev Kit / MAUI-extension adapter: excluded (license).
-- Tooling TFM: net8.0. Repo layout: src/ (Core, Mcp), tests/, ThirdParty/
+- MCP frontend on the official `ModelContextProtocol` NuGet SDK (2.2.0, MIT,
+  stdio transport, attribute-based tools); hand-rolled JSON-RPC not needed.
+- Attach is always "restart with agent" and the engine owns it (property,
+  forwards, `am start`); msbuild only deploys. Multi-process via port rotation.
+- Tooling TFM: net10.0. Repo layout: src/ (Core, Mcp), tests/, ThirdParty/
   (vendored upstream), DevTools/ (argv-driven probes), TestTarget/ (minimal
   net-android app, created in M0).
 
+- Licensing (2026-08-20): proprietary closed source, copyright MCA Software
+  s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
+  MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
+  distributed release.
+
 ## Architecture status
 
-Solution scaffold only. No engine code yet. See ARCHITECTURE.md.
+Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified)
++ TestTarget app + DevTools/SdbProbe. No engine code yet. See ARCHITECTURE.md.
 
 ## Milestones
 
-- M0 - Spike (current): vendored debugger-libs building; TestTarget app;
-  manual end-to-end attach on emulator pixel_7_-_api_33_0; console spike that
-  connects, sets a breakpoint, hits it, reads a local. Resolves U1-U3.
-- M1 - Engine + minimal MCP: DebugSession facade, AndroidLauncher,
-  breakpoints, stepping, stack, locals; MCP tools for the same; integration
-  test harness (deploy TestTarget, drive session, assert).
+- M0 - Spike: DONE 2026-08-20. Vendored debugger-libs build; TestTarget app;
+  end-to-end attach on emulator pixel_7_-_api_33_0 proven by SdbProbe
+  (connect, breakpoint resolved + hit, threads/backtrace/locals, continue,
+  detach). Resolved U1-U3; facts in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md.
+- M1 - Engine + minimal MCP: IN PROGRESS (2026-08-20). Core implemented
+  (DebugSession facade over N per-process SoftDebuggerSessions, AndroidLauncher
+  with port rotation, breakpoints, stepping, stack, locals, evaluate,
+  expansion); MCP stdio server on the official ModelContextProtocol SDK 2.2.0
+  with the full tool list below; integration suite (8 Core tests green, 2 MCP
+  end-to-end tests added). Remaining for M1: registration/packaging of the MCP
+  server for Claude Code, then run against the reference application (M3 start).
 - M2 - Inspection depth: evaluate, object/array expansion, exception filters,
   threads, logcat capture, compact debug snapshot.
 - M3 - the reference application hardening: attach to the real app, multi-assembly, source
@@ -69,4 +84,20 @@ applicable to SDB - dropped unless a need appears.
 
 ## Important discoveries
 
-(record here as they land; environment facts live in ANDROID_ATTACH_NOTES.md)
+(environment and protocol facts live in ANDROID_ATTACH_NOTES.md)
+
+- Attach = `debug.mono.extra=debug=127.0.0.1:PORT,timeout=<device unix secs>,loglevel=N,server=y`
+  + process (re)start + `adb forward` + `SoftDebuggerConnectArgs`. App listens,
+  host connects. No late attach to a running process. Agent waits 30 s, then
+  the process dies (and Android respawns it while the deadline is fresh).
+- Detach kills the app (Mono agent without keepalive). Model detach == terminate.
+- The msbuild `Run` target's own attach wiring is unreliable here (expired
+  deadline); the engine owns the attach dance, msbuild only deploys.
+- Consumers of the vendored libs must reference Mono.Cecil 0.10.1 explicitly.
+- Emulator-based integration tests are viable: ~8 s per restart+connect+hit.
+- Multi-process apps (the reference application spawns `:crash_report_process` at init): every
+  process reads the same property; same port → helper dies in a respawn loop.
+  Port rotation (rewrite the property right after the main process has read
+  it, one SDB session per process) is verified and is the engine's model:
+  a session is a set of per-process sub-sessions. End of session = clear
+  property + force-stop package.

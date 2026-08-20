@@ -15,7 +15,7 @@ Reusable probes go in `DevTools\`, versioned with the project. **Never** put a
 probe in `c:\Athens\__ClaudeTools\` — that directory is user-deletable scratch;
 probes written there get lost and rewritten.
 
-Create as `dotnet new console -o DevTools/<ProbeName> -f net8.0`, add to the
+Create as `dotnet new console -o DevTools/<ProbeName> -f net10.0`, add to the
 solution under a `DevTools` solution folder, reference
 `ThirdParty` debugger-libs projects when the probe speaks SDB.
 
