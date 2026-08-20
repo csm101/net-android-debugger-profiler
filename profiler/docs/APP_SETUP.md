@@ -68,7 +68,9 @@ dotnet build -c Debug -t:Install -p:EnableDiagnostics=true \
 ```
 
 The build rewrites the app assembly before packaging, copies the collector next
-to the output and writes `nap-weave.map` in the output folder. Profile it with
+to the output and writes `nap-weave.map` in the output folder. Extra weaver
+options go through `-p:NapWeaveArgs="--allocations"`; the build uses the
+*published* tool in `build/tools`, so republish it after updating the profiler. Profile it with
 the weaver engine pointing at that map (MCP: `engine=weaver`,
 `weaveMapPath=<OutDir>\nap-weave.map`): the profiler then changes nothing on the
 device, it only configures the run and reads the results. Nothing is woven

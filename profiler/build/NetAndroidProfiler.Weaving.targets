@@ -28,6 +28,12 @@
       NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file)
       NapMapPath      where the id map is written (default: $(OutDir)nap-weave.map)
       NapExtraAssemblies  additional assemblies to weave (semicolon separated paths)
+      NapWeaveArgs    extra arguments for nap-weave, e.g. --allocations or the
+                      experimental --async-bodies
+
+    Republish the tool (dotnet publish src/NetAndroidProfiler.Weave -c Release -o
+    build/tools) after updating the profiler: the build uses the published copy,
+    not the source tree.
 
     The app's own assembly is woven in the intermediate output, before the Android
     packaging steps, so both embedded and fast-deployed layouts get the woven code.
@@ -85,7 +91,7 @@
       quote would escape it for the command processor: a trailing "." keeps the path
       valid and the quoting intact.
     -->
-    <Exec Command="dotnet &quot;$(NapWeaveTool)&quot; $(_NapAssemblyArgs) $(_NapExtraArgs) --callspec &quot;$(NapCallspec)&quot; --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs->'--reference-dir &quot;%(Identity).&quot;', ' ')"
+    <Exec Command="dotnet &quot;$(NapWeaveTool)&quot; $(_NapAssemblyArgs) $(_NapExtraArgs) --callspec &quot;$(NapCallspec)&quot; $(NapWeaveArgs) --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs->'--reference-dir &quot;%(Identity).&quot;', ' ')"
           StandardOutputImportance="high" />
     <ItemGroup>
       <FileWrites Include="$(NapMapPath)" />
