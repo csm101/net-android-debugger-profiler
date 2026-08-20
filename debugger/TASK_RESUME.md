@@ -7,18 +7,20 @@ TEST_CATALOG.md, write the named test, fix whatever it exposes, keep the
 specs in the same change set, commit.
 
 ## State
-- Suite: 41 tests in four files. Last full runs: 40/40 and 39/40 (the one
-  failure was a genuine engine bug, fixed in 06f0a9b). ~4 min per run on the
-  headless emulator.
+- Suite: **49 tests, 49/49 green** (~5 min on the headless emulator). Stability
+  was confirmed by consecutive runs, not a single lucky one.
+- TEST_CATALOG: 57 covered, 3 open (each blocked on hardware or a decision).
 - Commits tonight, newest last: 247cede (stop location falls back to the user
   frame; U11 measured), 9735b4a (one unhandled exception per process; slow
-  probe isolated), e93abc0 (async/await coverage), eabb4d0 (structured app
-  output; headless emulator), 06f0a9b (**disarm breakpoints during any
-  debuggee invocation** — the root cause of the evening's flakiness), 32f444a
-  (honest hit-count assertion + U13).
-- The registered MCP server is older than these commits: the user must rerun
-  register-mcp.cmd (with MCP sessions closed) before the tools reflect them.
-  Everything above is verified through the test suite, not through the server.
+  probe isolated), e93abc0 (async/await), eabb4d0 (structured app output;
+  headless emulator), 06f0a9b (**disarm breakpoints during any debuggee
+  invocation** — the root cause of the evening's flakiness), 32f444a (honest
+  hit-count assertion + U13), 230ca40 (sticky service restart), 538ea28 (app
+  dying by itself, throw stepped over, relaunch), 8fd9a1b (foreign app not
+  attached; generic type names), 036016b (deploy, detach, relaunch, screen
+  rotation), 4ba98ea (U13 evidence).
+- Everything above is verified through the test suite. The registered MCP
+  server is older than all of it (see next steps).
 
 ## Environment rules (also in ANDROID_ATTACH_NOTES.md / TEST_CATALOG.md)
 - Only ever touch `emulator-5554`; `emulator-5556` is the user's other AVD
@@ -33,18 +35,23 @@ specs in the same change set, commit.
   TestTarget is unchanged.
 
 ## Next steps (in order)
-1. Read the last test-runner report; fix anything genuinely red.
-2. Remaining TEST_CATALOG gaps worth doing next: step over a call that throws;
-   generic type display; app exit reported as session end; second launch_app
-   closes the previous session; launch_app with deploy=true.
-3. U13: confirm whether a per-process breakpoint store stabilises hit counts
-   (log `CurrentHitCount` per stop first — cheap experiment).
-4. When the user is back and the server is republished: re-drive the reference application
-   through the MCP tools, mainly to see the breakpoint-disarm fix under a real
-   app full of timers and services.
+1. **User action**: rerun register-mcp.cmd (with MCP sessions closed). The
+   registered server predates every fix listed above, most importantly the
+   breakpoint disarming — which is exactly what a timer-heavy app like
+   the reference application needs.
+2. Then re-drive the reference application through the MCP tools: breakpoints in the main
+   process while its services run, expansion of real objects, and the
+   evaluation-heavy paths that used to freeze.
+3. The three catalogue gaps left, each blocked on something external: a WiFi
+   device (U9), a decision about evaluations with side effects, a way to
+   simulate a mid-run debugger disconnect.
+4. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
+   stop; the evidence gathered so far is in KNOWN_UNKNOWNS.
 5. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
    When merged: point .gitmodules back to upstream, bump the submodule,
    update ARCHITECTURE.md.
+6. M4 candidates when the engine work quiets down: DAP frontend, packaging,
+   SourceResolver (only once a real PDB-path mismatch shows up).
 
 ## Traps worth keeping in mind
 - Consumers of the vendored libs must reference Mono.Cecil 0.10.1 explicitly.
