@@ -66,10 +66,11 @@ public sealed class AdbClient
         foreach (var a in new[] { "-s", serial, "exec-out", command }) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi) ?? throw new ToolException("cannot start adb");
         using var ms = new MemoryStream();
-        var copy = p.StandardOutput.BaseStream.CopyToAsync(ms, ct);
         var err = p.StandardError.ReadToEndAsync(ct);
+        // Drain stdout to EOF *before* waiting for exit: waiting first can leave data
+        // in the pipe and truncate the payload (observed: 2 KB of a 6.5 KB assembly).
+        await p.StandardOutput.BaseStream.CopyToAsync(ms, 1 << 16, ct).ConfigureAwait(false);
         await p.WaitForExitAsync(ct).ConfigureAwait(false);
-        await copy.ConfigureAwait(false);
         if (p.ExitCode != 0) throw new ToolException($"adb exec-out '{command}' failed: {await err.ConfigureAwait(false)}");
         return ms.ToArray();
     }

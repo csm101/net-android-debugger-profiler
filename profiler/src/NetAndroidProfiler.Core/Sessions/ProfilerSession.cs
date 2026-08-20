@@ -269,8 +269,15 @@ public sealed class ProfilerSession : IAsyncDisposable
         string absoluteEvents = await _adb.RunAsAsync(device.Serial, Spec.Package, $"cd {eventsDir} && pwd", ct).ConfigureAwait(false);
 
         _env = new AppEnvironment(_adb, device.Serial, Spec.Package, device.Abi);
-        await _env.ApplyOverrideAsync([new("NAP_PROFILER_OUT", absoluteEvents.Trim())], ct).ConfigureAwait(false);
-        Log($"NAP_PROFILER_OUT={absoluteEvents.Trim()}");
+        string eventsAbs = absoluteEvents.Trim();
+        string markerDir = eventsAbs.Contains('/') ? eventsAbs[..eventsAbs.LastIndexOf('/')] : eventsAbs;
+        await _env.ApplyOverrideAsync(
+        [
+            new("NAP_PROFILER_OUT", eventsAbs),
+            new("NAP_PROFILER_MARKER_DIR", markerDir),
+        ], ct).ConfigureAwait(false);
+        Log($"NAP_PROFILER_OUT={eventsAbs} NAP_PROFILER_MARKER_DIR={markerDir}");
+        await _weaveDeployer.ClearCollectorMarkerAsync(ct).ConfigureAwait(false);
         await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
         await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
         _appLaunchedByUs = true;
@@ -296,6 +303,18 @@ public sealed class ProfilerSession : IAsyncDisposable
 
     private async Task CollectWeaverAsync(CancellationToken ct)
     {
+        SetState(SessionState.WaitingForApp);
+        // The collector writes a marker the first time a woven method executes. No
+        // marker means the app is not running the woven assemblies at all - typically
+        // because it loads them from inside the APK instead of the fast-deployment
+        // directory the weaver writes to.
+        if (!await _weaveDeployer!.WaitForCollectorMarkerAsync(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false))
+            throw new ProfilerException(
+                $"The woven assemblies are not being executed by {Spec.Package}. The app loads its assemblies from " +
+                "inside the APK, so the woven copies in the fast-deployment directory are ignored. Build the app for " +
+                "profiling with fast deployment enabled (-p:EmbedAssembliesIntoApk=false, the Debug default) and " +
+                "reinstall, then run the weaver session again. See docs/APP_SETUP.md.");
+        Log("collector marker seen: woven code is running");
         SetState(SessionState.Collecting);
         _started = DateTimeOffset.UtcNow;
         var duration = Spec.Duration ?? TimeSpan.FromSeconds(20);

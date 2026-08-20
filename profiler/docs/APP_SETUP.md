@@ -24,6 +24,23 @@ Verified on .NET SDK 10.0.301 / android workload 36.1.43; facts marked
   snapshots. Instrumenting additionally needs `MONO_DIAGNOSTICS` baked into
   the APK (environment file, see below) and a JIT build (no AOT).
 
+## Weaver instrumenting: fast deployment is required
+
+The weaver rewrites the app's assemblies where they live on the device, in
+`files/.__override__/<abi>/` (fast deployment). An app built with
+`EmbedAssembliesIntoApk=true` loads its assemblies from inside the APK
+instead, so the rewritten copies are ignored and no data is recorded - the
+profiler detects this and tells you. For a profiling build:
+
+```xml
+<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+  <EmbedAssembliesIntoApk>false</EmbedAssembliesIntoApk>  <!-- Debug default; the reference application overrides it to true -->
+</PropertyGroup>
+```
+
+(Or build with `-p:EmbedAssembliesIntoApk=false` and reinstall.) Sampling and
+heap snapshots are unaffected and work with embedded assemblies.
+
 ## What each mode needs
 
 | Mode | Build requirement | Notes |

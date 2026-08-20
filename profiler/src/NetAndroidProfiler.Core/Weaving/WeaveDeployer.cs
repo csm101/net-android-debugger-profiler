@@ -130,14 +130,35 @@ public sealed class WeaveDeployer
         var ls = await _adb.RunAsAsync(_serial, _package, $"ls {remoteEventsDir}", ct).ConfigureAwait(false);
         var files = ls.Split('\n').Select(l => l.Trim()).Where(l => l.EndsWith(".napw", StringComparison.Ordinal)).ToList();
         foreach (var f in files)
-        {
-            var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {remoteEventsDir}/{f}", ct).ConfigureAwait(false);
-            await File.WriteAllBytesAsync(Path.Combine(localDir, f), data, ct).ConfigureAwait(false);
-        }
+            await CatToLocalAsync($"{remoteEventsDir}/{f}", Path.Combine(localDir, f), ct).ConfigureAwait(false);
         return files.Count;
     }
 
     public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed;
+
+    /// <summary>Marker the collector writes the first time a woven method runs.</summary>
+    public string MarkerPath => "files/nap-collector-loaded.txt";
+
+    /// <summary>Remove a stale marker from a previous session.</summary>
+    public Task ClearCollectorMarkerAsync(CancellationToken ct) =>
+        _adb.RunAsync(_serial, ["shell", $"run-as {_package} rm -f {MarkerPath}"], ct);
+
+    /// <summary>
+    /// Wait until the collector reports that woven code is executing. When the app
+    /// loads its assemblies from inside the APK (EmbedAssembliesIntoApk=true) the
+    /// woven copies in the override directory are ignored and this never appears.
+    /// </summary>
+    public async Task<bool> WaitForCollectorMarkerAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await RemoteExistsAsync(MarkerPath, ct).ConfigureAwait(false)) return true;
+            await Task.Delay(1000, ct).ConfigureAwait(false);
+        }
+        return false;
+    }
 
     public string RemoteEventsDir => $"files/nap-events";
 
@@ -148,9 +169,7 @@ public sealed class WeaveDeployer
         {
             string remote = $"{OverrideDir}/{dllName}";
             if (!RemoteExistsAsync(remote, ct).GetAwaiter().GetResult()) return false;
-            var data = _adb.ExecOutAsync(_serial, $"run-as {_package} cat {remote}", ct).GetAwaiter().GetResult();
-            if (data.Length == 0) return false;
-            File.WriteAllBytes(localPath, data);
+            CatToLocalAsync(remote, localPath, ct).GetAwaiter().GetResult();
             return true;
         }
         catch { return false; }
@@ -162,10 +181,37 @@ public sealed class WeaveDeployer
         return r.Success && !r.StdOut.Contains("No such", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Copy a file out of the app sandbox, verifying that the payload is complete:
+    /// a truncated read was observed once (2 KB of a 6656-byte assembly), which then
+    /// corrupts everything downstream, so the size is checked against stat and the
+    /// read is retried. /data/local/tmp cannot be used for staging: the app user
+    /// cannot write there.
+    /// </summary>
     private async Task CatToLocalAsync(string relPath, string local, CancellationToken ct)
     {
-        var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {relPath}", ct).ConfigureAwait(false);
-        await File.WriteAllBytesAsync(local, data, ct).ConfigureAwait(false);
+        long expected = await RemoteSizeAsync(relPath, ct).ConfigureAwait(false);
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {relPath}", ct).ConfigureAwait(false);
+            if (expected == 0 || data.Length == expected)
+            {
+                await File.WriteAllBytesAsync(local, data, ct).ConfigureAwait(false);
+                return;
+            }
+        }
+        throw new ToolException($"Pull of {relPath} kept returning a truncated payload (expected {expected} bytes)");
+    }
+
+    /// <summary>Size of a file inside the app sandbox, 0 when unknown.</summary>
+    private async Task<long> RemoteSizeAsync(string relPath, CancellationToken ct)
+    {
+        try
+        {
+            string outp = await _adb.RunAsAsync(_serial, _package, $"stat -c %s {relPath}", ct).ConfigureAwait(false);
+            return long.TryParse(outp.Trim(), out long n) ? n : 0;
+        }
+        catch { return 0; }
     }
 
     private async Task PushIntoOverrideAsync(string localFile, string remoteRel, bool backup, CancellationToken ct)

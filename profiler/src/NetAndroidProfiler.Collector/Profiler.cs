@@ -34,16 +34,27 @@ public static class Profiler
     private static readonly List<ThreadWriter> Writers = new List<ThreadWriter>();
     [ThreadStatic] private static ThreadWriter? t_writer;
 
+    /// <summary>
+    /// Name of the marker file written next to the app's private files as soon as
+    /// this type is loaded (i.e. the first time a woven method runs), regardless of
+    /// whether profiling is enabled. It is the diagnostic that tells "the woven code
+    /// never ran / the collector never loaded" apart from "it loaded but the output
+    /// directory was not configured".
+    /// </summary>
+    public const string MarkerFileName = "nap-collector-loaded.txt";
+
     static Profiler()
     {
         // Never use System.Diagnostics.Process here: on Android it can throw and
         // would silently disable the collector. The pid field is cosmetic; files
         // are keyed by a per-process token + managed thread id.
+        string? dir = null;
+        try { dir = Environment.GetEnvironmentVariable("NAP_PROFILER_OUT"); } catch { }
+        WriteMarker(dir);
         try
         {
-            string? dir = Environment.GetEnvironmentVariable("NAP_PROFILER_OUT");
             if (string.IsNullOrEmpty(dir)) return;
-            Directory.CreateDirectory(dir);
+            Directory.CreateDirectory(dir!);
             OutDir = dir;
             Enabled = true;
             var timer = new Timer(_ => FlushAll(), null, 1000, 1000);
@@ -55,6 +66,45 @@ public static class Profiler
         {
             // Never break the app because profiling could not initialize.
             Enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort marker written when this type loads: says whether the collector
+    /// code is running at all inside the app and what it saw in the environment.
+    /// Written to NAP_PROFILER_MARKER_DIR (set by the engine to the app's private
+    /// files directory) and to the output directory when configured.
+    ///
+    /// Only plain file I/O and environment reads are allowed here: this runs from a
+    /// static constructor on whatever thread first executes a woven method, often the
+    /// UI thread during Activity.OnCreate. Anything that calls into Java through JNI
+    /// (e.g. Environment.GetFolderPath) can deadlock the app while the Android runtime
+    /// bridge is still initializing - observed hanging TestTarget.
+    /// </summary>
+    private static void WriteMarker(string? outDir)
+    {
+        string text;
+        try
+        {
+            text = string.Join(Environment.NewLine,
+                "collector=" + typeof(Profiler).Assembly.FullName,
+                "NAP_PROFILER_OUT=" + (string.IsNullOrEmpty(outDir) ? "<unset>" : outDir),
+                "utc=" + DateTime.UtcNow.ToString("O"),
+                "stopwatchFrequency=" + Stopwatch.Frequency);
+        }
+        catch { text = "collector loaded"; }
+
+        string? markerDir = null;
+        try { markerDir = Environment.GetEnvironmentVariable("NAP_PROFILER_MARKER_DIR"); } catch { }
+        foreach (string? dir in new[] { markerDir, outDir })
+        {
+            if (string.IsNullOrEmpty(dir)) continue;
+            try
+            {
+                Directory.CreateDirectory(dir!);
+                File.WriteAllText(Path.Combine(dir!, MarkerFileName), text);
+            }
+            catch { /* diagnostics must never break the app */ }
         }
     }
 

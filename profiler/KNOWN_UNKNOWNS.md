@@ -132,26 +132,23 @@ net9 targets like the reference application -> P3 plan B (Mono.Cecil weaving, us
 Optional later: check dotnet/runtime for the fixing commit; retest when
 the reference application moves to net10.
 
-## U21 - Weaver produces no events on the reference application (works on TestTarget)
-Weaving and deployment now succeed on App.Droid (7882 methods woven, collector
-+ woven assembly deployed to the override dir, originals restored), but no
-.napw file is ever created, while the identical flow on TestTarget records
-events fine. Ruled out: weaving/IL (the same dll welds cleanly off-device,
-7882/0 skipped, and the app does not crash), double-weaving (guard added),
-restore (fixed and verified), missing references (local reference dirs).
-Note: `/proc/<pid>/environ` cannot confirm the injection - libmonodroid uses
-`setenv()` after exec, which never shows there.
-Next hypotheses, in order:
-1. The woven App.Droid.dll in the override dir is not the assembly actually
-   loaded: V7's assemblies live in the APK assembly store
-   (libassembly-store.so, 0 .dll entries in the APK) and monodroid may prefer
-   the store over the fast-deploy copy for this app. Test: change a constant
-   in the override dll and see whether the app's behavior changes; or log the
-   assembly location from inside the app.
-2. NetAndroidProfiler.Collector.dll (netstandard2.0) fails to load in the net9
-   runtime when referenced from a woven assembly, and the failure is swallowed
-   by V7's own exception handling. Test: add a woven call in a method with a
-   known observable side effect, or watch for TypeLoad/FileNotFound in logcat
-   with mono assembly logging enabled (debug.mono.log).
-3. NAP_PROFILER_OUT does not reach the runtime for this app: verify by having
-   the collector write a marker file unconditionally when the type loads.
+## U21 - Weaver on apps that embed their assemblies (root cause found, closed)
+Resolved 2026-08-20: App.Droid.csproj sets `EmbedAssembliesIntoApk=True`, so the
+runtime loads every assembly from inside the APK and the fast-deployment copies
+under files/.__override__/<abi>/ are dead files. The weaver rewrote and
+deployed them correctly (7882 methods) but the app never executed woven code:
+no collector marker, no events. TestTarget (default fast deployment) works.
+The engine now detects this: the collector writes
+files/nap-collector-loaded.txt the first time a woven method runs, and a weaver
+session that does not see the marker within 45 s fails with guidance to rebuild
+with -p:EmbedAssembliesIntoApk=false. Remaining option for apps that must keep
+embedded assemblies: weave at build time (MSBuild task after compilation, before
+packaging) - candidate for P3b.
+
+## U22 - Weaver at build time for embedded-assembly apps
+the reference application ships with EmbedAssembliesIntoApk=True; profiling it with the weaver
+currently requires a profiling build with fast deployment. Design an MSBuild
+task (`WeaveAssembliesTask`) that runs after compilation and before packaging,
+weaves the selected assemblies in the intermediate output with a callspec from
+a property, and drops the id map next to the APK for the analyzer. Then the
+profiler consumes the map instead of weaving on device.
