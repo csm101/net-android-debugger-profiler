@@ -42,6 +42,23 @@ public sealed class WeaveAnalyzer
             return idx;
         }
 
+        // Allocation type names, written by the collector next to the event files.
+        var typeNames = new Dictionary<int, string>();
+        string typesFile = Path.Combine(directory, "nap-types.txt");
+        if (File.Exists(typesFile))
+        {
+            foreach (var line in File.ReadAllLines(typesFile))
+            {
+                int tab = line.IndexOf('	');
+                if (tab > 0 && int.TryParse(line[..tab], out int tid)) typeNames[tid] = line[(tab + 1)..];
+            }
+        }
+        var typeIndex = new Dictionary<int, int>();
+        var types = new List<TypeRecord>();
+        var allocByType = new Dictionary<int, long>();
+        var allocBySite = new Dictionary<(int type, int method), long>();
+        long allocEvents = 0;
+
         var timings = new Dictionary<int, Acc>();
         var tree = new TreeBuilder();
         var threads = new List<ThreadRecord>();
@@ -84,13 +101,28 @@ public sealed class WeaveAnalyzer
                 long ticks = ReadI64(data, o + 5);
                 if (first == 0) first = ticks;
                 last = ticks;
-                int idx = Unknown(weaveId);
+                int idx = kind == 4 ? -1 : Unknown(weaveId);
                 switch (kind)
                 {
                     case 1:
                         enters++;
                         stack.Push((idx, ticks, 0));
                         break;
+                    case 4:
+                    {
+                        allocEvents++;
+                        if (!typeIndex.TryGetValue(weaveId, out int ti))
+                        {
+                            ti = types.Count;
+                            typeIndex[weaveId] = ti;
+                            types.Add(new TypeRecord(ti, typeNames.TryGetValue(weaveId, out var tn) ? tn : $"<type {weaveId}>", 0, 0));
+                        }
+                        allocByType[ti] = allocByType.GetValueOrDefault(ti) + 1;
+                        int site = stack.Count > 0 ? stack.Peek().idx : -1;
+                        var key = (ti, site);
+                        allocBySite[key] = allocBySite.GetValueOrDefault(key) + 1;
+                        break;
+                    }
                     case 2:
                     case 3:
                         leaves++;
@@ -131,8 +163,10 @@ public sealed class WeaveAnalyzer
             threads,
             timings.Values.Select(t => new MethodTiming(t.MethodId, t.Calls, t.TotalNs, t.SelfNs, t.Calls == 0 ? 0 : t.MinNs, t.MaxNs, t.ExceptionLeaves)).ToList(),
             tree.ToRecords(),
-            [], [], [],       // no allocation data from the weaver (v1)
-            enters, leaves, 0, 0);
+            types,
+            allocByType.Select(a => new AllocByType(a.Key, a.Value, 0)).ToList(),
+            allocBySite.Select(a => new AllocBySite(a.Key.type, a.Key.method, a.Value, 0)).ToList(),
+            enters, leaves, allocEvents, 0);
     }
 
     private static int ReadI32(byte[] b, int o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);

@@ -37,14 +37,14 @@ public sealed class WeaveDeployer
     /// <paramref name="filter"/> and deploy them plus the collector. Returns the
     /// weaver id map. The app must be stopped.
     /// </summary>
-    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false)
+    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false, bool trackAllocations = false)
     {
         string pulled = Path.Combine(_workDir, "pulled");
         string wovenDir = Path.Combine(_workDir, "woven");
         Directory.CreateDirectory(pulled);
         Directory.CreateDirectory(wovenDir);
 
-        var weaver = new CecilWeaver(filter, 1, weavePropertyAccessors);
+        var weaver = new CecilWeaver(filter, 1, weavePropertyAccessors, trackAllocations);
         // Resolve references (constants' types etc.) by pulling siblings from the
         // override dir on demand instead of pulling all ~150 deployed assemblies.
         var resolver = new DeviceAssemblyResolver(pulled, (dllName, localPath) =>
@@ -150,10 +150,13 @@ public sealed class WeaveDeployer
     {
         Directory.CreateDirectory(localDir);
         var ls = await _adb.RunAsAsync(_serial, _package, $"ls {remoteEventsDir}", ct).ConfigureAwait(false);
-        var files = ls.Split('\n').Select(l => l.Trim()).Where(l => l.EndsWith(".napw", StringComparison.Ordinal)).ToList();
+        // The types file maps allocation type ids to names; it travels with the events.
+        var files = ls.Split('\n').Select(l => l.Trim())
+            .Where(l => l.EndsWith(".napw", StringComparison.Ordinal) || l == "nap-types.txt")
+            .ToList();
         foreach (var f in files)
             await CatToLocalAsync($"{remoteEventsDir}/{f}", Path.Combine(localDir, f), ct).ConfigureAwait(false);
-        return files.Count;
+        return files.Count(f => f.EndsWith(".napw", StringComparison.Ordinal));
     }
 
     public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed || _movedPdbs.Count > 0;

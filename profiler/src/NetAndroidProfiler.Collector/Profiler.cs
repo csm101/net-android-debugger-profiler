@@ -27,6 +27,11 @@ public static class Profiler
     public const byte KindEnter = 1;
     public const byte KindLeave = 2;
     public const byte KindExceptionLeave = 3;
+    /// <summary>Allocation: the record's id field is a type id, resolved through the types file.</summary>
+    public const byte KindAllocation = 4;
+
+    /// <summary>Name of the file mapping allocation type ids to type names.</summary>
+    public const string TypesFileName = "nap-types.txt";
 
     private static readonly string? OutDir;
     private static readonly bool Enabled;
@@ -124,6 +129,38 @@ public static class Profiler
     {
         if (!Enabled) return;
         Write(KindExceptionLeave, methodId);
+    }
+
+    /// <summary>
+    /// Called right after a woven <c>newobj</c>/<c>newarr</c>: records one allocation of
+    /// the given type. The instance itself is not touched or retained - only its type
+    /// matters - and the type id is resolved through the types file the collector writes
+    /// next to the event files.
+    /// </summary>
+    public static void Allocated(RuntimeTypeHandle handle)
+    {
+        if (!Enabled) return;
+        Write(KindAllocation, TypeId(handle));
+    }
+
+    private static readonly Dictionary<RuntimeTypeHandle, int> TypeIds = new();
+    private static readonly object TypesLock = new object();
+
+    private static int TypeId(RuntimeTypeHandle handle)
+    {
+        lock (TypesLock)
+        {
+            if (TypeIds.TryGetValue(handle, out int id)) return id;
+            id = TypeIds.Count + 1;
+            TypeIds[handle] = id;
+            try
+            {
+                string name = Type.GetTypeFromHandle(handle)?.FullName ?? "<unknown>";
+                File.AppendAllText(Path.Combine(OutDir!, TypesFileName), id + "\t" + name + Environment.NewLine);
+            }
+            catch { /* the id stays usable, only its name is missing */ }
+            return id;
+        }
     }
 
     private static void Write(byte kind, int methodId)

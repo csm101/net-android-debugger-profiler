@@ -277,7 +277,7 @@ public sealed class ProfilerSession : IAsyncDisposable
             var assemblies = Spec.WeaveAssemblies is { Count: > 0 } ? Spec.WeaveAssemblies : InferAssemblies();
             var filter = WeaveFilter.Parse(string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec!);
             Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
-            _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs, Spec.WeavePropertyAccessors).ConfigureAwait(false);
+            _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct, Spec.WeaveReferenceDirs, Spec.WeavePropertyAccessors, Spec.TrackAllocations).ConfigureAwait(false);
             Log($"woven {_weaveMap.Count} methods (skipped {_weaveDeployer.LastSkippedAccessorCount} property accessors); collector + assemblies deployed");
             if (_weaveDeployer.LastAsyncStubCount > 0)
                 _warnings.Add($"{_weaveDeployer.LastAsyncStubCount} woven methods are async: their timing covers the synchronous part up to the first await, not the whole operation.");

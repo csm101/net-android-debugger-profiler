@@ -182,6 +182,16 @@ public class SessionTests
         Assert.Contains(timings, t => t.FullName.EndsWith("..ctor"));
         var tree = s.Results.TimingTreeChildren(null);
         Assert.NotEmpty(tree);
+
+        // trackAllocations is on by default: the weaver reports what the woven methods
+        // allocate. Which types show up depends on how far the instrumented workload gets
+        // inside the window (Mix dominates), so assert that allocations were recorded and
+        // that their type names resolved through the collector's types file.
+        var allocs = s.Results.AllocationsByType(20);
+        Assert.NotEmpty(allocs);
+        Assert.Contains(allocs, a => !a.TypeName.StartsWith("<type "));
+        var sites = s.Results.AllocationsBySite(20);
+        Assert.Contains(sites, a => a.MethodFullName.StartsWith("TestTarget.Workloads"));
     }
 
     /// <summary>

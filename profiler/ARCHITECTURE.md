@@ -77,7 +77,7 @@ Two engines produce the same `InstrumentingResult` and therefore the same
 | Mechanism | `Microsoft-DotNETRuntimeMonoProfiler` callspec, events over EventPipe | `Profiler.Enter/Leave` injected into the selected methods, events written to files by the app |
 | Requirements | MonoVM, `MONO_DIAGNOSTICS` in the app environment, JIT (AOT methods are never instrumented) | the woven assemblies must be the ones the app loads |
 | Availability | broken on .NET 9 runtimes (KNOWN_UNKNOWNS U20) | works on any runtime, including .NET 9 |
-| Allocations | exact, with type and allocating frame | not collected (v1) |
+| Allocations | exact, with type, size and allocating frame | counts by type and allocating frame (newobj/newarr in woven methods report their type; no sizes) |
 | Where the rewrite happens | nowhere (runtime decides at JIT time) | on the device (fast-deployment copies) or during the build (`nap-weave`) |
 
 Weaver data path: `CecilWeaver` wraps each selected method body in
@@ -88,8 +88,9 @@ files plus the map into timings and a timing tree.
 
 `.napw` format: header `"NAPW"`, version byte, `i64` Stopwatch frequency,
 `i32` pid (0), `i32` managed thread id; then fixed 13-byte records of
-`u8 kind` (1 enter, 2 leave, 3 exception leave), `i32 method id`, `i64` Stopwatch
-ticks. Buffers are flushed every second and on process exit, so a killed process
+`u8 kind` (1 enter, 2 leave, 3 exception leave, 4 allocation), `i32 id` (method id,
+or type id for allocations, resolved through the `nap-types.txt` sidecar the
+collector writes), `i64` Stopwatch ticks. Buffers are flushed every second and on process exit, so a killed process
 loses at most one second of events.
 
 Two deployment shapes:

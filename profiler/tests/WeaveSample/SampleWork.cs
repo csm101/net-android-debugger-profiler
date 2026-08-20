@@ -54,6 +54,26 @@ public class Shapes
     }
 }
 
+/// <summary>Deterministic allocations for the weaver's allocation tracking.</summary>
+public class Allocator
+{
+    public int MakeThings(int n)
+    {
+        var kept = new List<Thing>();      // 1 List + its internal array
+        for (int i = 0; i < n; i++)
+            kept.Add(new Thing(i));         // n Things
+        var buffer = new byte[64];          // 1 byte[]
+        return kept.Count + buffer.Length;
+    }
+}
+
+/// <summary>Instances counted by the allocation test.</summary>
+public class Thing
+{
+    public Thing(int id) => Id = id;
+    public int Id { get; }
+}
+
 /// <summary>Type excluded by the test filter: must never be woven.</summary>
 public class Untouched
 {

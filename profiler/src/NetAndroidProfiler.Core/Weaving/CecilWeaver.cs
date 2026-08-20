@@ -31,6 +31,7 @@ public sealed class CecilWeaver
 
     private readonly WeaveFilter _filter;
     private readonly bool _weavePropertyAccessors;
+    private readonly bool _trackAllocations;
     private readonly List<WovenMethod> _map = new();
     private int _nextId;
 
@@ -39,12 +40,22 @@ public sealed class CecilWeaver
     /// are skipped by default: instrumenting them multiplies the event volume without
     /// adding information the caller's own figures do not already carry.
     /// </param>
-    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false)
+    /// <param name="trackAllocations">
+    /// Also record allocations performed by the woven methods: every <c>newobj</c> of a
+    /// reference type and every <c>newarr</c> reports its type to the collector, which
+    /// gives per-type and per-method allocation counts on runtimes where the MonoProfiler
+    /// provider is unusable.
+    /// </param>
+    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false)
     {
         _filter = filter;
         _nextId = firstMethodId;
         _weavePropertyAccessors = weavePropertyAccessors;
+        _trackAllocations = trackAllocations;
     }
+
+    /// <summary>Allocation sites instrumented by the last weave.</summary>
+    public int AllocationSiteCount { get; private set; }
 
     /// <summary>Property accessors that matched the filter but were skipped.</summary>
     public int SkippedAccessorCount { get; private set; }
@@ -82,6 +93,7 @@ public sealed class CecilWeaver
 
         var enterRef = ImportCollectorMethod(module, "Enter");
         var leaveRef = ImportCollectorMethod(module, "Leave");
+        var allocRef = _trackAllocations ? ImportAllocatedMethod(module) : null;
 
         var woven = new List<WovenMethod>();
         foreach (var type in module.GetTypes())
@@ -98,7 +110,7 @@ public sealed class CecilWeaver
                 var snapshot = BodySnapshot.Capture(method.Body);
                 try
                 {
-                    WeaveMethod(method, id, enterRef, leaveRef);
+                    AllocationSiteCount += WeaveMethod(method, id, enterRef, leaveRef, allocRef);
                     // Validate the rewritten body: this is where malformed control flow surfaces.
                     method.Body.OptimizeMacros();
                 }
@@ -184,7 +196,7 @@ public sealed class CecilWeaver
     /// the try by mutating the instruction in place (so existing branch targets
     /// that pointed at it stay valid), storing the return value in a local first.
     /// </summary>
-    private static void WeaveMethod(MethodDefinition method, int id, MethodReference enterRef, MethodReference leaveRef)
+    private static int WeaveMethod(MethodDefinition method, int id, MethodReference enterRef, MethodReference leaveRef, MethodReference? allocRef)
     {
         var body = method.Body;
         body.SimplifyMacros();
@@ -246,6 +258,57 @@ public sealed class CecilWeaver
             HandlerStart = finallyStart,
             HandlerEnd = loadRet,
         });
+
+        return allocRef is null ? 0 : InstrumentAllocations(body, il, allocRef);
+    }
+
+    /// <summary>
+    /// Report every allocation the method performs: after a <c>newobj</c> of a reference
+    /// type or a <c>newarr</c>, push the allocated type's handle and call the collector.
+    /// The instruction sequence is stack-neutral (the instance stays on the stack
+    /// untouched), and value-type <c>newobj</c> is skipped: passing it would box, which
+    /// would allocate on its own.
+    /// </summary>
+    private static int InstrumentAllocations(MethodBody body, ILProcessor il, MethodReference allocRef)
+    {
+        int sites = 0;
+        foreach (var ins in body.Instructions.ToList())
+        {
+            TypeReference? allocated = null;
+            if (ins.OpCode == OpCodes.Newobj && ins.Operand is MethodReference ctor)
+            {
+                var declaring = ctor.DeclaringType;
+                if (declaring is null || declaring.IsValueType) continue;
+                allocated = declaring;
+            }
+            else if (ins.OpCode == OpCodes.Newarr && ins.Operand is TypeReference elementType)
+            {
+                allocated = new ArrayType(elementType);
+            }
+            if (allocated is null) continue;
+
+            var ldtoken = il.Create(OpCodes.Ldtoken, body.Method.Module.ImportReference(allocated));
+            var call = il.Create(OpCodes.Call, allocRef);
+            il.InsertAfter(ins, ldtoken);
+            il.InsertAfter(ldtoken, call);
+            sites++;
+        }
+        return sites;
+    }
+
+    /// <summary>Reference to Profiler.Allocated(RuntimeTypeHandle).</summary>
+    private static MethodReference ImportAllocatedMethod(ModuleDefinition module)
+    {
+        var collectorRef = module.AssemblyReferences.FirstOrDefault(r => r.Name == CollectorAssemblyName);
+        if (collectorRef is null)
+        {
+            collectorRef = new AssemblyNameReference(CollectorAssemblyName, new Version(1, 0, 0, 0));
+            module.AssemblyReferences.Add(collectorRef);
+        }
+        var declaring = new TypeReference(CollectorTypeNamespace, CollectorTypeName, module, collectorRef);
+        var method = new MethodReference("Allocated", module.TypeSystem.Void, declaring) { HasThis = false };
+        method.Parameters.Add(new ParameterDefinition(module.ImportReference(typeof(RuntimeTypeHandle))));
+        return method;
     }
 
     /// <summary>Captured state of a method body, to roll back a failed weave.</summary>

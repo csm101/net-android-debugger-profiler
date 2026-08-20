@@ -60,6 +60,50 @@ public class WeaverShapeTests
     }
 }
 
+/// <summary>
+/// Allocation tracking: weave a method that allocates a known number of objects,
+/// run it, and check what the collector recorded. Separate process-wide state from
+/// WeaverTests is not needed - both share the collector's single output directory,
+/// so this test only asserts on its own types.
+/// </summary>
+public class WeaverAllocationTests
+{
+    [Fact]
+    public void Woven_methods_report_their_allocations_by_type_and_site()
+    {
+        string work = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        string eventsDir = Path.Combine(work, "events");
+        Environment.SetEnvironmentVariable("NAP_PROFILER_OUT", eventsDir);
+
+        string input = Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll");
+        string woven = Path.Combine(work, "WeaveSample.dll");
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Allocator"), 500, weavePropertyAccessors: false, trackAllocations: true);
+        weaver.Weave(input, woven);
+        Assert.True(weaver.AllocationSiteCount >= 3, $"expected the List, Thing and byte[] sites, got {weaver.AllocationSiteCount}");
+
+        var asm = System.Reflection.Assembly.LoadFile(woven);
+        var type = asm.GetType("WeaveSample.Allocator")!;
+        object instance = Activator.CreateInstance(type)!;
+        int result = (int)type.GetMethod("MakeThings")!.Invoke(instance, [7])!;
+        Assert.Equal(7 + 64, result);
+        NetAndroidProfiler.Collector.Profiler.FlushAll();
+
+        var r = new WeaveAnalyzer().Analyze(eventsDir, weaver.Map);
+        Assert.True(r.AllocationEvents >= 9, $"allocation events = {r.AllocationEvents}");
+
+        var things = r.AllocsByType.Single(a => r.Types[a.TypeId].Name == "WeaveSample.Thing");
+        Assert.Equal(7, things.Count);
+
+        var bytes = r.AllocsByType.SingleOrDefault(a => r.Types[a.TypeId].Name!.StartsWith("System.Byte["));
+        Assert.NotNull(bytes);
+
+        // Every allocation happened inside the woven method, so it must be attributed to it.
+        var site = r.AllocsBySite.First(a => a.TypeId == things.TypeId);
+        Assert.Equal("WeaveSample.Allocator.MakeThings", r.Method(site.MethodId).FullName);
+    }
+}
+
 public class WeaverTests
 {
     [Fact]

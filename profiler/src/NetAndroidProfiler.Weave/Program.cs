@@ -16,7 +16,7 @@ var assemblies = new List<string>();
 var referenceDirs = new List<string>();
 string? callspec = null, mapPath = null, collectorOut = null;
 int firstId = 1;
-bool quiet = false, weaveAccessors = false;
+bool quiet = false, weaveAccessors = false, trackAllocations = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -32,6 +32,7 @@ for (int i = 0; i < args.Length; i++)
         case "--first-id": firstId = int.Parse(Next(a)); break;
         case "--quiet": quiet = true; break;
         case "--property-accessors": weaveAccessors = true; break;
+        case "--allocations": trackAllocations = true; break;
         case "-h" or "--help": Usage(); return 0;
         default: Console.Error.WriteLine($"nap-weave: unknown argument '{a}'"); Usage(); return 2;
     }
@@ -47,7 +48,7 @@ if (assemblies.Count == 0 || callspec is null || mapPath is null)
 try
 {
     var filter = WeaveFilter.Parse(callspec);
-    var weaver = new CecilWeaver(filter, firstId, weaveAccessors);
+    var weaver = new CecilWeaver(filter, firstId, weaveAccessors, trackAllocations);
     var resolver = new Mono.Cecil.DefaultAssemblyResolver();
     foreach (var dir in referenceDirs)
         if (Directory.Exists(dir)) resolver.AddSearchDirectory(dir);
@@ -116,4 +117,5 @@ static void Usage() => Console.Error.WriteLine("""
       --reference-dir  extra directories for resolving the assemblies' references.
       --collector-out  copy NetAndroidProfiler.Collector.dll into this directory.
       --property-accessors  also weave property getters/setters (skipped by default).
+      --allocations    also record allocations made by the woven methods.
     """);
