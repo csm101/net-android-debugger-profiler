@@ -141,7 +141,7 @@ Do not restart analysis from zero unless required.
 
 - The integration suite in tests/NetAndroidProfiler.Tests drives the real
   pipeline: profile a real TestTarget run on the Android emulator
-  (pixel_7_-_api_33_0) or an attached device, then assert on the analyzed
+  (DevicePerSviluppoProfiler) or an attached device, then assert on the analyzed
   output (hotspots present, known method visible, allocation attributed).
   Parsing/analysis layers also get fast tests against **checked-in recorded
   trace files** - no device needed; keep them small.
@@ -162,7 +162,7 @@ Do not restart analysis from zero unless required.
 
 Environment facts (this machine): .NET SDK 10.0.301 with android workload;
 adb at C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe
-(on PATH); emulator AVD pixel_7_-_api_33_0; no desktop Mono runtime.
+(on PATH); emulator AVD DevicePerSviluppoProfiler; no desktop Mono runtime.
 
 # Code generation rules
 

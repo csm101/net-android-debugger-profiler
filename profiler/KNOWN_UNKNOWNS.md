@@ -53,3 +53,11 @@ palmari; port collisions with the debugger project's ports.
 ## U11 - Shared AndroidCollector with net-android-debugger
 When both projects' orchestration stabilizes: extract shared library (repo,
 packaging, versioning between the two repos).
+
+## U12 - Multi-device targeting
+The debugger project uses AVD pixel_7_-_api_33_0; this project uses its own
+AVD DevicePerSviluppoProfiler, and both may run simultaneously. Every adb
+call must target a serial (adb -s / ANDROID_SERIAL); how do dotnet-dsrouter
+and dotnet-trace --dsrouter android pick their device with two emulators
+attached? Establish the selection mechanism in P0 and record it in
+ANDROID_PROFILING_NOTES.md.

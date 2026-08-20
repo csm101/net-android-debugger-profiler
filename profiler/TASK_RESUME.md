@@ -16,7 +16,7 @@ Start P0 step 1 below.
 2. Create TestTarget/ minimal net-android app with a busy method (CPU burn
    loop with a recognizable name) and an allocation-heavy method; build with
    -c Release -p:EnableDiagnostics=true.
-3. Boot emulator pixel_7_-_api_33_0; run:
+3. Boot emulator DevicePerSviluppoProfiler; run:
    dotnet-trace collect --dsrouter android --format speedscope
    plus a plain nettrace collection. Confirm the busy method appears in the
    samples. Resolves U1, U4 basics.

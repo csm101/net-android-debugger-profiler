@@ -26,7 +26,7 @@ dotnet test C:\GitHub\net-android-profiler\NetAndroidProfiler.slnx --nologo -v m
   (AVD name current as of 2026-08; re-check with `emulator -list-avds`):
 
 ```powershell
-Start-Process "C:\Program Files (x86)\Android\android-sdk\emulator\emulator.exe" -ArgumentList "-avd","pixel_7_-_api_33_0","-no-snapshot-save"
+Start-Process "C:\Program Files (x86)\Android\android-sdk\emulator\emulator.exe" -ArgumentList "-avd","DevicePerSviluppoProfiler","-no-snapshot-save"
 adb wait-for-device
 ```
 

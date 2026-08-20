@@ -78,7 +78,7 @@ net9/net10 android to be confirmed in P0 - see KNOWN_UNKNOWNS U2]**
 
 ## This machine
 
-- adb 1.0.41 (36.0.0), on PATH; emulator AVD pixel_7_-_api_33_0
+- adb 1.0.41 (36.0.0), on PATH; emulator AVD DevicePerSviluppoProfiler
 - .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7)
 - dotnet-trace / dotnet-dsrouter / dotnet-gcdump: **not yet installed**
   (dotnet tool install -g ... in P0)
@@ -94,3 +94,11 @@ net9/net10 android to be confirmed in P0 - see KNOWN_UNKNOWNS U2]**
 - https://github.com/dotnet/runtime/blob/main/docs/design/mono/diagnostics-tracing.md
 - https://github.com/microsoft/perfview
 - https://github.com/jonathanpeppers/Mono.Profiler.Android
+
+## Multi-device rule
+
+This machine can run two emulators at once (debugger project: AVD
+pixel_7_-_api_33_0; this project: AVD DevicePerSviluppoProfiler). Never rely
+on adb's single-device default: pass the serial explicitly (adb -s <serial>,
+or ANDROID_SERIAL env var) in every orchestration command. Device selection
+for dsrouter/dotnet-trace with multiple devices: see KNOWN_UNKNOWNS U12.
