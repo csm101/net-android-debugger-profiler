@@ -62,7 +62,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver: deterministic call counts match known execution (Fib recursion, nesting, values) - `Weave_execute_and_analyze_end_to_end`
 - [x] Weaver: exception paths balanced by finally-based Leave - same test (Boom / CatchAndReturn)
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
-- [ ] Weaver on device: woven app assembly pushed to the override dir, session round trip
+- [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
 - [ ] Async method timing attributed across await points (state machines skipped in v1 - U8)
 - [ ] Weaver skips getters/setters on request (config)
 

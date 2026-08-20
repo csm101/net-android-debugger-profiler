@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
+using System.Diagnostics; // Stopwatch only
 using System.IO;
 using System.Threading;
 
@@ -30,19 +30,21 @@ public static class Profiler
 
     private static readonly string? OutDir;
     private static readonly bool Enabled;
-    private static readonly int Pid;
+    private static readonly string ProcessToken = Guid.NewGuid().ToString("N").Substring(0, 8);
     private static readonly List<ThreadWriter> Writers = new List<ThreadWriter>();
     [ThreadStatic] private static ThreadWriter? t_writer;
 
     static Profiler()
     {
+        // Never use System.Diagnostics.Process here: on Android it can throw and
+        // would silently disable the collector. The pid field is cosmetic; files
+        // are keyed by a per-process token + managed thread id.
         try
         {
             string? dir = Environment.GetEnvironmentVariable("NAP_PROFILER_OUT");
             if (string.IsNullOrEmpty(dir)) return;
             Directory.CreateDirectory(dir);
             OutDir = dir;
-            Pid = Process.GetCurrentProcess().Id;
             Enabled = true;
             var timer = new Timer(_ => FlushAll(), null, 1000, 1000);
             GC.KeepAlive(timer);
@@ -89,7 +91,7 @@ public static class Profiler
 
     private static ThreadWriter? NewWriter()
     {
-        var w = ThreadWriter.Open(OutDir!, Pid, Thread.CurrentThread.ManagedThreadId);
+        var w = ThreadWriter.Open(OutDir!, ProcessToken, Thread.CurrentThread.ManagedThreadId);
         if (w is null) return ThreadWriter.Broken;
         lock (Writers) Writers.Add(w);
         return w;
@@ -115,16 +117,16 @@ public static class Profiler
 
         private ThreadWriter(FileStream? stream) { _stream = stream; }
 
-        public static ThreadWriter? Open(string dir, int pid, int threadId)
+        public static ThreadWriter? Open(string dir, string token, int threadId)
         {
             try
             {
-                var fs = new FileStream(Path.Combine(dir, $"{pid}-t{threadId}.napw"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 16);
+                var fs = new FileStream(Path.Combine(dir, $"{token}-t{threadId}.napw"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 16);
                 var header = new byte[4 + 1 + 8 + 4 + 4];
                 header[0] = (byte)'N'; header[1] = (byte)'A'; header[2] = (byte)'P'; header[3] = (byte)'W';
                 header[4] = FormatVersion;
                 WriteInt64(header, 5, Stopwatch.Frequency);
-                WriteInt32(header, 13, pid);
+                WriteInt32(header, 13, 0);
                 WriteInt32(header, 17, threadId);
                 fs.Write(header, 0, header.Length);
                 return new ThreadWriter(fs);

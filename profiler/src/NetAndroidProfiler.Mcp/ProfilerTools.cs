@@ -68,9 +68,11 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("restart: keep the app suspended until the session is up (captures startup)")] bool suspendOnStart = true,
         [Description("Optional friendly name used in the session id")] string? name = null,
         [Description("restart: leave the app running after the session (default: stop it, so it does not reconnect to the next session)")] bool keepAppRunning = false,
+        [Description("Instrumenting engine: provider (Mono runtime callspec; crashes net9 runtimes) or weaver (Mono.Cecil IL weaving of the app assemblies; works on net9 Debug builds)")] string engine = "provider",
+        [Description("Weaver: assembly names to weave, comma-separated (e.g. 'App.Droid,App.Core'); inferred from the callspec when omitted")] string? weaveAssemblies = null,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -92,9 +94,11 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Instrumenting: also record allocations")] bool trackAllocations = true,
         [Description("restart: suspend the app until the session is up")] bool suspendOnStart = true,
         [Description("Optional friendly name")] string? name = null,
-        [Description("restart: leave the app running after the session")] bool keepAppRunning = false)
+        [Description("restart: leave the app running after the session")] bool keepAppRunning = false,
+        [Description("Instrumenting engine: provider or weaver")] string engine = "provider",
+        [Description("Weaver: assembly names to weave, comma-separated")] string? weaveAssemblies = null)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning);
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies);
         if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
         var live = host.Create(spec);
         live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
@@ -343,7 +347,7 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
@@ -362,8 +366,16 @@ public sealed class ProfilerTools(SessionHost host)
         };
         if (pm == ProfilingMode.Instrumenting && string.IsNullOrWhiteSpace(callspec))
             throw new McpException("Instrumenting needs a callspec (e.g. N:My.App.Namespace). Instrumenting everything is not supported: it makes the app unusably slow.");
+        var eng = engine.Trim().ToLowerInvariant() switch
+        {
+            "provider" or "runtime" or "" => InstrumentingEngine.RuntimeProvider,
+            "weaver" or "cecil" or "il" => InstrumentingEngine.Weaver,
+            _ => throw new McpException($"Unknown engine '{engine}': use provider | weaver."),
+        };
+        var asms = string.IsNullOrWhiteSpace(weaveAssemblies) ? null
+            : weaveAssemblies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         return new SessionSpec(deviceSerial.Trim(), packageName.Trim(), pm, lm,
             durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
-            suspendOnStart, callspec, trackAllocations, name, keepAppRunning);
+            suspendOnStart, callspec, trackAllocations, name, keepAppRunning, eng, asms);
     }
 }

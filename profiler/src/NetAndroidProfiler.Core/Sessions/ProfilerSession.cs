@@ -4,8 +4,18 @@ using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Collection;
 using NetAndroidProfiler.Core.Devices;
 using NetAndroidProfiler.Core.Store;
+using NetAndroidProfiler.Core.Weaving;
 
 namespace NetAndroidProfiler.Core.Sessions;
+
+/// <summary>Which mechanism produces instrumenting (enter/leave) data.</summary>
+public enum InstrumentingEngine
+{
+    /// <summary>Microsoft-DotNETRuntimeMonoProfiler callspec (MonoVM only; crashes net9 runtimes - see U20).</summary>
+    RuntimeProvider,
+    /// <summary>Mono.Cecil IL weaving of the app assemblies (runtime-independent; works on net9).</summary>
+    Weaver,
+}
 
 /// <summary>How the app process is brought into the session.</summary>
 public enum LaunchMode
@@ -29,7 +39,9 @@ public sealed record SessionSpec(
     string? Callspec = null,
     bool TrackAllocations = true,
     string? Name = null,
-    bool KeepAppRunning = false);
+    bool KeepAppRunning = false,
+    InstrumentingEngine Engine = InstrumentingEngine.RuntimeProvider,
+    IReadOnlyList<string>? WeaveAssemblies = null);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -74,6 +86,9 @@ public sealed class ProfilerSession : IAsyncDisposable
     private bool _reverseSet;
     private string? _expectedMarker;
     private bool _appLaunchedByUs;
+    private WeaveDeployer? _weaveDeployer;
+    private IReadOnlyList<WovenMethod>? _weaveMap;
+    private string? _weaveEventsDir;
     private ResultStore? _store;
 
     private ProfilerSession(string id, SessionSpec spec, string directory, AdbClient adb)
@@ -174,7 +189,13 @@ public sealed class ProfilerSession : IAsyncDisposable
         if (blocking.Count > 0)
             throw new ProfilerException("The app cannot be profiled in mode " + Spec.Mode + ":\n - " + string.Join("\n - ", blocking.Select(b => b.Message)));
         if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Launch == LaunchMode.Attach)
-            throw new ProfilerException("Instrumenting requires LaunchMode.Restart: methods are instrumented when they are JIT-compiled, so the session must be running before the app starts.");
+            throw new ProfilerException("Instrumenting requires LaunchMode.Restart: the app must be (re)started under the instrumentation, not attached later.");
+
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.Weaver)
+        {
+            await PrepareWeaverAsync(device, prereq, ct).ConfigureAwait(false);
+            return;
+        }
 
         // Diagnostics transport.
         _dsrouter = await DsRouterProcess.StartAsync(device.IsEmulator, ct).ConfigureAwait(false);
@@ -226,8 +247,81 @@ public sealed class ProfilerSession : IAsyncDisposable
         }
     }
 
+    private async Task PrepareWeaverAsync(DeviceInfo device, AppPrerequisites prereq, CancellationToken ct)
+    {
+        if (!prereq.IsDebuggable)
+            throw new ProfilerException("Weaver instrumenting needs a debuggable (Debug/fast-deployment) build: it rewrites the app assemblies in the app's private override directory, which requires run-as.");
+        if (prereq.HasAotLibraries)
+            _warnings.Add("The app contains AOT assemblies; only assemblies present as .dll in the override directory can be woven.");
+        var assemblies = Spec.WeaveAssemblies is { Count: > 0 } ? Spec.WeaveAssemblies : InferAssemblies();
+        var filter = WeaveFilter.Parse(string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec!);
+
+        await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+        _weaveDeployer = new WeaveDeployer(_adb, device.Serial, Spec.Package, device.Abi, Directory);
+        Log($"weaving {string.Join(", ", assemblies)} with filter '{Spec.Callspec ?? "all"}'");
+        _weaveMap = await _weaveDeployer.WeaveAndDeployAsync(assemblies, filter, null, ct).ConfigureAwait(false);
+        Log($"woven {_weaveMap.Count} methods; collector + assemblies deployed");
+
+        // The collector writes to a private events dir; wipe stale files, then point the app at it.
+        string eventsDir = _weaveDeployer.RemoteEventsDir;
+        await _adb.RunAsAsync(device.Serial, Spec.Package, $"rm -rf {eventsDir} && mkdir -p {eventsDir}", ct).ConfigureAwait(false);
+        string absoluteEvents = await _adb.RunAsAsync(device.Serial, Spec.Package, $"cd {eventsDir} && pwd", ct).ConfigureAwait(false);
+
+        _env = new AppEnvironment(_adb, device.Serial, Spec.Package, device.Abi);
+        await _env.ApplyOverrideAsync([new("NAP_PROFILER_OUT", absoluteEvents.Trim())], ct).ConfigureAwait(false);
+        Log($"NAP_PROFILER_OUT={absoluteEvents.Trim()}");
+        await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
+        await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+        _appLaunchedByUs = true;
+        Log("app launched (weaver)");
+    }
+
+    private IReadOnlyList<string> InferAssemblies()
+    {
+        // Assembly name = the leading dotted segments of the callspec targets, best effort:
+        // N:App.Droid -> App.Droid, T:App.Core.X.Y -> App.Core. Falls back to the package's last segment.
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in (Spec.Callspec ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            string s = entry.TrimStart('+', '-');
+            if (s.Length > 2 && s[1] == ':') s = s[2..];
+            var parts = s.Split('.');
+            if (parts.Length >= 2) names.Add(parts[0] + "." + parts[1]);
+            else if (parts.Length == 1 && parts[0].Length > 0) names.Add(parts[0]);
+        }
+        if (names.Count == 0) throw new ProfilerException("Cannot infer which assemblies to weave from the callspec; pass WeaveAssemblies explicitly.");
+        return names.ToList();
+    }
+
+    private async Task CollectWeaverAsync(CancellationToken ct)
+    {
+        SetState(SessionState.Collecting);
+        _started = DateTimeOffset.UtcNow;
+        var duration = Spec.Duration ?? TimeSpan.FromSeconds(20);
+        using (var waitCts = CancellationTokenSource.CreateLinkedTokenSource(_stopRequested.Token, ct))
+        {
+            waitCts.CancelAfter(duration);
+            try { await Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+        }
+        ct.ThrowIfCancellationRequested();
+        // Force-stop triggers the collector's ProcessExit flush; then pull the event files.
+        await _adb.ForceStopAsync(Spec.DeviceSerial, Spec.Package, ct).ConfigureAwait(false);
+        _appLaunchedByUs = false; // already stopped
+        await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+        _weaveEventsDir = Path.Combine(Directory, "events");
+        int n = await _weaveDeployer!.PullEventsAsync(_weaveDeployer.RemoteEventsDir, _weaveEventsDir, ct).ConfigureAwait(false);
+        Log($"pulled {n} event files");
+        _ended = DateTimeOffset.UtcNow;
+    }
+
     private async Task CollectAsync(CancellationToken ct)
     {
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.Weaver)
+        {
+            await CollectWeaverAsync(ct).ConfigureAwait(false);
+            return;
+        }
         SetState(SessionState.WaitingForApp);
         var collector = new EventPipeCollector(_dsrouter!.Pid, Log);
         await collector.WaitForRuntimeAsync(TimeSpan.FromSeconds(Spec.Launch == LaunchMode.Attach ? 20 : 90), ct, _expectedMarker).ConfigureAwait(false);
@@ -281,10 +375,12 @@ public sealed class ProfilerSession : IAsyncDisposable
             }
             case ProfilingMode.Instrumenting:
             {
-                var r = await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
+                InstrumentingResult r = Spec.Engine == InstrumentingEngine.Weaver
+                    ? await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false)
+                    : await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
                 store.WriteInstrumenting(r);
-                Log($"instrumenting analyzed: enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}");
-                if (r.EnterEvents == 0) _warnings.Add("No enter/leave events were received: check the callspec and that the app was (re)started by the session.");
+                Log($"instrumenting analyzed ({Spec.Engine}): enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}");
+                if (r.EnterEvents == 0) _warnings.Add("No enter/leave events were recorded: check the callspec/assemblies and that the app actually ran the woven methods.");
                 break;
             }
             case ProfilingMode.HeapSnapshot:
@@ -325,6 +421,8 @@ public sealed class ProfilerSession : IAsyncDisposable
             catch (Exception e) { Log("force-stop failed: " + e.Message); }
             _appLaunchedByUs = false;
         }
+        try { if (_weaveDeployer is not null && _weaveDeployer.HasPendingChanges) { await _weaveDeployer.RestoreAsync(ct).ConfigureAwait(false); Log("woven assemblies restored"); } }
+        catch (Exception e) { Log("restore woven assemblies failed: " + e.Message); }
         try { if (_env is not null && _env.HasPendingChanges) { await _env.RestoreAsync(ct).ConfigureAwait(false); Log("app environment restored"); } }
         catch (Exception e) { Log("restore environment failed: " + e.Message); }
         try { if (_reverseSet) await _adb.ReverseRemoveAsync(Spec.DeviceSerial, DsRouterProcess.AppPort, ct).ConfigureAwait(false); }

@@ -1,0 +1,139 @@
+using NetAndroidProfiler.Core.Devices;
+
+namespace NetAndroidProfiler.Core.Weaving;
+
+/// <summary>
+/// On-device weaving flow for a debuggable (fast-deployment) app: the target
+/// assemblies live as writable files under
+/// <c>files/.__override__/&lt;abi&gt;/</c>. This pulls the selected ones, weaves
+/// them locally, pushes the woven copies back (keeping backups) together with
+/// the collector assembly, and restores the originals afterwards. Requires no
+/// rebuild of the app.
+/// </summary>
+public sealed class WeaveDeployer
+{
+    private readonly AdbClient _adb;
+    private readonly string _serial;
+    private readonly string _package;
+    private readonly string _abi;
+    private readonly string _workDir;
+    private readonly List<string> _deployed = new();
+    private bool _collectorDeployed;
+
+    public WeaveDeployer(AdbClient adb, string serial, string package, string abi, string workDir)
+    {
+        _adb = adb; _serial = serial; _package = package; _abi = abi; _workDir = workDir;
+    }
+
+    private string OverrideDir => $"files/.__override__/{_abi}";
+
+    /// <summary>Path of the collector assembly in Core's output (copied there at build time).</summary>
+    public static string DefaultCollectorPath =>
+        Path.Combine(AppContext.BaseDirectory, CecilWeaver.CollectorAssemblyName + ".dll");
+
+    /// <summary>
+    /// Weave <paramref name="assemblies"/> (simple names, e.g. "App.Droid") with
+    /// <paramref name="filter"/> and deploy them plus the collector. Returns the
+    /// weaver id map. The app must be stopped.
+    /// </summary>
+    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct)
+    {
+        string pulled = Path.Combine(_workDir, "pulled");
+        string wovenDir = Path.Combine(_workDir, "woven");
+        Directory.CreateDirectory(pulled);
+        Directory.CreateDirectory(wovenDir);
+
+        var weaver = new CecilWeaver(filter);
+        var deployedNow = new List<(string remote, string localWoven)>();
+        foreach (var name in assemblies)
+        {
+            ct.ThrowIfCancellationRequested();
+            string dll = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? name : name + ".dll";
+            string remote = $"{OverrideDir}/{dll}";
+            if (!await RemoteExistsAsync(remote, ct).ConfigureAwait(false))
+                throw new ToolException($"Assembly {dll} is not in the app override directory ({OverrideDir}); it may be AOT-only, merged, or not fast-deployed. Deploy a Debug build.");
+            string local = Path.Combine(pulled, dll);
+            await CatToLocalAsync(remote, local, ct).ConfigureAwait(false);
+            string woven = Path.Combine(wovenDir, dll);
+            var result = weaver.Weave(local, woven);
+            if (result.Methods.Count == 0) { File.Delete(woven); continue; }
+            deployedNow.Add((remote, woven));
+        }
+        if (weaver.Map.Count == 0)
+            throw new ToolException($"The weave filter matched no method in {string.Join(", ", assemblies)}.");
+
+        // Deploy collector first (so the woven references resolve), then the woven assemblies.
+        collectorPath ??= DefaultCollectorPath;
+        if (!File.Exists(collectorPath))
+            throw new ToolException($"Collector assembly not found at {collectorPath}");
+        await PushIntoOverrideAsync(collectorPath, $"{OverrideDir}/{CecilWeaver.CollectorAssemblyName}.dll", backup: false, ct).ConfigureAwait(false);
+        _collectorDeployed = true;
+        foreach (var (remote, woven) in deployedNow)
+        {
+            await PushIntoOverrideAsync(woven, remote, backup: true, ct).ConfigureAwait(false);
+            _deployed.Add(remote);
+        }
+        return weaver.Map;
+    }
+
+    /// <summary>Restore the original assemblies and remove the collector.</summary>
+    public async Task RestoreAsync(CancellationToken ct)
+    {
+        foreach (var remote in _deployed)
+        {
+            string backup = remote + ".naporig";
+            try
+            {
+                await _adb.RunAsAsync(_serial, _package, $"test -f {backup} && rm -f {remote} && mv {backup} {remote} && chmod 400 {remote}", ct).ConfigureAwait(false);
+            }
+            catch (Exception) { /* best effort; next deploy rewrites it anyway */ }
+        }
+        _deployed.Clear();
+        if (_collectorDeployed)
+        {
+            try { await _adb.RunAsAsync(_serial, _package, $"rm -f {OverrideDir}/{CecilWeaver.CollectorAssemblyName}.dll", ct).ConfigureAwait(false); }
+            catch { }
+            _collectorDeployed = false;
+        }
+    }
+
+    /// <summary>Pull every *.napw event file the collector wrote into <paramref name="remoteEventsDir"/> to <paramref name="localDir"/>.</summary>
+    public async Task<int> PullEventsAsync(string remoteEventsDir, string localDir, CancellationToken ct)
+    {
+        Directory.CreateDirectory(localDir);
+        var ls = await _adb.RunAsAsync(_serial, _package, $"ls {remoteEventsDir}", ct).ConfigureAwait(false);
+        var files = ls.Split('\n').Select(l => l.Trim()).Where(l => l.EndsWith(".napw", StringComparison.Ordinal)).ToList();
+        foreach (var f in files)
+        {
+            var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {remoteEventsDir}/{f}", ct).ConfigureAwait(false);
+            await File.WriteAllBytesAsync(Path.Combine(localDir, f), data, ct).ConfigureAwait(false);
+        }
+        return files.Count;
+    }
+
+    public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed;
+
+    public string RemoteEventsDir => $"files/nap-events";
+
+    private async Task<bool> RemoteExistsAsync(string relPath, CancellationToken ct)
+    {
+        var r = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} ls {relPath}"], ct).ConfigureAwait(false);
+        return r.Success && !r.StdOut.Contains("No such", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task CatToLocalAsync(string relPath, string local, CancellationToken ct)
+    {
+        var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {relPath}", ct).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(local, data, ct).ConfigureAwait(false);
+    }
+
+    private async Task PushIntoOverrideAsync(string localFile, string remoteRel, bool backup, CancellationToken ct)
+    {
+        string tmp = $"/data/local/tmp/nap-{Guid.NewGuid():N}";
+        await _adb.PushAsync(_serial, localFile, tmp, ct).ConfigureAwait(false);
+        await _adb.ShellAsync(_serial, $"chmod 644 {tmp}", ct).ConfigureAwait(false);
+        string backupCmd = backup ? $"(test -f {remoteRel}.naporig || cp {remoteRel} {remoteRel}.naporig) && " : "";
+        await _adb.RunAsAsync(_serial, _package, $"{backupCmd}rm -f {remoteRel} && cp {tmp} {remoteRel} && chmod 400 {remoteRel}", ct).ConfigureAwait(false);
+        await _adb.RunAsync(_serial, ["shell", $"rm -f {tmp}"], ct).ConfigureAwait(false);
+    }
+}

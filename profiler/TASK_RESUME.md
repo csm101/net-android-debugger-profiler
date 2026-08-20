@@ -4,19 +4,17 @@
 P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
 
 ## Current substep
-P3 weaver first cut DONE host-side: Collector (netstandard2.0, .napw event
-files), CecilWeaver + WeaveFilter (callspec-like grammar), WeaveAnalyzer ->
-InstrumentingResult; fast test green (weave WeaveSample, execute in-process,
-analyze: recursion counts, exception balance, tree nesting, exclusions).
-Committing.
+P3 weaver works END-TO-END on device (TestTarget): weave app dll in override
+dir -> collector .napw -> WeaveAnalyzer -> timing tables; originals restored.
+Collector must avoid System.Diagnostics.Process (silently disabled itself on
+Android). MCP engine=weaver wired. Committing.
 
 ## Next action if interrupted right now
-P3 device flow: Core/Weaving/WeaveDeployer (pull target dlls from the Debug
-override dir via run-as, weave locally, push woven copies + Collector.dll
-back, backup/restore originals), NAP_PROFILER_OUT injected via override env,
-ProfilerSession Engine=Weaver (restart, wait duration, force-stop flushes <=1s
-loss, pull .napw files, WeaveAnalyzer -> timing_* tables), device test on
-TestTarget, then the reference application. MCP: engine parameter on profile_run.
+Run full suite via test-runner. Then P3 hardening: weaver on the reference application
+(WeaveAssemblies App.Droid[,App.Core], callspec N:App.Droid) - the instrumenting
+path that actually works on net9; async/iterator MoveNext attribution (U8);
+Release-build weaving (assemblies embedded, not in override dir). Then P2
+memory tools, or GUI (P4).
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.

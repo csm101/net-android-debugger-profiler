@@ -105,6 +105,30 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task Weaver_instrumenting_session_times_woven_methods()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(8),
+            Callspec: "N:TestTarget.Workloads",
+            Engine: InstrumentingEngine.Weaver,
+            WeaveAssemblies: ["TestTarget"]));
+        Assert.Equal(SessionState.Ready, s.State);
+        var timings = s.Results.Timings(30);
+        // Mix is called in a tight loop; instrumented it is slow, so the count is
+        // far below the uninstrumented 2M/iteration but must be clearly non-trivial.
+        var mix = timings.Single(t => t.FullName == "TestTarget.Workloads.CpuBurner.Mix");
+        Assert.True(mix.Calls > 100, $"Mix calls = {mix.Calls}");
+        Assert.True(mix.TotalNs > 0);
+        Assert.All(timings, t => Assert.StartsWith("TestTarget.Workloads", t.FullName));
+        // Only methods that returned within the window appear (Loop never returns,
+        // Busy is still spinning): Mix and the constructors are enough to prove the
+        // weaver recorded real enter/leave pairs from the woven app assembly.
+        Assert.Contains(timings, t => t.FullName.EndsWith("..ctor"));
+        var tree = s.Results.TimingTreeChildren(null);
+        Assert.NotEmpty(tree);
+    }
+
+    [Fact]
     public async Task Session_restores_app_environment_and_leaves_no_dsrouter()
     {
         var adb = new AdbClient();

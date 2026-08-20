@@ -20,4 +20,13 @@
     <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
 
+  <!--
+    Not an API dependency: referenced only so the netstandard2.0 collector
+    assembly is copied to Core's output, from where the weaver deploys it into
+    the target app. Its types are never used from Core.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Collector\NetAndroidProfiler.Collector.csproj" Private="true" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

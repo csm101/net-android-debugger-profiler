@@ -280,6 +280,37 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   ClassLoaded), 11 (JitChunkCreated), 62 (one per JitDone - not in the
   manifest snapshot used; ignore). **[verified]**
 
+## Weaver instrumenting (plan B, works on net9)
+
+On-device IL weaving instead of the runtime provider (the provider is unusable
+on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
+
+- The app's own managed assemblies are writable files in
+  `files/.__override__/<abi>/*.dll` on a Debug/fast-deployment build. The
+  engine pulls the selected ones (`run-as cat`), weaves them with Mono.Cecil
+  (Enter/try/finally/Leave into filtered methods), pushes the woven copies
+  back (backup `<dll>.naporig`, restore afterwards) plus the collector
+  assembly `NetAndroidProfiler.Collector.dll`, and points the app at an
+  events directory with `NAP_PROFILER_OUT` in the override environment.
+  **[verified]**
+- The collector must not touch `System.Diagnostics.Process` in its static
+  init: on Android it can throw and silently disable itself (observed - no
+  events). Files are keyed by a per-process GUID token + managed thread id.
+  **[verified]**
+- Force-stopping the app fires the collector's ProcessExit flush; the engine
+  then pulls the `.napw` files (`run-as cat`) and parses them
+  (Core/Weaving/WeaveAnalyzer) into the same InstrumentingResult /
+  timing_* tables as the provider path. Loop/Busy that never return in the
+  window simply produce no Leave (only completed calls are timed).
+  **[verified]**
+- Overhead is the same order as the provider (enter/leave per call): a tight
+  leaf loop (Mix, 2M/iteration uninstrumented) drops to ~1500 calls in 8 s
+  when woven - keep hot leaves out of the weave filter, same as callspec.
+  **[verified]**
+- MONO_DIAGNOSTICS / dsrouter / EventPipe are NOT used by this path: no
+  suspend, no diagnostics port, works regardless of the U20 provider bug.
+  **[verified]**
+
 ## Analysis
 
 - .nettrace parses with **TraceEvent** (Microsoft.Diagnostics.Tracing.TraceEvent

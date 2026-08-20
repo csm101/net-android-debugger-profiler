@@ -71,11 +71,14 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Restart with warm-up).
 - Mcp: stdio server over ProfilerSession, tool set below (frozen for P1).
   register-mcp.cmd publishes and registers it in Claude Code.
+- Weaver instrumenting (P3 plan B) works end-to-end on device: Cecil weaves
+  the app assemblies in the override dir, collector writes .napw files,
+  WeaveAnalyzer -> timing_* tables; the net9 provider bug (U20) is bypassed.
 - Tests: 23 fast (recorded traces + pdb) + 1 TODO-RED (U13) + 6 device
   (Category=Device).
 - Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
-- Not yet: Release-app instrumenting on device, physical devices, the reference application
-  run, Delphi GUI.
+- Not yet: weaver on the reference application, Release-build weaving, async MoveNext
+  attribution, physical devices, P2 memory tools, Delphi GUI.
 
 ## Milestones
 
@@ -107,8 +110,8 @@ list_devices, check_app, profile_run (one shot; mode sampling | instrumenting
 profile_status (long sessions), profile_sessions, profile_hotspots,
 profile_flat, profile_tree, profile_callers / profile_callees,
 profile_timings, alloc_report, heap_report, profile_threads, profile_report,
-profile_annotate_source (per-method figures on source via portable pdbs;
-MonoVM gives no per-line samples), get_app_output. Planned: memory diff
+profile_annotate_source, get_app_output. profile_run/profile_start take
+engine=provider|weaver and weaveAssemblies for P3 weaving. Planned: memory diff
 between snapshots (P2).
 
 ## Stable commands
