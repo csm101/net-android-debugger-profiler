@@ -45,7 +45,7 @@ server is still the PRE-fix build: the user must rerun register-mcp.cmd
   TestTarget unchanged. emulator-5556 belongs to the user - never touch.
 
 ## U6 experiment DONE (2026-08-20)
-Result: 4.5-min pause on the reference application's UI thread is harmless (no ANR, both
+Result (two runs): a 4.5-min pause on the UI thread of a non-connected app, and a 5-min explicit pause on a FULLY OPERATIONAL install (logged on, backend up, MQTT connected), are both harmless: no ANR, no death, MQTT self-reconnects after one failed attempt, watchdog never fires (no bug report, no thread restart) in the 6.5 min after resume. U6 answered; only very long pauses (tens of minutes) and the app's own android:process remain unmeasured.
 processes alive, no watchdog restart / bug report in the 3.5 min after
 resume). BUT this emulator cannot reach the the reference application backend
 (an internal backend host times out), so the MQTT/watchdog half is

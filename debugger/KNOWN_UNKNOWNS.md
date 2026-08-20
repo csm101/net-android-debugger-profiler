@@ -28,19 +28,14 @@ What does the Mono.Debugging built-in evaluator cover on net9-android
 Where do we need our own formatting (the Delphi project needed a lot)?
 
 ## U6 - the reference application debug build specifics
-Resolved (ANDROID_ATTACH_NOTES.md, the reference application section): Debug build is
-debuggable with fast deployment, attach works, multi-process handled, and a
-4.5-minute pause on the UI thread kills nothing (no ANR, both processes
-survive, no watchdog restart in the 3.5 min after resume).
-Still open, and NOT answerable on this emulator (it cannot reach the the reference application
-backend `an internal backend host`, so sync threads never run
-normally): what a long pause does to a *working* installation - does MQTT
-auto-reconnect cleanly, and does the watchdog's wall-clock logic fire on
-resume and send spurious bug reports (source says it can:
-`WatchDog.DevoRiavviareIThread` -> `PrepareBugReport(...).Send()` + restart
-all threads, skipped only while `NeedManualLogon`)? Needs a logged-on device
-on a network that reaches the backend. Also still open: the on-demand
-`the app's own android:process` process.
+Answered (details in ANDROID_ATTACH_NOTES.md, the reference application section): Debug build
+is debuggable with fast deployment, attach works, multi-process handled, and
+pausing a fully operational installation (logged on, backend reachable, MQTT
+up) for 5 minutes is harmless - no ANR, no process death, MQTT reconnects
+itself after a single failed attempt, and the sync watchdog neither restarts
+threads nor emits a bug report. Not measured: pauses of tens of minutes (the
+watchdog could still fire and send a real bug report), and the on-demand
+`the app's own android:process` process - reopen a narrower entry if either matters.
 
 ## U8 - CoreCLR on Android
 Future .NET versions may switch Android to CoreCLR (SDB disappears). Not a

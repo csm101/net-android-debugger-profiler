@@ -295,25 +295,26 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     lowmemorykiller, no "Application Not Responding" — Android does not kill
     an app whose managed threads are all suspended by the debugger, as long
     as nothing demands input from it. **[verified]**
-  - After the resume the app keeps running; over the next 3.5 minutes the
-    watchdog did **not** restart threads and no bug report was produced.
-    **[verified — but see the caveat below]**
-  - **Caveat: this emulator cannot reach the the reference application backend**
-    (`an internal backend host` → `SocketTimeoutException` /
-    `ETIMEDOUT`), so the sync threads never work normally and MQTT is down
-    regardless of the debugger. The `MqttClientDisconnectedException` seen on
-    resume therefore proves nothing about pause-induced keepalive loss, and
-    the watchdog's "thread bloccato" branch was never exercised. The
-    MQTT/watchdog half of this question needs a device on a network that
-    reaches the backend. **[unverified]**
-  - Risk found by reading the source (`the sync library's watchdog`):
-    the watchdog loops every 60 s and decides "thread bloccato" from
-    wall-clock deltas (2-minute thresholds, 4 consecutive iterations). After a
-    long pause those deltas are huge, so on resume it can call
-    `BugReportingEngine.PrepareBugReport(...).Send()` — **a real bug report
-    sent from the device** — and restart all sync threads. It skips this while
-    `Manager.NeedManualLogon`. Keep debugger pauses on a logged-on device
-    short, or expect spurious bug reports. **[source-verified]**
+  - Repeated on a **fully operational installation** (user logged on, talking
+    to the backend, MQTT up), suspended with an explicit pause for **5
+    minutes** and then resumed, watching for 6.5 minutes afterwards:
+    - Both processes stayed alive throughout; no ANR, no death.
+    - MQTT: exactly one `ManagedMqttClient.ReconnectIfRequiredAsync` failure
+      ~3 s after the resume, then silence — `MQTTnet`'s managed client
+      (`WithAutoReconnectDelay` 5 s) reconnects on its own and does not enter
+      a reconnect storm.
+    - The sync **watchdog never fired**: no "Thread riavviati forzatamente",
+      no "PREPARING BUGREPORT", no thread restart, and no bug-report file in
+      the app's data directory — even though its `DevoRiavviareIThread`
+      thresholds are wall-clock based (`the sync library's watchdog`:
+      60 s loop, 2-minute thresholds, 4 consecutive iterations). The threads
+      resume work immediately, so their timestamps refresh before the
+      consecutive-iteration counter can build up.
+    **[verified 2026-08-20]** Pauses of a few minutes are therefore safe on
+    the reference application. Much longer pauses (tens of minutes) were not measured; the
+    watchdog can in principle call `PrepareBugReport(...).Send()` and restart
+    every sync thread, so a real bug report from the device stays the failure
+    mode to watch for.
 - **Debugged through the MCP server (2026-08-20):** attach (= restart with
   agent) works on the installed Debug build (fast deployment, assemblies in
   `.__override__/x86_64`); PDB paths are the `C:\Work\ReferenceApp\...` sources,
