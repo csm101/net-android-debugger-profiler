@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationId>com.mcasoftware.testtarget</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <TrimMode>full</TrimMode>
+  </PropertyGroup>
+
+  <!--
+    Spike hook: -p:MonoDiagnostics="<options>" bakes MONO_DIAGNOSTICS=<options>
+    into the APK environment (libxamarin-app.so), the only way to set a runtime
+    environment variable for a Release build (no debug.mono.env in the release
+    libmonodroid). Options are whitespace-separated, e.g.
+    "- -diagnostic-mono-profiler=enable - -diagnostic-mono-profiler-callspec=N:My.Namespace"
+    (without the space inside the dashes).
+    TODO PROTOTYPE: the real engine must inject the same item without editing
+    the target csproj (CustomAfterMicrosoftCommonTargets import adding an
+    AndroidEnvironment item, or an AndroidEnvironment file next to the project).
+  -->
+  <Target Name="_AddMonoDiagnosticsEnvironment" BeforeTargets="_GenerateEnvironmentFiles" Condition="'$(MonoDiagnostics)' != ''">
+    <ItemGroup>
+      <_GeneratedAndroidEnvironment Include="MONO_DIAGNOSTICS=$(MonoDiagnostics)" />
+    </ItemGroup>
+    <Message Importance="high" Text="TestTarget: baking MONO_DIAGNOSTICS=$(MonoDiagnostics)" />
+  </Target>
+</Project>

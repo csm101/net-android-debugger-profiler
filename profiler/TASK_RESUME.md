@@ -1,49 +1,48 @@
 # Task resume
 
 ## Current task
-P0 spike - prove the collection + analysis chain end-to-end.
+P0 spike - DONE (2026-08-20). Next: P1 design proposal (ProfilerSession API +
+SQLite schema v1) - proposal only, waiting for user review before coding.
 
 ## Current substep
-Workspace just initialized (2026-08-20). Nothing of P0 started.
+Spike results recorded; committing. Then write the P1 proposal in the reply
+(not in code).
+
+## Done in P0 (all facts in ANDROID_PROFILING_NOTES.md)
+1. Tools 9.0.661903 installed (dotnet-trace / dsrouter / gcdump).
+2. TestTarget/ (net10.0-android, com.mcasoftware.testtarget): CpuBurner.Busy
+   + Mix, AllocHog.Allocate/NewRecord + AllocHeavyRecord, WorkloadRunner loop.
+   csproj hook `-p:MonoDiagnostics=...` bakes MONO_DIAGNOSTICS.
+3. Sampling round-trip on emulator-5556 (sampling1 AOT, sampling2 JIT):
+   Busy visible; Mix only visible on the JIT build.
+4. DevTools/NetTraceProbe: providers | events | topn | stacks | monoprof.
+5. gcdump round-trip: 50,000 AllocHeavyRecord visible.
+6. MonoProfiler provider: present, enter/leave + alloc arrive, TraceEvent
+   has no parser, manual decode works, MethodID resolves via rundown,
+   callspec filters, instrumentation persists across sessions, overhead
+   ~10 us/event, clean build required after env change.
+7. Recorded traces copied to tests/NetAndroidProfiler.Tests/recorded/.
 
 ## Next action if interrupted right now
-Start P0 step 1 below.
-
-## Exact next steps (in order)
-1. Install diagnostic tools:
-   dotnet tool install -g dotnet-trace dotnet-dsrouter dotnet-gcdump
-   (record versions in ANDROID_PROFILING_NOTES.md).
-2. Create TestTarget/ minimal net-android app with a busy method (CPU burn
-   loop with a recognizable name) and an allocation-heavy method; build with
-   -c Release -p:EnableDiagnostics=true.
-3. Boot emulator DevicePerSviluppoProfiler; run:
-   dotnet-trace collect --dsrouter android --format speedscope
-   plus a plain nettrace collection. Confirm the busy method appears in the
-   samples. Resolves U1, U4 basics.
-4. DevTools probe: parse the collected .nettrace with TraceEvent, print top-N
-   hottest methods with inclusive/exclusive counts. Resolves U3 for sampling.
-5. gcdump round-trip: dotnet-gcdump collect, verify the allocation-heavy
-   type shows up.
-6. MonoProfiler provider probe: MONO_DIAGNOSTICS enable + callspec on
-   TestTarget namespace; verify enter/leave and alloc events arrive and
-   whether TraceEvent decodes them. Resolves U2, rest of U3.
-7. Record all findings in ANDROID_PROFILING_NOTES.md / KNOWN_UNKNOWNS.md;
-   then design ProfilerSession API and SQLite schema v1 for P1.
+Commit + push the spike; then reply with the P1 proposal (ProfilerSession
+API signature + SQLite schema v1) and stop.
 
 ## What works
-- Solution scaffold builds (Core/Mcp/Tests, net10.0).
+- Whole collection+analysis chain on emulator for sampling, gcdump,
+  instrumenting (probe level).
 
 ## What is failing
-- Nothing yet (no functionality exists).
+- Nothing open. Traps recorded in ANDROID_PROFILING_NOTES.md.
 
 ## Traps / hypotheses
-- dotnet-trace one-liner --dsrouter android requires dotnet-trace >= 9.0.621003;
-  older tool needs the manual dsrouter dance.
-- MonoProfiler provider may be absent or renamed in the net10 android
-  workload - probe before building anything on it.
-- Do not launch the app through Visual Studio while diagnostics env is set
-  (documented splash-screen freeze).
-- Suspend mode + slow tool startup may trip app watchdogs.
+- debug.mono.profile is device-global: cleared at the end of the spike.
+- dotnet-trace -p <dsrouter> can fail once with EndOfStreamException right
+  after app launch: retry.
+- Incremental build after MONO_DIAGNOSTICS change -> broken APK
+  (LinkageError on n_onCreate): wipe obj/ bin/.
+- msbuild -p values: commas split properties -> escape as %2C.
+- AOT build hides leaf frames in sampling; use RunAOTCompilation=false for
+  attribution tests and for instrumenting (JIT-time instrumentation).
 
 ## Open items outside P0
-- (none)
+- KNOWN_UNKNOWNS U4b, U5, U13-U17 (new).

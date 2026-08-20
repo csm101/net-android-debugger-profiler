@@ -4,29 +4,23 @@ Open questions that block or condition the work. When one is resolved, move
 the answer into the owning document (ANDROID_PROFILING_NOTES.md,
 ARCHITECTURE.md, PROJECT_STATE.md, TEST_CATALOG.md) and delete the entry.
 
-## U1 - Sampling end-to-end on net9-android
-Does the default cpu-sampling profile of dotnet-trace work against TestTarget
-on emulator pixel_7_-_api_33_0? Sample rate configurability? Managed frames
-fully symbolicated? Overhead?
+Resolved by the P0 spike (2026-08-20) and moved to ANDROID_PROFILING_NOTES.md:
+U1 (sampling end-to-end), U2 (MonoProfiler provider availability, callspec,
+overhead), U3 (TraceEvent decoding: no parser, manual decode works), U4
+basics (suspend choreography), U12 core (serial mapping; one dsrouter port
+per device).
 
-## U2 - MonoProfiler provider availability on net9/net10 android
-Is Microsoft-DotNETRuntimeMonoProfiler still shipped and enableable
-(MONO_DIAGNOSTICS) in the android workload we build with? Exact callspec
-syntax and its filtering granularity? Enter/leave overhead at realistic
-callspec widths?
-
-## U3 - TraceEvent parsing of MonoProfiler events
-Does TraceEvent decode MonoProfiler provider events out of the box, or do we
-need a custom dynamic-event parser for enter/leave and alloc events?
-
-## U4 - Suspend/startup choreography
-Reliability of suspend + dsrouter + trace start ordering; behavior when the
-tool connects late; app watchdogs (MQTT) while suspended; differences
-Debug vs Release, emulator vs device.
+## U4b - Suspend choreography on real apps
+the reference application has watchdogs (MQTT, services) - behavior when the process sits
+suspended for tens of seconds, or when dotnet-trace connects late; Debug vs
+Release; device vs emulator. The transient `EndOfStreamException` at session
+start (retry works) needs a proper retry policy.
 
 ## U5 - Trace size and duration
-Realistic .nettrace sizes for minutes-long sessions on the reference application; streaming vs
-post-mortem analysis; rotation strategy.
+Measured: sampling ~30 KB/s, instrumenting with a busy callspec ~0.75 MB/s
+on TestTarget. Realistic .nettrace sizes for minutes-long the reference application sessions;
+streaming (EventPipe session via DiagnosticsClient) vs post-mortem file
+analysis; rotation strategy.
 
 ## U6 - SQLite schema at scale
 Call-tree storage for millions of nodes: schema, indexing, query latency for
@@ -54,10 +48,42 @@ palmari; port collisions with the debugger project's ports.
 When both projects' orchestration stabilizes: extract shared library (repo,
 packaging, versioning between the two repos).
 
-## U12 - Multi-device targeting
-The debugger project uses AVD pixel_7_-_api_33_0; this project uses its own
-AVD DevicePerSviluppoProfiler, and both may run simultaneously. Every adb
-call must target a serial (adb -s / ANDROID_SERIAL); how do dotnet-dsrouter
-and dotnet-trace --dsrouter android pick their device with two emulators
-attached? Establish the selection mechanism in P0 and record it in
-ANDROID_PROFILING_NOTES.md.
+## U12b - Two emulators profiled at once
+dsrouter android-emu has no port option; the generic `server-server`
+command with explicit endpoints plus a per-device DiagnosticPort must be
+exercised before the engine supports concurrent sessions on two devices.
+
+## U13 - VTableID -> type name for pre-session types
+MonoProfiler GCAllocation carries VTableID; only vtables created during the
+session resolve (VTableLoaded + ClassLoaded). Candidates for a
+start-of-session type dump: GCHeapDump (0x100000) +
+GCHeapDumpVTableClassReference (0x8000000) keywords; or correlate with the
+runtime provider's BulkType events if Mono emits them with vtable ids.
+Needed for P2 per-type allocation reports.
+
+## U14 - Allocation call sites
+GCAllocation has no stack. Options: enable the alloc event inside the
+instrumenting session and attribute each allocation to the innermost open
+enter/leave frame of that thread (works for instrumented methods only);
+or Microsoft-Windows-DotNETRuntime GCSampledObjectAllocation events with
+stacks (does MonoVM emit them with stacks?). Decide in P2.
+
+## U15 - Sampling leaf attribution on AOT code
+Profiled-AOT Release builds lose leaf frames in sampled stacks (Mix absorbed
+by Busy). Is it all AOT frames or only leaf frames without a frame pointer?
+Does `AndroidEnableProfiledAot=false` + `RunAOTCompilation=true` (full AOT)
+behave the same? Determines whether the engine forces JIT builds for
+profiling runs or only warns.
+
+## U16 - the reference application builds on this machine
+the reference application is net9.0-android35.0; this machine has only the net10 android
+workload pack. Verify `dotnet build` of App.Droid works (net9 runtime pack
+download) before the first P1 integration run against it.
+
+## U17 - Engine-side environment injection
+The spike bakes MONO_DIAGNOSTICS through a target inside TestTarget.csproj.
+The engine must do it without touching the user's csproj:
+CustomAfterMicrosoftCommonTargets import that appends to
+`_GeneratedAndroidEnvironment` / adds an `AndroidEnvironment` item, and it
+must force a clean obj/ when the value changes (incremental-build trap).
+Validate on the reference application.

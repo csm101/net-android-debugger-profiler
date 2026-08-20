@@ -2,86 +2,250 @@
 
 Living specification: everything empirically known about collecting profiles
 from a .NET for Android app. Facts marked **[verified]** were confirmed on
-this machine or in primary sources; everything else is **[unverified]** until
-exercised by the spike/tests.
+this machine (emulator DevicePerSviluppoProfiler, API 33 x86_64, .NET SDK
+10.0.301, android workload 36.1.43, diagnostics tools 9.0.661903) or in
+primary sources; everything else is **[unverified]** until exercised.
 
 ## Collection fundamentals
 
 - MonoVM on Android embeds **EventPipe**; diagnostic tools reach it through
-  the **dotnet-dsrouter** proxy over adb. **[verified - dotnet/android docs]**
-- CPU sampling is dotnet-trace's default cpu-sampling profile.
-  **[verified - docs; not yet exercised locally]**
-- Profiling works on **Release** builds (unlike the debugger, which needs
-  Debug + fast deployment). **[verified - docs]**
+  the **dotnet-dsrouter** proxy. **[verified]**
+- CPU sampling = dotnet-trace default profile (cpu-sampling =
+  Microsoft-DotNETCore-SampleProfiler + runtime JIT/loader events +
+  rundown). **[verified - sampling1/sampling2 traces]**
+- Profiling works on **Release** builds. **[verified]**
 
 ## Build-side switches
 
     dotnet build -c Release -p:EnableDiagnostics=true   # legacy alias: AndroidEnableProfiler
 
-Optional msbuild properties (auto-enable the diagnostics component):
-DiagnosticAddress (10.0.2.2 emulator / 127.0.0.1 device), DiagnosticPort
-(default 9000), DiagnosticSuspend (block startup until the tool connects -
-startup profiling), DiagnosticListenMode.
-**[verified - dotnet/android tracing guide]**
+- EnableDiagnostics=true adds `libmono-component-diagnostics_tracing.so` to
+  the APK and bakes `DOTNET_DiagnosticPorts=127.0.0.1:9000,connect,nosuspend`
+  into the app environment (obj/.../__environment__.txt -> libxamarin-app.so).
+  **[verified]**
+- Optional msbuild properties DiagnosticAddress / DiagnosticPort /
+  DiagnosticSuspend / DiagnosticListenMode only change that baked
+  `DOTNET_DiagnosticPorts` value (target `_GenerateEnvironmentFiles`,
+  property `DiagnosticConfiguration`). **[verified - Xamarin.Android.Common.targets]**
+- Runtime override without rebuild (device-global, affects every .NET app on
+  that device; clear it when done):
 
-Equivalent runtime configuration without rebuilding msbuild props:
-DOTNET_DiagnosticPorts (e.g. "10.0.2.2:9000,suspend,connect") or
-adb shell setprop debug.mono.profile '10.0.2.2:9000,suspend,connect'.
-**[verified - same guide; setprop path to be re-tested in P0]**
+      adb -s <serial> shell setprop debug.mono.profile '10.0.2.2:9000,suspend,connect'   # emulator
+      adb -s <serial> shell setprop debug.mono.profile '127.0.0.1:9000,suspend,connect'  # device (+ adb reverse)
+      adb -s <serial> shell setprop debug.mono.profile ''                                # clear
+
+  `suspend` blocks managed startup until a tool connects and resumes;
+  `nosuspend` for attach-at-any-time (gcdump, late sampling). **[verified]**
+- Default Release build is profiled-AOT: `libaot-<Assembly>.dll.so` per
+  assembly including the app's own. `-p:RunAOTCompilation=false` gives a pure
+  JIT build (no libaot-*). Relevant for instrumenting (below). **[verified]**
+- Setting a runtime env var (MONO_DIAGNOSTICS) in a Release build: there is no
+  `debug.mono.env` in the release libmonodroid (only debug.mono.profile,
+  .log, .gc, .trace, .runtime_args, ...). The only way is an environment file
+  baked at build time: `@(AndroidEnvironment)` item (lines `VAR=value`), or
+  appending to `@(_GeneratedAndroidEnvironment)` with a target
+  `BeforeTargets="_GenerateEnvironmentFiles"` (spike hook in
+  TestTarget.csproj, property `MonoDiagnostics`). The engine must inject it
+  without editing the user's csproj (CustomAfterMicrosoftCommonTargets
+  import or an env file + item). **[verified]**
 
 ## Collecting
 
-Simplified (dotnet-trace >= 9.0.621003, dsrouter integrated):
+One-liner (dotnet-trace >= 9.0.621003; starts dsrouter itself, sampling):
 
-    dotnet-trace collect --dsrouter android --format speedscope
+    dotnet-trace collect --dsrouter android-emu -o x.nettrace [--format speedscope] [--duration hh:mm:ss]
 
-Manual: dotnet-dsrouter android + dotnet-trace collect -p <pid>.
-Memory: dotnet-gcdump collect -p <pid>  ->  .gcdump file.
-Physical device: adb reverse tcp:9000 tcp:9001; emulator needs nothing
-(10.0.2.2). **[verified - docs]**
+Manual (needed for custom providers / gcdump / multiple sessions):
+
+    dotnet-dsrouter android-emu            # IPC server <-> TCP server 127.0.0.1:9000; pid printed
+    dotnet-trace collect -p <dsrouter pid> [--providers ...]
+    dotnet-gcdump collect -p <dsrouter pid> -o heap.gcdump
+
+- `android-emu` = TCP server on host 127.0.0.1:9000, the app connects to
+  10.0.2.2:9000 (emulator -> host loopback). `android` = same plus
+  `adb reverse tcp:9000 tcp:9001` for physical devices. **[verified for emu]**
+- Choreography that works (suspend mode): setprop -> start dsrouter /
+  dotnet-trace -> launch app (`adb shell monkey -p <pkg> -c
+  android.intent.category.LAUNCHER 1`) -> app connects, tool resumes it.
+  Late tool start with `suspend`: the app sits at the splash screen until the
+  tool connects (observed > 1 min without harm on TestTarget). **[verified]**
+- The tool-side "process" is dsrouter: `dotnet-trace ps` / `dotnet-gcdump ps`
+  list dotnet-dsrouter, not the Android app. **[verified]**
+- Multiple emulators: the app's DOTNET_DiagnosticPorts address selects the
+  host endpoint, not the device serial. Two emulators would both reach host
+  port 9000, so run one dsrouter per device on distinct ports
+  (DiagnosticPort / debug.mono.profile port) - dsrouter android-emu has no
+  port option in 9.0.661903 (only -rt, -v, -i, -bsig): use the generic
+  `server-server` command with explicit `--ipc-server`/`--tcp-server` for a
+  second port. **[verified options; multi-port run not yet exercised]**
+- Transient failure seen once: dotnet-trace collect -p <dsrouter> right after
+  app launch failed with `EndOfStreamException` at session start; immediate
+  retry worked. Engine must retry session start. **[verified]**
+- Trace sizes on emulator: sampling 30 s TestTarget = 0.9 MB nettrace
+  (0.25 MB speedscope); enter/leave with a hot leaf method instrumented =
+  12 MB per 20 s (~480k enter + 480k leave). **[verified]**
 
 Known trap: do not launch the app through Visual Studio while a diagnostics
 config is active - it freezes on the splash screen. **[verified - docs]**
 
-## Runtime instrumenting provider
+## Sampling: what the data looks like
 
-Microsoft-DotNETRuntimeMonoProfiler (experimental, **disabled by default
-since .NET 8**):
+- Provider Microsoft-DotNETCore-SampleProfiler, events appear in TraceEvent
+  as `EventWriteString`/`Thread/Sample`; TraceLog attaches managed stacks
+  (`ev.CallStackIndex()`), resolves frames through the rundown
+  (MethodLoadVerbose / DCStopVerbose). 100 % of stacked samples resolved in
+  sampling1 (unresolvedLeaf=0). **[verified]**
+- The sampler samples every managed thread, including blocked ones: a thread
+  in Thread.Sleep accumulates samples under
+  `Interop.Sys.LowLevelMonitor_TimedWait` (93 % of samples in sampling1).
+  CPU-only views must classify wait frames (sleep/wait/monitor/epoll PInvoke
+  leaves) as blocked time. **[verified]**
+- Effective rate on this emulator: ~290 samples/s per thread (8206 samples on
+  a thread over 30 s), not the nominal 1 ms. **[verified]**
+- Samples without a stack (about half of all sample events) belong to threads
+  with no managed frames (main/Java threads); count them separately.
+  **[verified]**
+- AOT vs JIT attribution: with the default profiled-AOT Release build a
+  NoInlining leaf method (`CpuBurner.Mix`, 2M calls per iteration) never
+  appears in sampled stacks although the rundown lists it as compiled - its
+  caller `Busy` absorbs the samples (sampling1). With the JIT build
+  (`RunAOTCompilation=false`, sampling2) `Mix` shows up (212 excl. vs 579 for
+  `Busy`). Sampling of AOT code loses leaf frames: for precise attribution
+  profile JIT builds, or document the caveat for AOT builds. **[verified]**
 
-- enable: MONO_DIAGNOSTICS=--diagnostic-mono-profiler=enable
-- method enter/leave filtered by callspec:
-  MONO_DIAGNOSTICS=--diagnostic-mono-profiler-callspec=<pattern>
-- allocation tracking: --diagnostic-mono-profiler=alloc
-- events: enter/leave, JIT, allocations with callstacks, GC events/heap
-  dumps, roots, handles, finalization
-- constraint: enter/leave instrumentation is decided at JIT time - the
-  EventPipe session must be configured before methods get JITted (use
-  suspend).
+## Memory: gcdump
 
-**[verified - dotnet/runtime diagnostics-tracing design doc; availability on
-net9/net10 android to be confirmed in P0 - see KNOWN_UNKNOWNS U2]**
+- `dotnet-gcdump collect -p <dsrouter pid>` works against MonoVM through
+  dsrouter (nosuspend). ~30 s for a 7 MB / 104k-object heap on the emulator
+  (the tool waits for the heap walk session to drain), 2 MB .gcdump.
+  **[verified]**
+- `dotnet-gcdump report` resolves type names (`TestTarget.Workloads.
+  AllocHeavyRecord` 50,000 instances, its `[]` 400,032 bytes). Per-object
+  sizes look unreliable for arrays on Mono (byte[64] reported as 32 bytes).
+  **[verified]**
+
+## Runtime instrumenting provider (Microsoft-DotNETRuntimeMonoProfiler)
+
+Present and working in the net10 android workload (strings in
+libmono-component-diagnostics_tracing.so; events received). **[verified]**
+
+Enabling - environment variable MONO_DIAGNOSTICS, whitespace-separated
+options (parsed by mono_parse_options_from):
+
+    MONO_DIAGNOSTICS=--diagnostic-mono-profiler=enable --diagnostic-mono-profiler=alloc --diagnostic-mono-profiler-callspec=N:My.Namespace
+
+- `--diagnostic-mono-profiler=enable|disable|alloc|exception` (alloc installs
+  the allocation hook at startup; exception the exception-clause hook).
+- `--diagnostic-mono-profiler-callspec=<callspec>`, Mono callspec grammar:
+  `all`, `none`, `program`, `assembly`, `N:Namespace`, `T:Type`,
+  `M:Type:Method`, `+EXPR`/`-EXPR`, comma separated. Only matching methods
+  get enter/leave instrumentation. Verified: `N:TestTarget.Workloads` -> 7
+  instrumented methods, all in that namespace. **[verified]**
+
+Session keywords (ClrEtwAll.man, provider Microsoft-DotNETRuntimeMonoProfiler):
+
+| mask | keyword | notes |
+|---|---|---|
+| 0x1 | GC | |
+| 0x2 | GCHandle | |
+| 0x8 | Loader | |
+| 0x10 | Jit | JitBegin(8)/JitDone(10: MethodID, ModuleID, token, ...)/JitCodeBuffer(13) |
+| 0x4000 / 0x8000 / 0x10000 | Contention / Exception / Threading | |
+| 0x100000 | GCHeapDump | |
+| 0x200000 | GCAllocation | GCAllocation(39): VTableID u64, ObjectID ptr, ObjectSize u64 |
+| 0x400000 / 0x800000 | GCMoves / GCHeapCollect | |
+| 0x1000000 / 0x2000000 / 0x4000000 | GCFinalization / GCResize / GCRoot | |
+| 0x8000000 | GCHeapDumpVTableClassReference | heap dump emits vtable->class refs |
+| 0x20000000 | MethodTracing | MethodEnter(29)/Leave(30)/TailCall(31)/ExceptionLeave(32)/Free(33)/BeginInvoke(34)/EndInvoke(35): MethodID u64 |
+| 0x8000000000 | TypeLoading | ClassLoaded(16: ClassID, ModuleID, ClassName), VTableLoaded(19: VTableID, ClassID, AppDomainID) |
+| 0x10000000000 | Monitor | |
+| 0x40000000000 | MethodInstrumentation | must be on for methods JITted during the session to be instrumented (callspec filters) |
+
+Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
+`0x48020200011:5` (+ TypeLoading, Jit, GC). **[verified]**
+
+- Instrumentation is decided at JIT time: the session (with
+  MethodInstrumentation keyword) must be running before the methods are
+  compiled -> use `suspend`; AOT-compiled methods are never instrumented ->
+  build with `-p:RunAOTCompilation=false` for instrumenting sessions.
+  **[verified: JIT build instrumented; AOT build not tested, implied by design]**
+- Overhead: a hot leaf method (2M calls/iteration) instrumented on the
+  emulator runs ~25k call pairs/s (~40 us per enter+leave) - the callspec
+  must exclude hot leaves; treat full-app callspecs as unusable. **[verified]**
+- Event decoding: **TraceEvent has no parser for this provider** - events
+  show as `EventID(n)` with no payload schema; decode by hand from the manifest
+  layouts above (DevTools/NetTraceProbe `monoprof`). **[verified]**
+- MethodID in MethodEnter/Leave == MethodID of the runtime rundown
+  MethodDCStopVerbose events (Microsoft-Windows-DotNETRuntimeRundown, parse
+  with ClrRundownTraceEventParser): names resolve for every instrumented
+  method. **[verified]**
+- VTableID in GCAllocation resolves to a class name only through
+  VTableLoaded + ClassLoaded events emitted *during* the session (TypeLoading
+  keyword); vtables created before the session (String, char[] ...) stay
+  unresolved -> needs a start-of-session type dump (candidate:
+  GCHeapDump + GCHeapDumpVTableClassReference keywords) - see KNOWN_UNKNOWNS.
+  **[verified gap]**
+- `--diagnostic-mono-profiler=alloc` + GCAllocation keyword reports **every**
+  allocation with correct sizes: monoprof3 = 123,115 AllocHeavyRecord (40 B)
+  + 123,117 byte[] (96 B) for 6 full Allocate() calls of 20,000 each; no
+  sampling. Array vtables created during the session resolve through
+  ClassLoaded (`System.Byte[]`). **[verified]**
+- Enter/leave nesting per thread is consistent (depth 3 = Loop > Busy > Mix;
+  enter count = leave count + still-open frames at session end). **[verified]**
+- Overhead with a realistic callspec (NewRecord + ctor instrumented, 40k
+  enter/leave + 40k alloc events per iteration): ~9 iterations / 20 s vs
+  ~100 uninstrumented -> roughly 10 us per event on the emulator. Event
+  volume, not instrumentation, is the cost: 15 MB / 20 s. **[verified]**
+- Instrumentation persists for the process lifetime: once a method was
+  JITted during an instrumenting session, later sessions with the
+  MethodTracing keyword receive its enter/leave again (monoprof4, 4 s,
+  53k pairs, no JitDone events). Useful for start/stop cycles without
+  relaunch; the first session still needs `suspend`. **[verified]**
+- Callspec exclusion syntax (`-M:Type:Method`) not yet validated: the run
+  that used it crashed for an unrelated reason (below); re-test in P3.
+  Positive lists (`M:Type:Method,T:Type,...`) work. **[verified partial]**
+- **Trap - incremental build + env change:** changing the `MonoDiagnostics`
+  value (i.e. `__environment__.txt`) on an incremental Release build
+  produced an APK that crashed at startup only while a diagnostics session
+  resumed it (`Java.Lang.LinkageError: No implementation found for
+  ...MainActivity.n_onCreate`), both on update-install and after
+  uninstall/reinstall. Deleting obj/ and bin/ and rebuilding fixed it. The
+  engine must clean-build (or at least wipe obj/) whenever it changes the
+  baked environment. **[verified]**
+- Unknown-but-harmless event IDs seen alongside: 14 (ClassLoading, one per
+  ClassLoaded), 11 (JitChunkCreated), 62 (one per JitDone - not in the
+  manifest snapshot used; ignore). **[verified]**
 
 ## Analysis
 
-- .nettrace parses with **TraceEvent**
-  (Microsoft.Diagnostics.Tracing.TraceEvent, MIT, NuGet). **[verified]**
+- .nettrace parses with **TraceEvent** (Microsoft.Diagnostics.Tracing.TraceEvent
+  3.1.23, MIT, NuGet): `EventPipeEventSource` for raw events,
+  `TraceLog.CreateFromEventPipeDataFile` for stacks/symbols. Provider/event
+  names only resolve when the Dynamic parser is attached (`src.Dynamic.All +=
+  ...`), otherwise `Provider(<guid>)`. **[verified]**
 - Output formats: .nettrace (PerfView/VS), speedscope JSON, .gcdump.
-  **[verified - docs]**
+  **[verified]**
 
 ## Reference implementations (MIT, read-only)
 
 - dotnet/diagnostics (dotnet-trace, dotnet-dsrouter, dotnet-gcdump sources)
 - microsoft/perfview (TraceEvent + analysis algorithms)
+- dotnet/runtime src/mono/mono/eventpipe/ep-rt-mono-profiler-provider.c
+  (MonoProfiler provider), src/coreclr/vm/ClrEtwAll.man (event layouts)
 - jonathanpeppers/Mono.Profiler.Android (mono log profiler support for
   .NET Android - alternative/legacy collection path worth reading)
 - Fody + MethodTimer.Fody (IL weaving enter/leave pattern for P3)
 
 ## This machine
 
-- adb 1.0.41 (36.0.0), on PATH; emulator AVD DevicePerSviluppoProfiler
-- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7)
-- dotnet-trace / dotnet-dsrouter / dotnet-gcdump: **not yet installed**
-  (dotnet tool install -g ... in P0)
+- adb 1.0.41 (36.0.0), on PATH; emulators: emulator-5554 =
+  pixel_7_-_api_33_0 (debugger project), emulator-5556 =
+  DevicePerSviluppoProfiler (this project); both API 33 x86_64. Map serial ->
+  AVD with `adb -s <serial> emu avd name`.
+- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
+  templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
+  check it builds here before P1 integration).
+- dotnet-trace / dotnet-dsrouter / dotnet-gcdump 9.0.661903 (global tools).
 
 ## Real target: the reference application
 
@@ -92,6 +256,7 @@ net9/net10 android to be confirmed in P0 - see KNOWN_UNKNOWNS U2]**
 
 - https://github.com/dotnet/android/blob/main/Documentation/guides/tracing.md
 - https://github.com/dotnet/runtime/blob/main/docs/design/mono/diagnostics-tracing.md
+- https://github.com/dotnet/runtime/blob/main/src/coreclr/vm/ClrEtwAll.man
 - https://github.com/microsoft/perfview
 - https://github.com/jonathanpeppers/Mono.Profiler.Android
 
@@ -100,5 +265,5 @@ net9/net10 android to be confirmed in P0 - see KNOWN_UNKNOWNS U2]**
 This machine can run two emulators at once (debugger project: AVD
 pixel_7_-_api_33_0; this project: AVD DevicePerSviluppoProfiler). Never rely
 on adb's single-device default: pass the serial explicitly (adb -s <serial>,
-or ANDROID_SERIAL env var) in every orchestration command. Device selection
-for dsrouter/dotnet-trace with multiple devices: see KNOWN_UNKNOWNS U12.
+or ANDROID_SERIAL env var) in every orchestration command. dsrouter/trace
+device selection: see "Collecting" above (one dsrouter port per device).

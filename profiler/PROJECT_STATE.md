@@ -38,15 +38,19 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 
 ## Architecture status
 
-Solution scaffold only (Core, Mcp, Tests - net10.0). No engine code yet.
-See ARCHITECTURE.md.
+Solution scaffold (Core, Mcp, Tests - net10.0), no engine code yet. Spike
+assets outside the solution: TestTarget/ (net10.0-android validation app),
+DevTools/NetTraceProbe (TraceEvent probe incl. manual MonoProfiler decoder),
+tests/NetAndroidProfiler.Tests/recorded/ (sampling + monoprofiler .nettrace,
+.gcdump). See ARCHITECTURE.md.
 
 ## Milestones
 
-- P0 - Spike (current): install diagnostic tools; TestTarget with
-  EnableDiagnostics; sampling round-trip on emulator (collect -> nettrace ->
-  TraceEvent parse -> top-N methods printed); gcdump round-trip; MonoProfiler
-  provider probe (enable + callspec + observe events). Resolves U1-U4.
+- P0 - Spike: DONE 2026-08-20. Whole chain proven on emulator: sampling
+  (collect -> nettrace -> TraceEvent -> top-N with Busy visible), gcdump
+  (AllocHeavyRecord visible), MonoProfiler provider (enter/leave + every
+  allocation, callspec filtering, manual decode). Details in
+  ANDROID_PROFILING_NOTES.md; new unknowns U13-U17.
 - P1 - Core + MCP sampling: ProfilerSession, AndroidCollector, TraceAnalyzer,
   ResultStore (SQLite schema v1); MCP tools (profile_run, profile_hotspots,
   profile_flat, profile_report, profile_annotate_source, list_devices,
@@ -79,4 +83,18 @@ get_app_output (logcat). Exact set frozen in P1.
 
 ## Important discoveries
 
-(record here as they land; collection facts live in ANDROID_PROFILING_NOTES.md)
+(collection facts live in ANDROID_PROFILING_NOTES.md; these are the ones that
+shape the architecture)
+
+- TraceEvent has no parser for Microsoft-DotNETRuntimeMonoProfiler: Core
+  owns a hand-written decoder (manifest layouts recorded in the notes).
+- Instrumentation is JIT-time and AOT-free: instrumenting sessions need
+  `RunAOTCompilation=false` builds + `suspend` for the first session; the
+  default profiled-AOT Release build also hides leaf frames in sampling.
+- MonoProfiler allocation tracking is exact (every object, correct size);
+  gcdump gives live-heap by type but unreliable array sizes on Mono.
+- Env var injection (MONO_DIAGNOSTICS) needs a build with a baked
+  environment file; incremental builds after an env change can produce a
+  broken APK -> engine clean-builds on env change.
+- dsrouter is the tool-side process; per-device isolation = one dsrouter
+  port per device.
