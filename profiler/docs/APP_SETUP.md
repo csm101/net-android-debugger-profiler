@@ -9,13 +9,25 @@ builds.
 Verified on .NET SDK 10.0.301 / android workload 36.1.43; facts marked
 *(to verify)* are still open and tracked in KNOWN_UNKNOWNS.md.
 
+## Short version
+
+- **Debug builds** (`-c Debug`, the normal development build): add
+  `EnableDiagnostics=true` and nothing else. Every mode works - sampling,
+  heap snapshots, instrumenting with exact allocations. The profiler
+  injects the instrumenting settings (`MONO_DIAGNOSTICS`) into the installed
+  app's private environment file per session, without rebuilding, and only
+  while profiling.
+- **Release builds**: `EnableDiagnostics=true` gives sampling and heap
+  snapshots. Instrumenting additionally needs `MONO_DIAGNOSTICS` baked into
+  the APK (environment file, see below) and a JIT build (no AOT).
+
 ## What each mode needs
 
 | Mode | Build requirement | Notes |
 |---|---|---|
-| CPU sampling | `EnableDiagnostics=true` | Nothing else. The profiler sets the device property `debug.mono.profile` at run time to point the app at the tool. |
+| CPU sampling | `EnableDiagnostics=true` | Nothing else. The profiler points the app at the tool at run time (device property `debug.mono.profile`, or the per-app environment file on Debug builds). |
 | Heap snapshot (gcdump) | `EnableDiagnostics=true` | Same. |
-| Instrumenting (enter/leave, exact allocations) | `EnableDiagnostics=true` **and** `MONO_DIAGNOSTICS` in the app environment **and** JIT (no AOT) | The environment variable can only be baked into the APK at build time. AOT-compiled methods are never instrumented. |
+| Instrumenting (enter/leave, exact allocations) | Debug: `EnableDiagnostics=true` only. Release: `EnableDiagnostics=true` **and** `MONO_DIAGNOSTICS` baked in the app environment **and** JIT (no AOT) | On Debug builds the runtime reads an environment override file from the app's data directory, which the profiler rewrites through `adb run-as` (debuggable app). Release runtimes have no such hook. AOT-compiled methods are never instrumented. |
 | Source-line annotation | portable pdb files of the build available to the profiler | Keep `DebugType=portable` (default) and do not delete the pdbs. |
 
 `EnableDiagnostics=true` adds `libmono-component-diagnostics_tracing.so` to
@@ -23,9 +35,22 @@ the APK and bakes `DOTNET_DiagnosticPorts=127.0.0.1:9000,connect,nosuspend`
 into the app environment. With nothing listening on that port the app starts
 normally *(to verify on Debug builds with fast deployment - U17)*.
 
-## Recommended: a dedicated `Profiling` configuration
+## Debug builds: one property
 
-Keep Debug untouched and add a configuration that inherits from it. the reference application
+```xml
+<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+  <EnableDiagnostics>true</EnableDiagnostics>
+</PropertyGroup>
+```
+
+Cost when not profiling: the diagnostics component is loaded (~270 KB) and
+the runtime makes one background connect attempt to 127.0.0.1:9000 at
+startup (nosuspend) *(to verify on the real app - U4b)*. Nothing else
+changes: no environment variable, no allocation hook, no instrumentation.
+
+## Release builds: a dedicated `Profiling` configuration
+
+Keep Release untouched and add a configuration that inherits from it. the reference application
 already defines a `Profiling` configuration in App.Droid.csproj; extend it:
 
 ```xml
@@ -101,7 +126,7 @@ second is unusable under instrumentation. Start from the namespaces you
 care about, exclude hot leaves, and use sampling to find out what is hot
 before instrumenting it.
 
-## Does the environment file affect normal runs?
+## Does the baked environment file affect normal runs? (Release `Profiling` builds)
 
 When no profiling session is active:
 
@@ -119,12 +144,11 @@ Once the profiler has instrumented a method in a session, the
 instrumentation stays until the process exits (later sessions receive the
 events again without a restart).
 
-Practical consequence: `EnableDiagnostics` plus an environment file with
-only `enable` and `callspec` could live in the Debug configuration itself
-at negligible cost (sampling and enter/leave would then work on every Debug
-build); `alloc` is what justifies the separate `Profiling` configuration.
-Until the always-on cost of `alloc` is measured on a real app (U17), keep
-everything in `Profiling`.
+Practical consequence: on Release builds `alloc` is what justifies a
+separate `Profiling` configuration (permanent allocation-hook cost);
+`enable` + `callspec` alone would be cheap enough to ship in Release. On
+Debug builds none of this applies: the profiler injects the variables only
+for the duration of a session.
 
 ## Traps
 

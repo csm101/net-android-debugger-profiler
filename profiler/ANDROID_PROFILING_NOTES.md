@@ -49,6 +49,35 @@ primary sources; everything else is **[unverified]** until exercised.
   without editing the user's csproj (CustomAfterMicrosoftCommonTargets
   import or an env file + item). **[verified]**
 
+## Injecting environment variables without rebuilding (Debug builds)
+
+The Debug flavor of libmonodroid (any `-c Debug` build, fast deployment or
+not) does two extra things at startup (`AndroidSystem::setup_environment`,
+`#if DEBUG` blocks in src/native/mono/runtime-base/android-system.cc):
+
+1. reads system property `debug.mono.env` (`NAME=VALUE|NAME2=VALUE2`).
+   **Unusable for MONO_DIAGNOSTICS**: Android caps property values at 92
+   bytes and libmonodroid itself aborts the app when the value exceeds ~90
+   bytes (`Attempt to store too much data in a buffer (capacity: 90)`,
+   SIGABRT). A value with `enable` + callspec needs ~90+ bytes. **[verified]**
+2. loads `files/.__override__/<abi>/environment` from the app's private
+   data dir (the file fast deployment pushes for `@(AndroidEnvironment)`),
+   applied *after* the baked environment, so it overrides it. Format
+   (no newlines): `0x%08X\0` name width, `0x%08X\0` value width (both incl.
+   NUL), then records `name` NUL-padded to name width + `value` NUL-padded
+   to value width. Writable through `adb shell run-as <pkg>` (debuggable
+   app): `rm` the 0400 file, `cp` the new one from /data/local/tmp, `chmod
+   400`. **[verified: Debug TestTarget built with EnableDiagnostics only,
+   MONO_DIAGNOSTICS injected this way, full instrumenting session OK]**
+
+Consequences: on Debug builds the profiler needs nothing but
+`EnableDiagnostics=true` for every mode; it injects MONO_DIAGNOSTICS
+(enable/alloc/callspec) per session and restores the file afterwards
+(fast deployment rewrites it on the next deploy anyway). Release builds have
+neither hook: the environment must be baked at build time. The same
+override file also lets the profiler set `DOTNET_DiagnosticPorts` per app
+instead of the device-global `debug.mono.profile` property.
+
 ## Collecting
 
 One-liner (dotnet-trace >= 9.0.621003; starts dsrouter itself, sampling):

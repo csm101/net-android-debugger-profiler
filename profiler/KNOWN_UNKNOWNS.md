@@ -80,15 +80,14 @@ the reference application is net9.0-android35.0; this machine has only the net10
 workload pack. Verify `dotnet build` of App.Droid works (net9 runtime pack
 download) before the first P1 integration run against it.
 
-## U17 - Instrumenting without rebuilding (decision: profiler never rebuilds)
-Sampling needs no rebuild beyond EnableDiagnostics (setprop
-debug.mono.profile does the rest). Instrumenting needs MONO_DIAGNOSTICS in
-the app environment: today only a baked env file (user-side build step:
-we ship a props/targets snippet + instructions). Open: does a **Debug**
-build honor `debug.mono.env` (the release libmonodroid lacks it; the debug
-runtime variant may have it) - that would allow instrumenting with zero
-build changes on Debug APKs. Also: does EnableDiagnostics work with Debug +
-fast deployment (docs only mention Release)? Test first thing in P1.
+## U17 - Instrumenting Release builds without rebuilding
+Resolved for Debug builds (override environment file, see
+ANDROID_PROFILING_NOTES "Injecting environment variables without
+rebuilding"). Release runtimes have no env hook: instrumenting a Release
+APK requires the baked environment file (docs/APP_SETUP.md). Still open:
+measure the always-on cost of `--diagnostic-mono-profiler=alloc` on a real
+app, to decide whether `alloc` can be baked into a Release `Profiling`
+configuration permanently.
 
 ## U18 - APK prerequisite inspection
 How the engine checks the APK/installed app before a session: presence of

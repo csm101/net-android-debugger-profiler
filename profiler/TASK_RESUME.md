@@ -1,50 +1,54 @@
 # Task resume
 
 ## Current task
-P0 spike DONE. P1 design: user decisions recorded in PROJECT_STATE.md
-(no rebuild by the profiler; separate tables; pdb via Desymbolicate approach).
-Revised proposal given in chat; waiting for go-ahead to start P1 coding.
+P1 - Core + MCP sampling (started 2026-08-20 after P0 spike).
 
 ## Current substep
-User-facing setup doc written: docs/APP_SETUP.md (Profiling configuration +
-profiling.env recipe). Waiting for go-ahead on P1.
-
-## Done in P0 (all facts in ANDROID_PROFILING_NOTES.md)
-1. Tools 9.0.661903 installed (dotnet-trace / dsrouter / gcdump).
-2. TestTarget/ (net10.0-android, com.mcasoftware.testtarget): CpuBurner.Busy
-   + Mix, AllocHog.Allocate/NewRecord + AllocHeavyRecord, WorkloadRunner loop.
-   csproj hook `-p:MonoDiagnostics=...` bakes MONO_DIAGNOSTICS.
-3. Sampling round-trip on emulator-5556 (sampling1 AOT, sampling2 JIT):
-   Busy visible; Mix only visible on the JIT build.
-4. DevTools/NetTraceProbe: providers | events | topn | stacks | monoprof.
-5. gcdump round-trip: 50,000 AllocHeavyRecord visible.
-6. MonoProfiler provider: present, enter/leave + alloc arrive, TraceEvent
-   has no parser, manual decode works, MethodID resolves via rundown,
-   callspec filters, instrumentation persists across sessions, overhead
-   ~10 us/event, clean build required after env change.
-7. Recorded traces copied to tests/NetAndroidProfiler.Tests/recorded/.
+P1 step 1 (U17: Debug builds) DONE: Debug + EnableDiagnostics works;
+MONO_DIAGNOSTICS injected per session through the override environment
+file (run-as), verified with a full instrumenting trace (debugenv4).
+Docs updated (notes, APP_SETUP, KNOWN_UNKNOWNS, PROJECT_STATE). Committing.
 
 ## Next action if interrupted right now
-If user said go: start P1 with U17 test (Debug build + EnableDiagnostics;
-debug.mono.env on Debug runtime), then Core skeleton (ProfilerSession,
-AndroidCollector prerequisites check, TraceAnalyzer, ResultStore schema v1).
+Commit/push docs; then start P1 step 2: Core skeleton.
+
+## P1 plan (in order)
+1. [done] U17 Debug-build test.
+2. Core skeleton in src/NetAndroidProfiler.Core:
+   - Devices/AdbClient (serial-explicit adb wrapper, run-as, push/pull,
+     setprop, logcat, pidof, launch via monkey/LAUNCHER).
+   - Apk/AppInspector: prerequisites of an APK/installed app (diagnostics
+     component, AOT libs, debuggable, abi, package) -> PrerequisiteReport.
+   - Collection/EnvironmentOverrideFile: read/write the override env file
+     format (NUL-padded records) + inject/restore MONO_DIAGNOSTICS and
+     DOTNET_DiagnosticPorts.
+   - Collection/DsRouterProcess, DotnetTraceProcess, GcDumpProcess: process
+     wrappers with retry on EndOfStream at session start, per-device port.
+   - Analysis/SamplingAnalyzer (TraceLog -> sample tree, exclusive/
+     inclusive, wait-frame classification), MonoProfilerDecoder
+     (enter/leave + alloc, manifest layouts), AllocAnalyzer, GcDumpReader.
+   - Store/ResultStore: SQLite schema v1 (separate tables per kind).
+   - ProfilerSession facade + SessionSpec/SessionInfo records.
+3. Fast tests on tests/.../recorded/*.nettrace + .gcdump (no device).
+4. Integration tests on emulator-5556 with TestTarget Debug build.
+5. MCP server (thin) with the P1 tool set.
+6. annotate_source via portable pdb (DiaSymReader approach from
+   Desymbolicate) - last P1 item.
 
 ## What works
-- Whole collection+analysis chain on emulator for sampling, gcdump,
-  instrumenting (probe level).
+- Entire chain proven at probe level (DevTools/NetTraceProbe); TestTarget
+  Debug build installed on emulator-5556 with EnableDiagnostics.
 
 ## What is failing
-- Nothing open. Traps recorded in ANDROID_PROFILING_NOTES.md.
+- Nothing open.
 
 ## Traps / hypotheses
-- debug.mono.profile is device-global: cleared at the end of the spike.
-- dotnet-trace -p <dsrouter> can fail once with EndOfStreamException right
-  after app launch: retry.
-- Incremental build after MONO_DIAGNOSTICS change -> broken APK
-  (LinkageError on n_onCreate): wipe obj/ bin/.
-- msbuild -p values: commas split properties -> escape as %2C.
-- AOT build hides leaf frames in sampling; use RunAOTCompilation=false for
-  attribution tests and for instrumenting (JIT-time instrumentation).
-
-## Open items outside P0
-- KNOWN_UNKNOWNS U4b, U5, U13-U17 (new).
+- debug.mono.env >90 bytes aborts the app (libmonodroid buffer): never use
+  it for MONO_DIAGNOSTICS.
+- Override env file is 0400: rm + cp + chmod 400 via run-as.
+- Git Bash converts /data/... paths: MSYS_NO_PATHCONV=1 for adb commands.
+- debug.mono.profile is device-global; clear it after sessions. Currently
+  set to suspend on emulator-5556 (clear before normal app use).
+- dotnet-trace -p <dsrouter> EndOfStream right after launch: retry.
+- Incremental build after env change -> broken APK: wipe obj/ bin/.
+- msbuild -p: commas -> %2C.

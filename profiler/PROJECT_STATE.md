@@ -39,6 +39,11 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
     baked environment) and fails with a message explaining how to configure
     the build (EnableDiagnostics, MONO_DIAGNOSTICS env file for
     instrumenting); AOT code only triggers a warning (leaf attribution).
+  - Debug builds (the main case) need only EnableDiagnostics=true: the
+    engine injects MONO_DIAGNOSTICS / DiagnosticPorts per session through
+    the runtime's override environment file (run-as), no rebuild, no
+    permanent cost. Release builds need the baked env file for
+    instrumenting (docs/APP_SETUP.md).
   - SQLite: separate tables per profiling kind (sampling vs instrumenting
     vs memory), never mixed units in one table.
   - Source-line annotation reuses the pdb approach of the reference application's
