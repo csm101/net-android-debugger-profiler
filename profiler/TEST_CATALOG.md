@@ -70,9 +70,11 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Large tree insert performance guard (U6)
 
 ## F. MCP end-to-end
-- [ ] profile_run on TestTarget -> hotspots tool returns busy method
+- [~] stdio handshake + tools/list + list_devices + profile_sessions + profile_report (manual smoke run 2026-08-20; automate as a test spawning the server)
+- [ ] profile_run on TestTarget -> profile_hotspots returns busy method
+- [ ] profile_start / profile_stop round trip
 - [ ] profile_annotate_source maps samples onto source lines
-- [ ] Error paths return MCP errors, never hang
+- [ ] Error paths return MCP errors, never hang (unknown device, missing package, bad mode)
 
 ## G. the reference application hardening (P3+)
 - [ ] Sampling session on real app completes and analyzes

@@ -55,13 +55,22 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
   distributed release.
 
-## Architecture status
+## Architecture status (2026-08-20)
 
-Solution scaffold (Core, Mcp, Tests - net10.0), no engine code yet. Spike
-assets outside the solution: TestTarget/ (net10.0-android validation app),
-DevTools/NetTraceProbe (TraceEvent probe incl. manual MonoProfiler decoder),
-tests/NetAndroidProfiler.Tests/recorded/ (sampling + monoprofiler .nettrace,
-.gcdump). See ARCHITECTURE.md.
+- Core (net10.0): Devices (AdbClient), Apps (AppInspector), Collection
+  (override-environment injection, DsRouterProcess, EventPipeCollector on
+  Microsoft.Diagnostics.NETCore.Client), Analysis (SamplingAnalyzer,
+  MonoProfilerAnalyzer), Store (ResultStore, SQLite schema v1),
+  Sessions (ProfilerSession). Works end-to-end on emulator-5556 with
+  TestTarget (Debug build + EnableDiagnostics) for Sampling (Restart/Attach),
+  Instrumenting (Restart, callspec, allocations), HeapSnapshot (Attach or
+  Restart with warm-up).
+- Mcp: stdio server over ProfilerSession, tool set below (frozen for P1).
+  register-mcp.cmd publishes and registers it in Claude Code.
+- Tests: 20 fast (recorded traces) + 6 device (Category=Device).
+- Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
+- Not yet: annotate_source (pdb), Release-app instrumenting on device,
+  physical devices, the reference application run, Delphi GUI.
 
 ## Milestones
 
@@ -86,14 +95,15 @@ tests/NetAndroidProfiler.Tests/recorded/ (sampling + monoprofiler .nettrace,
 - P5 - Packaging/registration (register-mcp pattern from the debugger
   project).
 
-## Target MCP tool surface
+## MCP tool surface (P1, implemented)
 
-Modeled on oracle-profiler-mcp plus Android specifics:
-profile_run (build+deploy+collect one shot), profile_start / profile_stop
-(long sessions), profile_status, profile_sessions, profile_hotspots,
-profile_flat, profile_report, profile_annotate_source, profile_callers /
-profile_callees, memory_snapshot (gcdump), alloc_report, list_devices,
-get_app_output (logcat). Exact set frozen in P1.
+list_devices, check_app, profile_run (one shot; mode sampling | instrumenting
+| heap; launch restart | attach), profile_start / profile_stop /
+profile_status (long sessions), profile_sessions, profile_hotspots,
+profile_flat, profile_tree, profile_callers / profile_callees,
+profile_timings, alloc_report, heap_report, profile_threads, profile_report,
+get_app_output. Planned: profile_annotate_source (pdb line mapping, P1 last
+item), memory diff between snapshots (P2).
 
 ## Stable commands
 

@@ -40,9 +40,26 @@ See [docs/APP_SETUP.md](docs/APP_SETUP.md): what each profiling mode
 requires from the app build (EnableDiagnostics, MONO_DIAGNOSTICS environment
 file for instrumenting, pdbs) and how to keep it out of normal Debug builds.
 
+## Using the MCP server
+
+    dotnet tool install -g dotnet-dsrouter        # once; adb must be on PATH (or ANDROID_HOME)
+    register-mcp.cmd                              # publishes to %LOCALAPPDATA%\net-android-profiler and registers in Claude Code
+
+Tools: `list_devices`, `check_app`, `profile_run` (mode sampling | instrumenting |
+heap; launch restart | attach), `profile_start` / `profile_stop` /
+`profile_status`, `profile_sessions`, `profile_hotspots`, `profile_flat`,
+`profile_tree`, `profile_callers` / `profile_callees`, `profile_timings`,
+`alloc_report`, `heap_report`, `profile_threads`, `profile_report`,
+`get_app_output`. Sessions are stored under
+`%LOCALAPPDATA%\net-android-profiler\sessions\<id>\` (override with
+`NAP_SESSIONS_ROOT`): `session.db` (SQLite, schema in ARCHITECTURE.md),
+`trace.nettrace` (opens in PerfView / Visual Studio), `session.log`.
+
 ## Status
 
-Early scaffold. See `PROJECT_STATE.md` for milestones, `ARCHITECTURE.md` for
+P1 in progress: Core (collection + analysis + SQLite store) and the MCP
+server work end-to-end on the emulator for sampling, instrumenting with
+exact allocations, and heap snapshots. See `PROJECT_STATE.md` for milestones, `ARCHITECTURE.md` for
 the design, `ANDROID_PROFILING_NOTES.md` for the collection know-how.
 
 ## Layout

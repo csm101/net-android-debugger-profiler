@@ -176,9 +176,10 @@ parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
   (the tool waits for the heap walk session to drain), 2 MB .gcdump.
   **[verified]**
 - `dotnet-gcdump report` resolves type names (`TestTarget.Workloads.
-  AllocHeavyRecord` 50,000 instances, its `[]` 400,032 bytes). Per-object
-  sizes look unreliable for arrays on Mono (byte[64] reported as 32 bytes).
-  **[verified]**
+  AllocHeavyRecord` 50,000 instances, its `[]` 400,032 bytes); its "Object
+  Bytes" column is not a per-object size for array types (byte[64] shown as
+  32). The raw GCBulkNode sizes are right: Core's own heap-dump session
+  reports byte[64] = 96 bytes, AllocHeavyRecord = 40 bytes. **[verified]**
 
 ## Runtime instrumenting provider (Microsoft-DotNETRuntimeMonoProfiler)
 
