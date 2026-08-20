@@ -16,7 +16,7 @@ var assemblies = new List<string>();
 var referenceDirs = new List<string>();
 string? callspec = null, mapPath = null, collectorOut = null;
 int firstId = 1;
-bool quiet = false, weaveAccessors = false, trackAllocations = false, asyncBodies = true;
+bool quiet = false, weaveAccessors = false, trackAllocations = false, asyncBodies = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -33,7 +33,7 @@ for (int i = 0; i < args.Length; i++)
         case "--quiet": quiet = true; break;
         case "--property-accessors": weaveAccessors = true; break;
         case "--allocations": trackAllocations = true; break;
-        case "--no-async-bodies": asyncBodies = false; break;
+        case "--async-bodies": asyncBodies = true; break;
         case "-h" or "--help": Usage(); return 0;
         default: Console.Error.WriteLine($"nap-weave: unknown argument '{a}'"); Usage(); return 2;
     }
@@ -121,5 +121,5 @@ static void Usage() => Console.Error.WriteLine("""
       --collector-out  copy NetAndroidProfiler.Collector.dll into this directory.
       --property-accessors  also weave property getters/setters (skipped by default).
       --allocations    also record allocations made by the woven methods.
-      --no-async-bodies     do not instrument async state machines (stub timing only).
+      --async-bodies   also instrument async state machines (experimental: see U8).
     """);

@@ -30,17 +30,22 @@ GUI grids. When does schema v1 freeze?
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
 
-## U8 - CLOSED for async; iterators still open
-Async methods are now woven twice: the stub (synchronous part up to the first
-await) and the compiler-generated state machine's MoveNext, reported as
-"<Type>.<Method> (async body)" - its calls are the resumptions and its time is
-what the method actually executed, excluding the awaits it was suspended on.
-Verified in-process (Task.Yield produces exactly 2 resumptions) and enabled by
-default (WeaveAsyncBodies / --no-async-bodies to turn it off).
-Still open: iterator methods (yield return) use the same state-machine shape
-but are not detected yet - IteratorStateMachineAttribute would extend the same
-pass; and wall-clock duration of an async operation (first enter to final
-completion) is not reconstructed, only executed time.
+## U8 - Async state-machine weaving breaks a real app (opt-in for now)
+Implemented: matching async methods can also have their compiler-generated
+MoveNext woven, reported as "<Type>.<Method> (async body)" - calls are the
+resumptions, time is what the method executed, awaits excluded. It is correct
+on CoreCLR (in-process test: Task.Yield produces exactly 2 resumptions), but a
+the reference application build with 3 such state machines woven **would not start at all**: the
+process is never forked, no crash in logcat, while the same build without
+async bodies runs fine and TestTarget launches normally on the same emulator.
+Therefore the option is **off by default** (WeaveAsyncBodies /
+nap-weave --async-bodies).
+Next steps: weave a single async method to find whether it is one specific
+shape (struct state machine in Release vs class in Debug, awaits inside try
+blocks, `AsyncVoidMethodBuilder`); dump the rewritten MoveNext IL and validate
+it with a verifier; check whether Mono rejects the assembly at load (the
+silence in logcat suggests it dies before any managed logging).
+Also still open: iterator methods (yield return) are not instrumented.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

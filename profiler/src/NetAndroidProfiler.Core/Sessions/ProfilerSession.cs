@@ -47,7 +47,7 @@ public sealed record SessionSpec(
     int SnapshotCount = 1,
     TimeSpan? SnapshotInterval = null,
     bool WeavePropertyAccessors = false,
-    bool WeaveAsyncBodies = true);
+    bool WeaveAsyncBodies = false);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(

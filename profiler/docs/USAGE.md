@@ -48,7 +48,7 @@ Two engines produce the same tables:
 |---|---|---|
 | net10 apps | yes | yes |
 | net9 apps | **no** - crashes the runtime (KNOWN_UNKNOWNS U20) | yes |
-| allocations | yes | not yet |
+| allocations | yes, with sizes | counts by type and allocating method (no sizes) |
 | app requirements | `MONO_DIAGNOSTICS` in the environment (Debug builds: injected automatically) | the app must run the woven assemblies (fast deployment, or build-time weaving) |
 
 Weaver on a fast-deployment build:
@@ -68,10 +68,11 @@ profile_run ... mode=instrumenting engine=weaver weaveMapPath="...\bin\Debug\net
 ```
 
 Notes: property accessors are skipped by default (`weavePropertyAccessors=true`
-to include them). Async methods appear twice: the method's own entry times the
-synchronous part up to the first await, and `<method> (async body)` times what
-it actually executed across its resumptions, awaits excluded
-(`weaveAsyncBodies=false` to skip the second one).
+to include them). Async methods are woven at their stub, so their time is the
+synchronous part up to the first await. `weaveAsyncBodies=true` also instruments
+the state machine (reported as `<method> (async body)`: calls are resumptions,
+time excludes the awaits) - experimental, it stopped a real net9 app from
+starting, so it is off by default (KNOWN_UNKNOWNS U8).
 
 ## 3. Memory
 

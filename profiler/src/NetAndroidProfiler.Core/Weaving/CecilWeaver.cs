@@ -51,8 +51,11 @@ public sealed class CecilWeaver
     /// Also instrument the compiler-generated state machine of matching async methods,
     /// reported as "Type.Method (async body)": its calls are the resumptions and its
     /// time is what the method actually executed, excluding the awaits.
+    /// **Off by default**: the rewritten MoveNext is accepted by CoreCLR but prevented
+    /// a real net9 Android app (the reference application) from starting at all, so it is opt-in until
+    /// that is understood (KNOWN_UNKNOWNS U8).
     /// </param>
-    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = true)
+    public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = false)
     {
         _filter = filter;
         _nextId = firstMethodId;

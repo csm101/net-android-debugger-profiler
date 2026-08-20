@@ -130,9 +130,11 @@ public sealed class AdbClient
         string? component = resolve.StdOut.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(package + "/", StringComparison.Ordinal));
         if (component is not null)
         {
-            // No -W: it waits until the activity is idle, which a heavily instrumented
-            // app can exceed by minutes. Starting the intent is enough.
-            var start = await RunCheckedAsync(serial, ["shell", $"am start -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+            // -S force-stops the app first: without it Android can deliver the intent to a
+            // stale task record whose process is already gone ("delivered to currently
+            // running top-most instance") and nothing starts. No -W: waiting for the
+            // activity to go idle can take minutes on an instrumented app.
+            var start = await RunCheckedAsync(serial, ["shell", $"am start -S -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
             if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
                 throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
             return;

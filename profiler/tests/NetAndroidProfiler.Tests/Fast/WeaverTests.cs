@@ -75,7 +75,7 @@ public class WeaverShapeTests
     [Fact]
     public void Async_methods_are_woven_as_stub_and_state_machine()
     {
-        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"));
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 1, weaveAsyncBodies: true);
         weaver.Weave(Input, Out("WeaveSample.dll"));
         // The stub (synchronous part up to the first await) ...
         Assert.Contains(weaver.Map, m => m.FullName.EndsWith("Shapes.AddAsync"));
@@ -84,7 +84,7 @@ public class WeaverShapeTests
         Assert.Contains(weaver.Map, m => m.FullName == "WeaveSample.Shapes.AddAsync (async body)");
         Assert.Equal(1, weaver.AsyncBodyCount);
 
-        var withoutBodies = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 1, weaveAsyncBodies: false);
+        var withoutBodies = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"));   // default: stubs only
         withoutBodies.Weave(Input, Out("WeaveSample.dll"));
         Assert.DoesNotContain(withoutBodies.Map, m => m.FullName.Contains("(async body)"));
     }
@@ -105,7 +105,7 @@ public class WeaverAllocationTests(WeaverCollectorFixture fixture)
         string work = fixture.WorkDir("async");
         Directory.CreateDirectory(work);
         string woven = Path.Combine(work, "WeaveSample.dll");
-        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 900);
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 900, weaveAsyncBodies: true);
         weaver.Weave(Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll"), woven);
 
         var asm = System.Reflection.Assembly.LoadFile(woven);
