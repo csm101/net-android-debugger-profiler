@@ -85,7 +85,9 @@ Conventions (mirroring the Delphi project's discipline):
       `StepOver_AdvancesToNextLine_InSameMethod`
 - [x] Step into / step out at a plain call site —
       `StepInto_EntersCallee_AndStepOut_ReturnsToCaller`
-- [ ] Step through async/await
+- [x] Step through async/await: stop on the line after the await, locals from
+      before the await still readable, user frame in the stack, step stays in
+      the method — `AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack`
 - [ ] Step over a call that raises an exception
 - [ ] Step in one process while another process is stopped
 

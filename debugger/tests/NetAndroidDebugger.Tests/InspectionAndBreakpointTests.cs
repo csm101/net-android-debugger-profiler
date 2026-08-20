@@ -182,6 +182,38 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.Equal(callLine, back.Location?.Line);
     }
 
+    [Fact]
+    public async Task AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        // The line after `await Task.Delay(...)`: the continuation runs on another thread,
+        // in the compiler-generated state machine.
+        var afterAwait = TestEnvironment.LineOf(Main, "int after = before + 1;");
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, afterAwait)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(afterAwait, stop.Location?.Line);
+        Assert.Contains("AsyncProbeAsync", stop.Location?.Method);
+
+        // Locals defined before the await survive into the continuation.
+        var locals = session.GetLocals(stop.Pid, stop.ThreadId);
+        output.WriteLine(string.Join("\n", locals.Select(l => $"{l.Name} : {l.TypeName} = {l.DisplayValue}")));
+        var before = locals.Single(l => l.Name == "before");
+        Assert.Equal("int", before.TypeName);
+        Assert.True(int.TryParse(before.Value, out _), $"before = {before.Value}");
+
+        // The stack of an async continuation is mostly runtime plumbing; the user frame must be there.
+        var frames = session.GetCallStack(stop.Pid, stop.ThreadId);
+        Assert.Contains(frames, f => f.Method.Contains("AsyncProbeAsync") && !f.IsExternal);
+
+        // Stepping over the line after the await stays inside the method.
+        var stepped = await session.StepOverAsync(stop.Pid, stop.ThreadId, StopTimeout, cts.Token);
+        Assert.NotNull(stepped);
+        Assert.Contains("AsyncProbeAsync", stepped.Location?.Method);
+        Assert.True(stepped.Location?.Line > afterAwait, $"stepped to line {stepped.Location?.Line}");
+    }
+
     // ------------------------------------------------------------------ exceptions
 
     [Fact]

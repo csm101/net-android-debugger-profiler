@@ -54,6 +54,7 @@ public class MainActivity : Activity
         var sample = new Sample(_ticks);
         string described = Describe(sample);
         EvaluationProbe();
+        _ = AsyncProbeAsync();
         // Test hook: `adb shell run-as <pkg> touch files/crash-on-tick` makes the next tick
         // throw an unhandled exception on this timer thread (kills the process).
         if (File.Exists(Path.Combine(FilesDir!.AbsolutePath, "crash-on-tick")))
@@ -81,6 +82,19 @@ public class MainActivity : Activity
     /// <see cref="Tick"/>, or every test that reads Tick's locals pays for (and aborts) an
     /// 8-second invocation.
     /// </summary>
+    /// <summary>
+    /// Async fodder: a method with a real await, so stepping across an await point and
+    /// inspecting an async frame can be tested (the reference application is async throughout).
+    /// </summary>
+    private async Task<int> AsyncProbeAsync()
+    {
+        int before = (int)(_ticks % 100);
+        await Task.Delay(30).ConfigureAwait(false);
+        int after = before + 1;
+        Android.Util.Log.Verbose("TestTarget", $"async probe {before}->{after}");
+        return after;
+    }
+
     private void EvaluationProbe()
     {
         var slow = new SlowProbe();
