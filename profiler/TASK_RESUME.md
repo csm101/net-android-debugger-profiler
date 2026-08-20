@@ -4,25 +4,19 @@
 P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
 
 ## Current substep
-U20 CLOSED with root cause: net9 MonoVM SIGSEGVs at init when a profiler
-callspec is set (bisected on App.Droid; enable and alloc alone are fine;
-net10 unaffected). monkey-launch flakiness fixed (resolve-activity +
-am start -W in AdbClient.LaunchAsync). P3 started per user decision:
-IL weaving with Mono.Cecil, NO Metalama.
+P3 weaver first cut DONE host-side: Collector (netstandard2.0, .napw event
+files), CecilWeaver + WeaveFilter (callspec-like grammar), WeaveAnalyzer ->
+InstrumentingResult; fast test green (weave WeaveSample, execute in-process,
+analyze: recursion counts, exception balance, tree nesting, exclusions).
+Committing.
 
 ## Next action if interrupted right now
-Commit U20 close-out; then P3 weaver implementation, first cut:
-1. src/NetAndroidProfiler.Collector (netstandard2.0): Profiler.Enter/Leave,
-   env-gated (NAP_PROFILER_OUT), per-thread buffers, binary event file.
-2. Core/Weaving/CecilWeaver (Mono.Cecil 0.11.6): try/finally Enter/Leave
-   injection, method filter, methodId map sidecar.
-3. Fast tests: weave tests/WeaveSample classlib, load woven copy, execute,
-   parse event file.
-4. Device flow: pull dlls from the Debug override dir, weave, push back
-   (backup/restore), inject NAP_PROFILER_OUT, restart, pull event file,
-   analyze into timing_* tables (Engine=Weaver in SessionSpec).
-5. MCP: engine parameter.
-Weaver = Debug builds (fast-deploy override dir); Release later.
+P3 device flow: Core/Weaving/WeaveDeployer (pull target dlls from the Debug
+override dir via run-as, weave locally, push woven copies + Collector.dll
+back, backup/restore originals), NAP_PROFILER_OUT injected via override env,
+ProfilerSession Engine=Weaver (restart, wait duration, force-stop flushes <=1s
+loss, pull .napw files, WeaveAnalyzer -> timing_* tables), device test on
+TestTarget, then the reference application. MCP: engine parameter on profile_run.
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.

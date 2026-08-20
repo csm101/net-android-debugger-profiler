@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
+    <ProjectReference Include="..\..\src\NetAndroidProfiler.Collector\NetAndroidProfiler.Collector.csproj" />
+    <ProjectReference Include="..\WeaveSample\WeaveSample.csproj" />
   </ItemGroup>
 
   <ItemGroup>

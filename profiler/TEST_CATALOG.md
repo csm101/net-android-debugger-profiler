@@ -58,10 +58,13 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Enter/leave/alloc event counts exact - `Enter_leave_and_allocation_counts_match_the_recorded_trace`
 - [x] Per-method timing + names via rundown - `NewRecord_timing_has_expected_call_count_and_names_resolved`
 - [x] Timing tree nesting - `Timing_tree_nests_ctor_under_NewRecord_under_Allocate`
-- [ ] Callspec session end-to-end on device: only filtered namespace instrumented
-- [ ] Weaved APK (P3): deterministic call counts match known execution
-- [ ] Async method timing attributed across await points
-- [ ] Weaver skips excluded methods (getters/setters config)
+- [ ] Callspec session end-to-end on device: only filtered namespace instrumented (blocked on net9 targets - U20)
+- [x] Weaver: deterministic call counts match known execution (Fib recursion, nesting, values) - `Weave_execute_and_analyze_end_to_end`
+- [x] Weaver: exception paths balanced by finally-based Leave - same test (Boom / CatchAndReturn)
+- [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
+- [ ] Weaver on device: woven app assembly pushed to the override dir, session round trip
+- [ ] Async method timing attributed across await points (state machines skipped in v1 - U8)
+- [ ] Weaver skips getters/setters on request (config)
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)
 - [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`

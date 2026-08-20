@@ -16,6 +16,8 @@
     <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.661903" />
     <!-- MIT: SQLite result store (the GUI contract) -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- MIT: IL weaving (instrumenting plan B, runtime-independent) -->
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
   </ItemGroup>
 
 </Project>
