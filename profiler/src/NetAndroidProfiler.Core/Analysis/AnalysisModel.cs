@@ -10,7 +10,8 @@ public sealed record MethodRecord(
     string Signature,
     string FullName,
     ulong RuntimeMethodId,
-    bool IsWaitFrame);
+    bool IsWaitFrame,
+    int Token = 0);
 
 /// <summary>A thread seen in a trace.</summary>
 public sealed record ThreadRecord(int Id, int OsThreadId, string? Name, long Samples, double FirstMs, double LastMs);

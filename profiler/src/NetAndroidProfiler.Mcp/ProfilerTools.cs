@@ -208,6 +208,88 @@ public sealed class ProfilerTools(SessionHost host)
     [McpServerTool(Name = "profile_report", ReadOnly = true), Description("Summary of a session: what it was, top hotspots / timings / allocations depending on the mode, and where the SQLite database is.")]
     public string ProfileReport([Description("Session id (default: current/last)")] string? sessionId = null) => Summary(host.ResolveId(sessionId));
 
+    // ------------------------------------------------------------------ source annotation
+
+    [McpServerTool(Name = "profile_annotate_source", ReadOnly = true), Description(
+        "Shows a source file with the session's figures beside each method (MonoVM gives no per-line samples: figures are per method, on the method's first line, " +
+        "with the range marked). Needs the portable .pdb files of the build (symbolsDir = the app's bin/<Configuration>/<tfm>/ folder). " +
+        "sourceFile is matched as a path suffix against the pdb documents (e.g. 'Workloads/CpuBurner.cs').")]
+    public string AnnotateSource(
+        [Description("Directory containing the app's *.pdb files (build output)")] string symbolsDir,
+        [Description("Source file path or suffix as recorded in the pdb, e.g. 'Services/Sync.cs'")] string sourceFile,
+        [Description("Session id (default: current/last)")] string? sessionId = null,
+        [Description("Only print methods with figures plus this many context lines (0 = whole file)")] int context = 0)
+    {
+        try { return AnnotateSourceCore(symbolsDir, sourceFile, sessionId, context); }
+        catch (McpException) { throw; }
+        catch (Exception e) { throw new McpException($"profile_annotate_source failed: {e.Message}"); }
+    }
+
+    private string AnnotateSourceCore(string symbolsDir, string sourceFile, string? sessionId, int context)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        using var pdbs = Core.Symbols.PortablePdbSymbols.LoadDirectory(symbolsDir);
+        if (pdbs.Modules.Count == 0) throw new McpException($"No portable pdb files in {symbolsDir} (DebugType must be portable).");
+        var methods = pdbs.MethodsInDocument(sourceFile);
+        if (methods.Count == 0)
+        {
+            var docs = pdbs.Documents().Where(d => d.Contains(Path.GetFileNameWithoutExtension(sourceFile), StringComparison.OrdinalIgnoreCase)).Take(10).ToList();
+            throw new McpException($"No methods found for '{sourceFile}' in the pdbs of {symbolsDir}." + (docs.Count > 0 ? " Similar documents: " + string.Join("; ", docs) : ""));
+        }
+        string doc = methods[0].Document;
+        string[] lines = File.Exists(doc) ? File.ReadAllLines(doc) : (File.Exists(sourceFile) ? File.ReadAllLines(sourceFile) : []);
+        bool timing = s.ReadSession()?.Mode == ProfilingMode.Instrumenting.ToString();
+        var figures = new Dictionary<(string, int), Core.Store.MethodFigures>();
+        foreach (var mod in methods.Select(m => m.Module).Distinct())
+            foreach (var f in s.MethodFiguresByModule(mod)) figures[(mod.ToLowerInvariant(), f.Token)] = f;
+
+        var byLine = new Dictionary<int, List<(Core.Symbols.MethodSourceRange range, Core.Store.MethodFigures? fig)>>();
+        foreach (var m in methods)
+        {
+            figures.TryGetValue((m.Module.ToLowerInvariant(), m.Token), out var fig);
+            if (!byLine.TryGetValue(m.StartLine, out var l)) byLine[m.StartLine] = l = new();
+            l.Add((m, fig));
+        }
+        var sb = new StringBuilder();
+        sb.AppendLine($"{doc}  ({(timing ? "calls / total_ms / self_ms" : "incl / excl / excl_cpu samples")} per method; '|' marks the method's line range)");
+        var inRange = new HashSet<int>();
+        foreach (var m in methods) if (figures.ContainsKey((m.Module.ToLowerInvariant(), m.Token))) for (int ln = m.StartLine; ln <= m.EndLine; ln++) inRange.Add(ln);
+        var show = new HashSet<int>();
+        if (context > 0)
+            foreach (var m in methods.Where(m => figures.ContainsKey((m.Module.ToLowerInvariant(), m.Token))))
+                for (int ln = Math.Max(1, m.StartLine - context); ln <= Math.Min(lines.Length, m.EndLine + context); ln++) show.Add(ln);
+        if (lines.Length == 0)
+        {
+            sb.AppendLine("(source text not found on this machine; listing methods only)");
+            foreach (var m in methods)
+            {
+                figures.TryGetValue((m.Module.ToLowerInvariant(), m.Token), out var fig);
+                sb.AppendLine($"{m.StartLine,5}-{m.EndLine,-5} {Fig(fig, timing),-28} {fig?.FullName ?? $"token 0x{m.Token:X8}"}");
+            }
+            return sb.ToString().TrimEnd();
+        }
+        int last = 0;
+        for (int i = 1; i <= lines.Length; i++)
+        {
+            if (context > 0 && !show.Contains(i)) continue;
+            if (context > 0 && last != 0 && i != last + 1) sb.AppendLine("   ...");
+            last = i;
+            string fig = "";
+            if (byLine.TryGetValue(i, out var ms))
+                fig = string.Join(" ", ms.Select(x => Fig(x.fig, timing)));
+            sb.AppendLine($"{i,5} {(inRange.Contains(i) ? "|" : " ")} {fig,-28} {lines[i - 1]}");
+        }
+        return sb.ToString().TrimEnd();
+
+        static string Fig(Core.Store.MethodFigures? f, bool timing)
+        {
+            if (f is null) return "";
+            return timing
+                ? $"[{f.Calls} {f.TotalNs / 1e6:F2} {f.SelfNs / 1e6:F2}]"
+                : $"[{f.Inclusive} {f.Exclusive} {f.ExclusiveCpu}]";
+        }
+    }
+
     // ------------------------------------------------------------------ app output
 
     [McpServerTool(Name = "get_app_output", ReadOnly = true), Description("Current logcat lines of the app process (by package), most recent last.")]

@@ -36,9 +36,13 @@ Fody-based vs raw Mono.Cecil MSBuild task; async/await state machines
 collector transport (socket vs file) and its overhead.
 
 ## U9 - CoreCLR on Android
-When the reference application retargets to a CoreCLR-based Android runtime: sampling path
-survives (EventPipe), MonoProfiler provider disappears (weaver is plan B).
-Track the timeline.
+The .NET 10 android workload on this machine already ships
+Microsoft.Android.Runtime.CoreCLR.36 and NativeAOT.36 runtime packs next to
+Mono (opt-in per project). When the reference application retargets to CoreCLR: sampling path
+survives (EventPipe), MonoProfiler provider disappears (weaver is plan B),
+the override-environment injection and debug.mono.* properties change
+(src/native/clr/ in dotnet/android). Try a CoreCLR TestTarget build in P2/P3
+to see what still works.
 
 ## U10 - Physical devices and palmari
 adb reverse flow on real handhelds; WiFi adb and SSH-tunneled adb for remote
@@ -68,17 +72,26 @@ enter/leave frame of that thread (works for instrumented methods only);
 or Microsoft-Windows-DotNETRuntime GCSampledObjectAllocation events with
 stacks (does MonoVM emit them with stacks?). Decide in P2.
 
-## U15 - Sampling leaf attribution on AOT code
+## U15 - Sampling leaf attribution (AOT and not only)
 Profiled-AOT Release builds lose leaf frames in sampled stacks (Mix absorbed
-by Busy). Is it all AOT frames or only leaf frames without a frame pointer?
-Does `AndroidEnableProfiledAot=false` + `RunAOTCompilation=true` (full AOT)
-behave the same? Determines whether the engine forces JIT builds for
-profiling runs or only warns.
+by Busy). The Release JIT build shows Mix but under-represented (212 vs 579
+for Busy); a Debug-build session (2026-08-20, 12 s) showed Busy
+incl == excl == 753 and no Mix at all. Hypothesis: the MonoVM sample
+profiler reports the frame of the last managed method with a stack-walk
+anchor (LMF) rather than the true leaf, so tiny leaf methods vanish into
+their caller. Needs a controlled experiment (leaf that loops for seconds vs
+a tiny leaf; interpreter vs JIT). Until understood: hotspot lists are
+reliable at "method + its small callees" granularity; document it in the
+MCP instructions.
 
-## U16 - the reference application builds on this machine
-the reference application is net9.0-android35.0; this machine has only the net10 android
-workload pack. Verify `dotnet build` of App.Droid works (net9 runtime pack
-download) before the first P1 integration run against it.
+## U16 - First the reference application session
+Build verified 2026-08-20: `dotnet build App.Droid.csproj -c Debug
+-p:EnableDiagnostics=true` succeeds on this machine (4.5 min, Android SDK
+pack 35.0.105 resolved automatically, 0 errors); the APK (24.7 MB) carries
+libmono-component-diagnostics_tracing.so, no libaot-*, 21 portable pdbs in
+bin/Debug/net9.0-android35.0. Still to do: install on emulator-5556, first
+sampling session (attach), instrumenting session with callspec N:V7,
+annotate_source with symbolsDir = that bin folder.
 
 ## U17 - Instrumenting Release builds without rebuilding
 Resolved for Debug builds (override environment file, see

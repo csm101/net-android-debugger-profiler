@@ -1,29 +1,26 @@
 # Task resume
 
 ## Current task
-P1 - Core + MCP (started 2026-08-20 after P0 spike).
+P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
 
 ## Current substep
-P1 step 5 DONE: MCP server implemented and smoke-tested over stdio
-(initialize, tools/list, list_devices, profile_sessions, profile_report);
-register-mcp.cmd added; heap snapshot made robust (quiescence + retry +
-warm-up). Docs updated. Committing.
+P1 step 6 DONE: profile_annotate_source (method token -> portable pdb ->
+line range; MonoVM has no per-line samples) + PortablePdbSymbols + 4 fast
+tests; SamplingAnalyzer uses a private temp .etlx (parallel-safe). Full
+suite delegated to test-runner; commit after its report.
 
 ## Next action if interrupted right now
-P1 step 6: profile_annotate_source (portable pdb via Microsoft.DiaSymReader
-or System.Reflection.Metadata; method token + IL offset -> line; needs a
-native->IL mapping for sampled addresses - see Desymbolicate in the reference application and
-U16). Then run register-mcp.cmd and try the server from Claude Code on
-TestTarget; then first the reference application session (U16).
+Commit/push step 6. Then step 7: run register-mcp.cmd, exercise the server
+from Claude Code on TestTarget (fresh session), then first the reference application session
+(U16: does App.Droid build here; Debug + EnableDiagnostics; sampling attach).
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.
 2. [done] Core: 2a analysis+store; 2b devices/apps/collection/session.
-3. [done] Fast tests on recorded traces (19 + 1 skipped U13).
+3. [done] Fast tests on recorded traces (23 + 1 skipped U13).
 4. [done] Device tests (6).
 5. [done] MCP server (thin) with the P1 tool set + register-mcp.cmd.
-6. annotate_source via portable pdb (DiaSymReader approach from
-   Desymbolicate) - last P1 item.
+6. [done] annotate_source via portable pdb (per method).
 7. Register MCP server for Claude Code and exercise it on TestTarget; first
    the reference application session.
 
@@ -31,12 +28,17 @@ TestTarget; then first the reference application session (U16).
 - ProfilerSession end-to-end on emulator-5556 / TestTarget Debug build for
   Sampling (Restart + Attach), Instrumenting (Restart, callspec, allocations
   with type names), HeapSnapshot (Attach; Restart with warm-up).
-- MCP server over stdio with the P1 tool set.
+- MCP server over stdio with the P1 tool set incl. annotate_source
+  (smoke-tested: Busy [753 753 753] on CpuBurner.cs lines 10-17).
 
 ## What is failing
-- Nothing open.
+- Nothing open. Leaf-frame loss in sampling tracked as U15 (not a bug of
+  ours; MonoVM sampler behavior).
 
 ## Traps / hypotheses
+- Session DBs created before 2026-08-20 15:50 lack method.token (schema
+  still v1, no external consumer yet): delete old test sessions under
+  %TEMP%\net-android-profiler-tests\sessions if a tool errors on them.
 - A stray dotnet-dsrouter.exe holds port 9000 -> sessions hang in
   WaitingForApp: kill it (taskkill /F /IM dotnet-dsrouter.exe).
 - Heap dump requested right after app launch yields nothing (retry/warm-up

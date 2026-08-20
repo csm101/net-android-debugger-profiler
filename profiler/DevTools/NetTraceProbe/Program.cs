@@ -44,6 +44,7 @@ switch (cmd)
     case "topn": return TopN(file, args.Length > 2 ? int.Parse(args[2]) : 30);
     case "stacks": return Stacks(file, args[2], args.Length > 3 ? int.Parse(args[3]) : 5);
     case "monoprof": return MonoProf(file, args.Length > 2 ? int.Parse(args[2]) : 25);
+    case "iloffsets": return IlOffsets(file);
     default:
         Console.Error.WriteLine($"unknown command {cmd}");
         return 2;
@@ -292,4 +293,38 @@ static string FrameName(TraceLog log, CodeAddressIndex ca)
         return log.CodeAddresses.Methods.FullMethodName(mi);
     var mod = log.CodeAddresses.ModuleFile(ca);
     return $"?{(mod?.Name ?? "unknown")}!0x{log.CodeAddresses.Address(ca):X}";
+}
+
+// iloffsets: do sampled code addresses carry IL offsets (needs MethodILToNativeMap events) and method tokens?
+static int IlOffsets(string file)
+{
+    string etlx = TraceLog.CreateFromEventPipeDataFile(file);
+    using var log = new TraceLog(etlx);
+    long total = 0, withIl = 0, withToken = 0;
+    var examples = new Dictionary<string, (int il, int token, ulong addr)>();
+    for (int i = 0; i < log.CodeAddresses.Count; i++)
+    {
+        var ca = (CodeAddressIndex)i;
+        var mi = log.CodeAddresses.MethodIndex(ca);
+        if (mi == MethodIndex.Invalid) continue;
+        total++;
+        int il = log.CodeAddresses.ILOffset(ca);
+        int token = log.CodeAddresses.Methods.MethodToken(mi);
+        if (il >= 0) withIl++;
+        if (token != 0) withToken++;
+        string name = log.CodeAddresses.Methods.FullMethodName(mi);
+        if (name.Contains("TestTarget") && !examples.ContainsKey(name + "@" + il))
+            examples[name + "@" + il] = (il, token, log.CodeAddresses.Address(ca));
+    }
+    Console.WriteLine($"codeAddresses(with method)={total} withILOffset={withIl} withToken={withToken}");
+    var counts = new Dictionary<string, long>();
+    using (var src = new EventPipeEventSource(file))
+    {
+        src.Dynamic.All += _ => { };
+        src.AllEvents += ev => { if (ev.EventName.Contains("ILToNative") || ev.EventName.Contains("ILToNativeMap")) counts[ev.ProviderName + "/" + ev.EventName] = counts.GetValueOrDefault(ev.ProviderName + "/" + ev.EventName) + 1; };
+        src.Process();
+    }
+    foreach (var kv in counts) Console.WriteLine($"{kv.Value,8} {kv.Key}");
+    foreach (var kv in examples.Take(12)) Console.WriteLine($"  il={kv.Value.il,5} token=0x{kv.Value.token:X8} addr=0x{kv.Value.addr:X}  {kv.Key}");
+    return 0;
 }

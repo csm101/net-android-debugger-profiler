@@ -82,7 +82,7 @@ one table. Shared dictionaries are `method`, `thread`, `type`.
 |---|---|
 | `schema_info(version, created_utc, tool_version)` | one row |
 | `session(id, mode, state, package, device_serial, started_utc, duration_ms, trace_file, total_samples, samples_with_stack, spec_json, error)` | one row; `mode` = Sampling / Instrumenting / Memory |
-| `method(id, module, namespace, type_name, name, signature, full_name, runtime_method_id, is_wait_frame)` | ids local to the database; `runtime_method_id` = MonoVM MethodID for cross-referencing; `is_wait_frame` = leaf denotes blocked time (Sleep/Wait/Monitor PInvoke leaves, `WaitFrameClassifier`) |
+| `method(id, module, namespace, type_name, name, signature, full_name, runtime_method_id, is_wait_frame, token)` | ids local to the database; `runtime_method_id` = MonoVM MethodID for cross-referencing; `is_wait_frame` = leaf denotes blocked time (Sleep/Wait/Monitor PInvoke leaves, `WaitFrameClassifier`); `token` = metadata token (0x06xxxxxx) used with the module's portable pdb for source ranges (`Symbols/PortablePdbSymbols`; MonoVM samples carry no IL offsets, so annotation is per method) |
 | `thread(id, os_tid, name, samples, first_ms, last_ms)` | |
 | `type(id, name, vtable_id, class_id)` | allocation/heap types; name may be `<vtable 0x...>` when unresolved (U13) |
 | `sample_stat(method_id, inclusive, exclusive, inclusive_cpu, exclusive_cpu)` | **samples**; `*_cpu` exclude samples whose leaf is a wait frame |

@@ -161,6 +161,13 @@ parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
 - Samples without a stack (about half of all sample events) belong to threads
   with no managed frames (main/Java threads); count them separately.
   **[verified]**
+- **No line-level sampling on MonoVM**: the runtime emits no
+  MethodILToNativeMap events (TraceLog `ILOffset` = -1 everywhere) and the
+  sample profiler reports one fixed address per method frame (29 distinct
+  code addresses for 6k samples on TestTarget), so samples cannot be mapped
+  to IL offsets / source lines. Method tokens (0x06xxxxxx) are in the
+  rundown, so source mapping works at method granularity: token -> portable
+  pdb sequence points -> line range. **[verified - NetTraceProbe iloffsets]**
 - AOT vs JIT attribution: with the default profiled-AOT Release build a
   NoInlining leaf method (`CpuBurner.Mix`, 2M calls per iteration) never
   appears in sampled stacks although the rundown lists it as compiled - its

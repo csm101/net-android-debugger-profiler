@@ -19,15 +19,23 @@ public sealed class SamplingAnalyzer
         _waitFrames = waitFrames ?? WaitFrameClassifier.Default;
     }
 
-    /// <summary>Analyze <paramref name="netTracePath"/>. The .etlx conversion file is written next to it.</summary>
+    /// <summary>Analyze <paramref name="netTracePath"/>. The .etlx conversion goes to a private temp file (concurrent analyses of the same trace are safe).</summary>
     public SamplingResult Analyze(string netTracePath, CancellationToken ct = default)
     {
         if (!File.Exists(netTracePath))
             throw new FileNotFoundException("Trace file not found", netTracePath);
 
-        string etlx = TraceLog.CreateFromEventPipeDataFile(netTracePath);
-        using var log = new TraceLog(etlx);
-        return Analyze(log, ct);
+        string etlx = Path.Combine(Path.GetTempPath(), $"nap-{Guid.NewGuid():N}.etlx");
+        try
+        {
+            TraceLog.CreateFromEventPipeDataFile(netTracePath, etlx);
+            using var log = new TraceLog(etlx);
+            return Analyze(log, ct);
+        }
+        finally
+        {
+            try { File.Delete(etlx); } catch { /* best effort */ }
+        }
     }
 
     private SamplingResult Analyze(TraceLog log, CancellationToken ct)
@@ -146,25 +154,25 @@ public sealed class SamplingAnalyzer
                 string full = m.FullMethodName(mi);
                 var mfi = m.MethodModuleFileIndex(mi);
                 string module = mfi != ModuleFileIndex.Invalid ? log.ModuleFiles[mfi].Name : "";
-                id = Add(module, full, (ulong)m.MethodRva(mi), waitFrames);
+                id = Add(module, full, (ulong)m.MethodRva(mi), m.MethodToken(mi), waitFrames);
                 _byMethod[mi] = id;
                 return id;
             }
             var mod = log.CodeAddresses.ModuleFile(ca);
             string key = $"?{mod?.Name ?? "unknown"}!0x{log.CodeAddresses.Address(ca):X}";
             if (_byName.TryGetValue(key, out int uid)) return uid;
-            uid = Add(mod?.Name ?? "", key, log.CodeAddresses.Address(ca), waitFrames);
+            uid = Add(mod?.Name ?? "", key, log.CodeAddresses.Address(ca), 0, waitFrames);
             _byName[key] = uid;
             return uid;
         }
 
         public bool IsWait(int id) => _records[id].IsWaitFrame;
 
-        private int Add(string module, string fullName, ulong runtimeId, WaitFrameClassifier waitFrames)
+        private int Add(string module, string fullName, ulong runtimeId, int token, WaitFrameClassifier waitFrames)
         {
             int id = _records.Count;
             SplitName(fullName, out string ns, out string type, out string name, out string sig);
-            _records.Add(new MethodRecord(id, module, ns, type, name, sig, fullName, runtimeId, waitFrames.IsWaitFrame(fullName)));
+            _records.Add(new MethodRecord(id, module, ns, type, name, sig, fullName, runtimeId, waitFrames.IsWaitFrame(fullName), token));
             return id;
         }
 

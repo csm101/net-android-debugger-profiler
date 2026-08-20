@@ -44,8 +44,10 @@ public static class ResultSchema
             signature         TEXT NOT NULL,
             full_name         TEXT NOT NULL,
             runtime_method_id INTEGER NOT NULL,
-            is_wait_frame     INTEGER NOT NULL DEFAULT 0
+            is_wait_frame     INTEGER NOT NULL DEFAULT 0,
+            token             INTEGER NOT NULL DEFAULT 0   -- metadata token (0x06xxxxxx) for pdb lookup
         );
+        CREATE INDEX ix_method_module_token ON method(module, token);
         CREATE INDEX ix_method_full_name ON method(full_name);
 
         CREATE TABLE thread (

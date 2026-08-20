@@ -62,7 +62,7 @@ public sealed class MonoProfilerAnalyzer
             throw new FileNotFoundException("Trace file not found", netTracePath);
 
         var methods = new MethodTable(_waitFrames);
-        var runtimeNames = new Dictionary<ulong, (string ns, string name, string sig, string module)>();
+        var runtimeNames = new Dictionary<ulong, (string ns, string name, string sig, long moduleId, int token)>();
         var timings = new Dictionary<int, TimingAccumulator>();
         var threads = new Dictionary<int, ThreadState>();
         var tree = new TreeBuilder();
@@ -75,9 +75,12 @@ public sealed class MonoProfilerAnalyzer
         using var src = new EventPipeEventSource(netTracePath);
         src.Dynamic.All += _ => { }; // activates name resolution for unknown providers
         var rundown = new ClrRundownTraceEventParser(src);
-        rundown.MethodDCStopVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ModuleName(ev.ModuleID));
-        rundown.MethodDCStartVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ModuleName(ev.ModuleID));
-        src.Clr.MethodLoadVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ModuleName(ev.ModuleID));
+        rundown.MethodDCStopVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ev.ModuleID, ev.MethodToken);
+        rundown.MethodDCStartVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ev.ModuleID, ev.MethodToken);
+        var moduleNames = new Dictionary<long, string>();
+        rundown.LoaderModuleDCStop += ev => moduleNames[ev.ModuleID] = Path.GetFileNameWithoutExtension(ev.ModuleILPath);
+        src.Clr.LoaderModuleLoad += ev => moduleNames[ev.ModuleID] = Path.GetFileNameWithoutExtension(ev.ModuleILPath);
+        src.Clr.MethodLoadVerbose += ev => runtimeNames[(ulong)ev.MethodID] = (ev.MethodNamespace, ev.MethodName, ev.MethodSignature, ev.ModuleID, ev.MethodToken);
 
         src.AllEvents += ev =>
         {
@@ -149,7 +152,7 @@ public sealed class MonoProfilerAnalyzer
         src.Process();
 
         // Resolve names now that the rundown has been read.
-        methods.ResolveNames(runtimeNames);
+        methods.ResolveNames(runtimeNames, moduleNames);
 
         // Types.
         var types = new List<TypeRecord>();
@@ -179,7 +182,6 @@ public sealed class MonoProfilerAnalyzer
             allocBySite.Select(a => new AllocBySite(typeIdByVTable[a.Key.vt], a.Key.method == 0 ? -1 : methods.Intern(a.Key.method), a.Value.count, a.Value.bytes)).ToList(),
             enters, leaves, allocs, gcs);
 
-        static string ModuleName(long moduleId) => "";
     }
 
     private static ThreadState GetThread(Dictionary<int, ThreadState> threads, int tid, double ms)
@@ -255,7 +257,7 @@ public sealed class MonoProfilerAnalyzer
             return id;
         }
 
-        public void ResolveNames(Dictionary<ulong, (string ns, string name, string sig, string module)> names)
+        public void ResolveNames(Dictionary<ulong, (string ns, string name, string sig, long moduleId, int token)> names, Dictionary<long, string> moduleNames)
         {
             _records = new List<MethodRecord>(_runtimeIds.Count);
             for (int i = 0; i < _runtimeIds.Count; i++)
@@ -269,7 +271,7 @@ public sealed class MonoProfilerAnalyzer
                     string ns = dot < 0 ? "" : typeFull[..dot];
                     string type = dot < 0 ? typeFull : typeFull[(dot + 1)..];
                     string full = $"{typeFull}.{n.name}";
-                    _records.Add(new MethodRecord(i, n.module, ns, type, n.name, n.sig, full, rid, _waitFrames.IsWaitFrame(full)));
+                    _records.Add(new MethodRecord(i, moduleNames.GetValueOrDefault(n.moduleId, ""), ns, type, n.name, n.sig, full, rid, _waitFrames.IsWaitFrame(full), n.token));
                 }
                 else
                 {

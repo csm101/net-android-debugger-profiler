@@ -29,7 +29,7 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Release build: instrumenting refused unless MONO_DIAGNOSTICS baked
 - [ ] Startup profiling via suspend captures app init (assert on OnCreate frames)
 - [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
-- [ ] Clean teardown: no orphan dsrouter processes, environment restored (assert override file equals backup)
+- [x] Clean teardown: environment restored, no dsrouter left - `Session_restores_app_environment_and_leaves_no_dsrouter`
 - [ ] Stop() on a session without Duration ends collection
 
 ## B. Sampling analysis (Fast/SamplingAnalyzerTests, recorded testtarget-sampling-jit-20s)
@@ -44,6 +44,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Thread attribution - `Threads_are_reported_with_sample_counts`
 - [ ] Symbolication of generic methods and async state machines
 - [ ] AOT build: leaf attribution caveat reported (U15)
+- [x] Method tokens -> portable pdb source ranges (Fast/PortablePdbSymbolsTests): `Loads_testtarget_pdb_and_lists_its_documents`, `Methods_in_document_have_line_ranges`, `Sampled_method_tokens_resolve_to_source_ranges`, `Unknown_module_or_token_returns_null`
 
 ## C. Memory analysis
 - [x] Exact allocation counts/sizes per type (provider path) - `Allocations_by_type_count_every_record_and_its_payload`

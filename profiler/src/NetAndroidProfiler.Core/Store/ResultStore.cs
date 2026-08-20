@@ -39,6 +39,9 @@ public sealed record AllocSiteRow(int TypeId, string TypeName, int MethodId, str
 /// <summary>Thread row.</summary>
 public sealed record ThreadRow(int Id, int OsTid, string? Name, long Samples, double? FirstMs, double? LastMs);
 
+/// <summary>Per-method figures of either kind, for source annotation (zeros when the kind was not collected).</summary>
+public sealed record MethodFigures(int MethodId, int Token, string FullName, long Inclusive, long Exclusive, long InclusiveCpu, long ExclusiveCpu, long Calls, long TotalNs, long SelfNs);
+
 /// <summary>
 /// Writer/reader for a session database (SQLite). One database per session;
 /// schema in <see cref="ResultSchema"/>.
@@ -189,10 +192,10 @@ public sealed class ResultStore : IDisposable
 
     private void WriteMethods(IReadOnlyList<MethodRecord> methods)
     {
-        using var cmd = Prepare("INSERT OR REPLACE INTO method(id, module, namespace, type_name, name, signature, full_name, runtime_method_id, is_wait_frame) VALUES ($id,$mod,$ns,$t,$n,$sig,$full,$rid,$w)",
-            "$id", "$mod", "$ns", "$t", "$n", "$sig", "$full", "$rid", "$w");
+        using var cmd = Prepare("INSERT OR REPLACE INTO method(id, module, namespace, type_name, name, signature, full_name, runtime_method_id, is_wait_frame, token) VALUES ($id,$mod,$ns,$t,$n,$sig,$full,$rid,$w,$tok)",
+            "$id", "$mod", "$ns", "$t", "$n", "$sig", "$full", "$rid", "$w", "$tok");
         foreach (var m in methods)
-            Run(cmd, m.Id, m.Module, m.Namespace, m.TypeName, m.Name, m.Signature, m.FullName, unchecked((long)m.RuntimeMethodId), m.IsWaitFrame ? 1 : 0);
+            Run(cmd, m.Id, m.Module, m.Namespace, m.TypeName, m.Name, m.Signature, m.FullName, unchecked((long)m.RuntimeMethodId), m.IsWaitFrame ? 1 : 0, m.Token);
     }
 
     private void WriteThreads(IReadOnlyList<ThreadRecord> threads)
@@ -374,6 +377,38 @@ public sealed class ResultStore : IDisposable
         var list = new List<ThreadRow>();
         while (rd.Read())
             list.Add(new ThreadRow(rd.GetInt32(0), rd.GetInt32(1), Str(rd, 2), rd.GetInt64(3), rd.IsDBNull(4) ? null : rd.GetDouble(4), rd.IsDBNull(5) ? null : rd.GetDouble(5)));
+        return list;
+    }
+
+    /// <summary>Methods of a module with their sampling and/or timing figures, keyed by metadata token (for source annotation).</summary>
+    public IReadOnlyList<MethodFigures> MethodFiguresByModule(string module)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT m.id, m.token, m.full_name,
+                   COALESCE(s.inclusive, 0), COALESCE(s.exclusive, 0), COALESCE(s.inclusive_cpu, 0), COALESCE(s.exclusive_cpu, 0),
+                   COALESCE(t.calls, 0), COALESCE(t.total_ns, 0), COALESCE(t.self_ns, 0)
+            FROM method m
+            LEFT JOIN sample_stat s ON s.method_id = m.id
+            LEFT JOIN timing_stat t ON t.method_id = m.id
+            WHERE lower(m.module) = lower($mod) AND m.token <> 0
+            """;
+        cmd.Parameters.AddWithValue("$mod", module);
+        using var rd = cmd.ExecuteReader();
+        var list = new List<MethodFigures>();
+        while (rd.Read())
+            list.Add(new MethodFigures(rd.GetInt32(0), rd.GetInt32(1), rd.GetString(2), rd.GetInt64(3), rd.GetInt64(4), rd.GetInt64(5), rd.GetInt64(6), rd.GetInt64(7), rd.GetInt64(8), rd.GetInt64(9)));
+        return list;
+    }
+
+    /// <summary>Distinct module names present in the method table.</summary>
+    public IReadOnlyList<string> Modules()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT module FROM method WHERE module <> '' ORDER BY module";
+        using var rd = cmd.ExecuteReader();
+        var list = new List<string>();
+        while (rd.Read()) list.Add(rd.GetString(0));
         return list;
     }
 

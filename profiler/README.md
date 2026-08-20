@@ -50,7 +50,8 @@ heap; launch restart | attach), `profile_start` / `profile_stop` /
 `profile_status`, `profile_sessions`, `profile_hotspots`, `profile_flat`,
 `profile_tree`, `profile_callers` / `profile_callees`, `profile_timings`,
 `alloc_report`, `heap_report`, `profile_threads`, `profile_report`,
-`get_app_output`. Sessions are stored under
+`profile_annotate_source` (per-method figures on the source file, via the
+build's portable pdbs), `get_app_output`. Sessions are stored under
 `%LOCALAPPDATA%\net-android-profiler\sessions\<id>\` (override with
 `NAP_SESSIONS_ROOT`): `session.db` (SQLite, schema in ARCHITECTURE.md),
 `trace.nettrace` (opens in PerfView / Visual Studio), `session.log`.

@@ -11,3 +11,4 @@ TestResults/
 *.speedscope.json
 !tests/**/recorded/*.nettrace
 !tests/**/recorded/*.gcdump
+*.etlx

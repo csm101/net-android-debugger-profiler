@@ -105,6 +105,26 @@ public class SessionTests
     }
 
     [Fact]
+    public async Task Session_restores_app_environment_and_leaves_no_dsrouter()
+    {
+        var adb = new AdbClient();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        var dev = (await adb.ListDevicesAsync(cts.Token)).Single(d => d.Serial == Serial);
+        var env = new NetAndroidProfiler.Core.Collection.AppEnvironment(adb, Serial, Package, dev.Abi);
+        var before = await env.ReadOverrideAsync(cts.Token);
+
+        await using (var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting, Duration: TimeSpan.FromSeconds(4), Callspec: "T:TestTarget.Workloads.WorkloadRunner")))
+        {
+            Assert.Equal(SessionState.Ready, s.State);
+        }
+
+        var after = await env.ReadOverrideAsync(cts.Token);
+        Assert.Equal(before.Select(v => $"{v.Key}={v.Value}"), after.Select(v => $"{v.Key}={v.Value}"));
+        Assert.DoesNotContain(after, v => v.Key == "MONO_DIAGNOSTICS");
+        Assert.Empty(System.Diagnostics.Process.GetProcessesByName("dotnet-dsrouter"));
+    }
+
+    [Fact]
     public async Task Missing_package_fails_with_guidance()
     {
         var session = ProfilerSession.Create(new SessionSpec(Serial, "com.example.does.not.exist", ProfilingMode.Sampling, Duration: TimeSpan.FromSeconds(1)), SessionsRoot);

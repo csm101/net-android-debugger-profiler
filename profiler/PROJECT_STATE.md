@@ -67,10 +67,11 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Restart with warm-up).
 - Mcp: stdio server over ProfilerSession, tool set below (frozen for P1).
   register-mcp.cmd publishes and registers it in Claude Code.
-- Tests: 20 fast (recorded traces) + 6 device (Category=Device).
+- Tests: 23 fast (recorded traces + pdb) + 1 TODO-RED (U13) + 6 device
+  (Category=Device).
 - Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
-- Not yet: annotate_source (pdb), Release-app instrumenting on device,
-  physical devices, the reference application run, Delphi GUI.
+- Not yet: Release-app instrumenting on device, physical devices, the reference application
+  run, Delphi GUI.
 
 ## Milestones
 
@@ -102,8 +103,9 @@ list_devices, check_app, profile_run (one shot; mode sampling | instrumenting
 profile_status (long sessions), profile_sessions, profile_hotspots,
 profile_flat, profile_tree, profile_callers / profile_callees,
 profile_timings, alloc_report, heap_report, profile_threads, profile_report,
-get_app_output. Planned: profile_annotate_source (pdb line mapping, P1 last
-item), memory diff between snapshots (P2).
+profile_annotate_source (per-method figures on source via portable pdbs;
+MonoVM gives no per-line samples), get_app_output. Planned: memory diff
+between snapshots (P2).
 
 ## Stable commands
 
@@ -121,9 +123,14 @@ shape the architecture)
   `RunAOTCompilation=false` builds + `suspend` for the first session; the
   default profiled-AOT Release build also hides leaf frames in sampling.
 - MonoProfiler allocation tracking is exact (every object, correct size);
-  gcdump gives live-heap by type but unreliable array sizes on Mono.
-- Env var injection (MONO_DIAGNOSTICS) needs a build with a baked
-  environment file; incremental builds after an env change can produce a
-  broken APK -> engine clean-builds on env change.
-- dsrouter is the tool-side process; per-device isolation = one dsrouter
-  port per device.
+  heap snapshots come from Core's own GC heap-dump EventPipe session
+  (per-type live objects; MonoVM signals no dump end -> quiescence).
+- Env var injection: Debug runtime = override environment file (run-as, no
+  rebuild); Release = baked environment file at build time (user side;
+  incremental builds after an env change can produce a broken APK - clean
+  obj/ bin/).
+- dsrouter is the tool-side process; Core drives EventPipe through
+  DiagnosticsClient on it; per-device isolation = one dsrouter port per
+  device. Attach to a running Debug app works via adb reverse.
+- MonoVM sampling has no IL offsets and loses small leaf frames (U15):
+  hotspots are method-level, source annotation is per method.
