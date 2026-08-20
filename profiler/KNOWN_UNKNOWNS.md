@@ -128,19 +128,20 @@ net9 targets like the reference application -> P3 plan B (Mono.Cecil weaving, us
 Optional later: check dotnet/runtime for the fixing commit; retest when
 the reference application moves to net10.
 
-## U21 - CLOSED: weaver now works on the reference application (two prerequisites)
-Two independent causes kept the woven assemblies from ever executing on
-App.Droid; both are handled now and a weaver session on the reference application is green
-(AppApplication..ctor 8.78 s, OnCreate 4.54 s / 4.02 s self, real timings):
-1. `EmbedAssembliesIntoApk=True` (set by App.Droid.csproj): the runtime loads
-   assemblies from inside the APK, so rewriting the fast-deployment copies has
-   no effect. Profiling builds need `-p:EmbedAssembliesIntoApk=false`
-   (docs/APP_SETUP.md); the engine detects the situation through the collector
-   marker and says so.
-2. The original `.pdb` next to the rewritten assembly: with it in place the
-   woven assembly was silently not used (Debug builds load the debugger
-   component). The deployer now moves `<assembly>.pdb` aside for the duration
-   of the session and restores it afterwards. This was the last blocker.
+## U21 - CLOSED: weaver on the reference application (corrected root cause)
+The weaver works on the reference application. Two things had to be fixed, and one earlier
+conclusion was wrong and is corrected here:
+1. The original `.pdb` next to a rewritten assembly silently prevents the woven
+   copy from being used. The deployer moves it aside for the session. This was
+   the real blocker.
+2. Sessions could leave the app unable to start (stopped=true plus a deleted
+   environment file); both are fixed - see the launching and environment notes.
+Correction: an earlier note blamed `EmbedAssembliesIntoApk=true` in
+App.Droid.csproj. The Debug builds actually used in these runs are
+fast-deployed - their APK contains no assemblies at all - so that premise was
+wrong. The engine now decides by inspecting the APK (assembly store,
+lib_*.dll.so, assemblies/), not by any project property, and refuses on-device
+weaving only for apps that really do embed their assemblies.
 
 ## U22 - CLOSED: build-time weaving
 Implemented 2026-08-20 and verified on TestTarget: `nap-weave`
