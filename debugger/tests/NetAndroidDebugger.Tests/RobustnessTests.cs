@@ -445,6 +445,47 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
     }
 
     [Fact]
+    public async Task ForeignMonoApp_StartingDuringTheSession_IsNotAttached()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var adb = new AdbClient();
+        // Any other .NET Android app installed on the device will do; the reference application is the one that
+        // exposed this in real use. Without it there is nothing to prove, so skip.
+        const string foreignPackage = "App.Droid";
+        var installed = await adb.ShellAsync(device.Serial, $"pm list packages {foreignPackage}", cts.Token);
+        if (!installed.Contains(foreignPackage, StringComparison.Ordinal))
+        {
+            output.WriteLine($"{foreignPackage} is not installed on {device.Serial}; nothing to check");
+            return;
+        }
+
+        await using var session = await LaunchAsync(cts.Token);
+        var ourPids = session.GetProcesses().Select(p => p.Pid).ToHashSet();
+
+        try
+        {
+            // The debug property is device-global and still fresh: this app reads it too.
+            var activity = await adb.ResolveLauncherActivityAsync(device.Serial, foreignPackage, cts.Token);
+            await adb.StartActivityAsync(device.Serial, activity, cts.Token);
+            await Task.Delay(TimeSpan.FromSeconds(20), cts.Token);
+
+            var processes = session.GetProcesses();
+            output.WriteLine(string.Join("\n", processes.Select(p => $"{p.Pid} {p.Name} port={p.SdbPort}")));
+            Assert.All(processes, p => Assert.StartsWith(TestEnvironment.TestTargetPackage, p.Name));
+            Assert.DoesNotContain(processes, p => p.Name.Contains(foreignPackage, StringComparison.OrdinalIgnoreCase));
+
+            // The engine says so out loud, and keeps working afterwards.
+            var log = session.GetDebuggerOutput(2000);
+            Assert.Contains(log, l => l.Contains("foreign Mono process", StringComparison.OrdinalIgnoreCase));
+            Assert.NotEmpty(session.GetProcesses().Where(p => ourPids.Contains(p.Pid) && !p.HasExited));
+        }
+        finally
+        {
+            await adb.ForceStopAsync(device.Serial, foreignPackage, CancellationToken.None);
+        }
+    }
+
+    [Fact]
     public async Task Launch_UnknownPackage_FailsCleanly()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));

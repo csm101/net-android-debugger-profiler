@@ -308,6 +308,10 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.Contains("0.5", byName["Ratio"].Value);
         Assert.Contains("3", byName["NumbersCount"].Value);
 
+        // Generic types are rendered with their type arguments, not as raw `List\`1`.
+        Assert.Contains("List<int>", byName["Numbers"].TypeName.Replace(" ", ""));
+        Assert.Contains("Dictionary<string,int>", byName["Map"].TypeName.Replace(" ", ""));
+
         var numbers = byName["Numbers"];
         Assert.True(numbers.HasChildren);
         var items = session.ExpandVariable(numbers.ExpansionHandle!);

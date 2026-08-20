@@ -66,9 +66,10 @@ Conventions (mirroring the Delphi project's discipline):
       its place is attached on a new port —
       `KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt`
 - [x] `GetProcesses` reports a helper that died (`HasExited`) — same test
-- [ ] A foreign Mono app process starting during the session is NOT attached
-      (warning logged, port rotated) — needs a second installed .NET app;
-      `ForeignMonoProcess_IsNotAttached` (observed live with the reference application, suite run 12)
+- [x] A foreign Mono app process starting during the session is NOT attached
+      (warning logged, port rotated, our own processes unaffected) —
+      `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` (skips when no
+      second .NET app is installed; uses App.Droid when it is)
 
 ## B. Breakpoints
 - [x] Source-line breakpoint hit with locals — `Breakpoint_InMainProcess_IsHit_WithLocals`
@@ -123,7 +124,8 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Arrays / List<T> expansion — `ObjectExpansion_…`
 - [x] Dictionary<K,V> expansion — `DictionaryExpansion_ShowsEntries`
 - [x] Null locals: no expansion handle — `NullValue_HasNoExpansionHandle`
-- [ ] Generic types display
+- [x] Generic types display with their type arguments (List<int>,
+      Dictionary<string,int>) — `ObjectExpansion_…`
 - [x] Stuck debuggee invoke yields a bounded TimeoutException, never a hang —
       engine `RunBounded` (60 s); timeouts are 12 s/18 s so a first slow invoke
       (DateTime.ToString / ICU init) completes instead of being aborted.
