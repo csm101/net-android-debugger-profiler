@@ -40,4 +40,4 @@ Start M0 step 1 below.
 
 ## Open items outside M0
 - LICENSE file not chosen yet (user decision before publishing to GitHub).
-- No initial git commit made yet (user confirms).
+- Initial commit pushed to https://github.com/csm101/net-android-debugger (private); repo-local git author set to csm101 <carlo.sirna@gmail.com>.
