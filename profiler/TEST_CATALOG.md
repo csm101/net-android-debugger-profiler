@@ -27,28 +27,42 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Device (adb reverse) path - deferred (U10)
 - [ ] Clean teardown: no orphan dsrouter/trace processes
 
-## B. Sampling analysis
-- [ ] Busy method appears in top hotspots (inclusive + exclusive)
-- [ ] Call tree parent/child relations correct on a known call chain
-- [ ] Thread attribution
-- [ ] Recorded-trace regression: known trace -> exact expected hotspot table
+## B. Sampling analysis (Fast/SamplingAnalyzerTests, recorded testtarget-sampling-jit-20s)
+- [x] Busy method appears in top exclusive CPU hotspots - `Busy_method_is_among_top_exclusive_cpu_hotspots`
+- [x] Leaf method visible on JIT build - `Mix_leaf_method_is_visible_on_jit_build`
+- [x] Wait frames classified, excluded from *_cpu - `Sleep_samples_are_classified_as_wait_and_excluded_from_cpu`
+- [x] Inclusive root of worker thread - `Workload_loop_is_inclusive_root_of_the_worker_thread`
+- [x] Call tree parent/child on known chain - `Call_tree_has_busy_under_loop_and_mix_under_busy`
+- [x] Caller/callee edges - `Edges_link_loop_to_busy_and_busy_to_mix`
+- [x] Every stacked sample resolved - `Every_sample_with_stack_is_resolved`
+- [x] Name split (namespace/type/name/signature/module) - `Method_names_are_split_into_namespace_type_name`
+- [x] Thread attribution - `Threads_are_reported_with_sample_counts`
 - [ ] Symbolication of generic methods and async state machines
+- [ ] AOT build: leaf attribution caveat reported (U15)
 
 ## C. Memory analysis
-- [ ] Allocation-heavy type visible in gcdump report
-- [ ] Alloc events attributed to allocating callsite (provider path)
+- [x] Exact allocation counts/sizes per type (provider path) - `Allocations_by_type_count_every_record_and_its_payload`
+- [x] Alloc events attributed to innermost instrumented frame - `Allocations_are_attributed_to_the_innermost_instrumented_frame`
+- [x] Unresolved pre-session vtables get placeholders - `Pre_session_vtables_get_placeholder_names_not_exceptions`
+- [ ] TODO-RED U13: pre-session types resolve to names - `Pre_session_types_resolve_to_names` (skipped)
+- [ ] Heap snapshot from live session: allocation-heavy type visible (device)
 - [ ] Two snapshots diff (growth report)
 
-## D. Instrumenting (P3)
-- [ ] Callspec session: enter/leave events for filtered namespace only
-- [ ] Weaved APK: deterministic call counts match known execution
+## D. Instrumenting (Fast/MonoProfilerAnalyzerTests, recorded testtarget-monoprofiler-4s)
+- [x] Enter/leave/alloc event counts exact - `Enter_leave_and_allocation_counts_match_the_recorded_trace`
+- [x] Per-method timing + names via rundown - `NewRecord_timing_has_expected_call_count_and_names_resolved`
+- [x] Timing tree nesting - `Timing_tree_nests_ctor_under_NewRecord_under_Allocate`
+- [ ] Callspec session end-to-end on device: only filtered namespace instrumented
+- [ ] Weaved APK (P3): deterministic call counts match known execution
 - [ ] Async method timing attributed across await points
 - [ ] Weaver skips excluded methods (getters/setters config)
 
-## E. ResultStore / SQLite
-- [ ] Schema version stamped and checked on open
-- [ ] Round-trip: analysis -> SQLite -> query equals in-memory model
-- [ ] Large tree insert performance guard
+## E. ResultStore / SQLite (Fast/ResultStoreTests)
+- [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`
+- [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
+- [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
+- [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
+- [ ] Large tree insert performance guard (U6)
 
 ## F. MCP end-to-end
 - [ ] profile_run on TestTarget -> hotspots tool returns busy method

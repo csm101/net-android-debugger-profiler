@@ -4,17 +4,19 @@
 P1 - Core + MCP sampling (started 2026-08-20 after P0 spike).
 
 ## Current substep
-P1 step 1 (U17: Debug builds) DONE: Debug + EnableDiagnostics works;
-MONO_DIAGNOSTICS injected per session through the override environment
-file (run-as), verified with a full instrumenting trace (debugenv4).
-Docs updated (notes, APP_SETUP, KNOWN_UNKNOWNS, PROJECT_STATE). Committing.
+P1 step 2a DONE: Core analysis (SamplingAnalyzer, MonoProfilerAnalyzer,
+WaitFrameClassifier) + ResultStore (SQLite schema v1, separate tables) +
+19 fast tests green on recorded traces (1 TODO-RED U13). Committing.
 
 ## Next action if interrupted right now
-Commit/push docs; then start P1 step 2: Core skeleton.
+P1 step 2b: collection layer (Devices/AdbClient, Apps/AppInspector,
+Collection/EnvironmentOverrideFile + injector, DsRouter, EventPipe session
+via DiagnosticsClient or dotnet-trace, heap snapshot session), then
+ProfilerSession facade, then device integration test.
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.
-2. Core skeleton in src/NetAndroidProfiler.Core:
+2. Core skeleton in src/NetAndroidProfiler.Core (2a analysis+store DONE; 2b collection next):
    - Devices/AdbClient (serial-explicit adb wrapper, run-as, push/pull,
      setprop, logcat, pidof, launch via monkey/LAUNCHER).
    - Apk/AppInspector: prerequisites of an APK/installed app (diagnostics
