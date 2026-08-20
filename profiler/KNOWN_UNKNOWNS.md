@@ -89,13 +89,12 @@ measure the always-on cost of `--diagnostic-mono-profiler=alloc` on a real
 app, to decide whether `alloc` can be baked into a Release `Profiling`
 configuration permanently.
 
-## U18 - APK prerequisite inspection
-How the engine checks the APK/installed app before a session: presence of
-libmono-component-diagnostics_tracing.so, libaot-* (AOT warning), the
-baked environment (`__environment__.txt` content is inside libxamarin-app.so
-- readable? or require the user's build to also drop a marker?), package
-name/activity to launch. Source: APK on disk (aapt/zip) vs installed
-package (`adb shell pm path` + pull).
+## U18 - APK prerequisite inspection on large apps
+Implemented (Apps/AppInspector): `pm path` -> pull every APK -> zip entries
+under lib/<abi> (diagnostics component, libaot-*), strings of
+libxamarin-app.so for MONO_DIAGNOSTICS, `run-as` for debuggable. Open: cost
+on the reference application-size APKs (pull of 50+ MB per session) - cache by package
+version / `pm dump` signature, or read only the needed entries remotely.
 
 ## U19 - the reference application existing profiling assets
 the reference application already has a Metalama-based method timing aspect

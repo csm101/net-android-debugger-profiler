@@ -50,17 +50,20 @@ Profiling modes:
   (profile_run / hotspots / flat / annotate_source / report / sessions), plus
   Android-specific tools. Target list in PROJECT_STATE.md.
 
-## Modules (planned - nothing implemented yet)
+## Modules (Core implemented in P1; Mcp next)
 
 | Module | Responsibility |
 |---|---|
-| Core/ProfilerSession | Facade, state machine, session store |
-| Core/AndroidCollector | Build/deploy (EnableDiagnostics), dsrouter + dotnet-trace/gcdump processes, adb, MONO_DIAGNOSTICS setup, logcat |
-| Core/TraceAnalyzer | TraceEvent parsing -> call tree, inclusive/exclusive times, hot paths |
-| Core/AllocAnalyzer | Allocation events + gcdump -> per-type / per-callsite reports |
-| Core/ResultStore | SQLite writer/reader, schema versioning |
-| Core/Weaver (P3) | Mono.Cecil IL rewriting, async-state-machine aware; Profiler.RuntimeLib on-device collector |
-| Mcp/ | stdio MCP server over ProfilerSession |
+| Core/Sessions/ProfilerSession | Facade: `SessionSpec` -> Preparing (device + APK prerequisites, dsrouter, app config) -> WaitingForApp -> Collecting -> Analyzing -> Ready/Failed; session directory with session.json, trace.nettrace, session.db, session.log; `Results` = ResultStore |
+| Core/Devices/AdbClient, ProcessRunner, ToolLocator | serial-explicit adb (shell, exec-out, push/pull, run-as, setprop, launch, pidof, reverse, logcat); tool discovery |
+| Core/Apps/AppInspector | pulls the installed APK(s), reports `AppPrerequisites` (diagnostics component, AOT libs, debuggable, baked MONO_DIAGNOSTICS) and `Check(mode)` -> blocking problems / warnings with guidance |
+| Core/Collection/AppEnvironment, EnvironmentOverrideFile | per-app DOTNET_DiagnosticPorts / MONO_DIAGNOSTICS injection through the Debug runtime's override environment file (backup + restore); `debug.mono.profile` fallback for release apps |
+| Core/Collection/DsRouterProcess, EventPipeCollector | dotnet-dsrouter lifecycle; EventPipe sessions via DiagnosticsClient (sampling / instrumenting to file, live heap snapshot) with start retry and resume |
+| Core/Analysis/SamplingAnalyzer, WaitFrameClassifier | TraceLog stacks -> method stats (incl/excl, *_cpu), aggregated call tree, caller/callee edges |
+| Core/Analysis/MonoProfilerAnalyzer | manual decoder of the MonoProfiler provider -> timings, timing tree, allocations by type / by innermost instrumented frame |
+| Core/Store/ResultStore, ResultSchema | SQLite writer/reader, schema v1 (below) |
+| Core/Weaver (P3) | Mono.Cecil (or Metalama, U19) IL rewriting, async-state-machine aware; on-device collector |
+| Mcp/ | stdio MCP server over ProfilerSession (P1, next) |
 | gui/ (P4) | Delphi + DevExpress VCL frontend (AQTime-style), reads SQLite, drives sessions via local control service |
 
 ## SQLite schema contract

@@ -117,6 +117,33 @@ Manual (needed for custom providers / gcdump / multiple sessions):
 Known trap: do not launch the app through Visual Studio while a diagnostics
 config is active - it freezes on the splash screen. **[verified - docs]**
 
+### Attaching to a running app (no restart)
+
+An app built with EnableDiagnostics carries
+`DOTNET_DiagnosticPorts=127.0.0.1:9000,connect,nosuspend`; the runtime keeps
+retrying that connection. `adb -s <serial> reverse tcp:9000 tcp:9000`
+(emulator: 127.0.0.1 inside the emulator is the emulator itself, so the
+reverse is needed there too) + `dotnet-dsrouter android-emu` on the host make
+the already-running process connect within seconds: sampling and heap
+snapshots of a running Debug app work without restarting it, same pid before
+and after (device test `Sampling_attach_to_running_debug_app_without_restart`).
+Instrumenting still needs a restart (JIT-time instrumentation). **[verified]**
+
+### Engine collection path (Core)
+
+Core does not spawn dotnet-trace/dotnet-gcdump: it starts dotnet-dsrouter and
+drives EventPipe through `Microsoft.Diagnostics.NETCore.Client`
+(`DiagnosticsClient(dsrouterPid)`): `GetProcessEnvironment()` as the
+"runtime connected" probe, `StartEventPipeSessionAsync(providers,
+requestRundown: true)`, `ResumeRuntime()`, `EventStream` copied to
+trace.nettrace, `StopAsync()` (rundown arrives before the stream ends).
+Heap snapshots: session with `Microsoft-Windows-DotNETRuntime` keywords
+`GCHeapSnapshot` (GC|GCHeapDump|GCHeapCollect|GCHeapAndTypeNames|Type),
+parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
+`GCStop` after the dump; ~10-30 s on the emulator; type names resolve
+(`TestTarget.Workloads.AllocHeavyRecord`). Provider sets in
+`Collection/EventPipeCollector.cs` (`ProviderSets`). **[verified - device tests]**
+
 ## Sampling: what the data looks like
 
 - Provider Microsoft-DotNETCore-SampleProfiler, events appear in TraceEvent

@@ -16,7 +16,10 @@ Verified on .NET SDK 10.0.301 / android workload 36.1.43; facts marked
   heap snapshots, instrumenting with exact allocations. The profiler
   injects the instrumenting settings (`MONO_DIAGNOSTICS`) into the installed
   app's private environment file per session, without rebuilding, and only
-  while profiling.
+  while profiling. Sampling and heap snapshots can also **attach to the app
+  while it is already running** (no restart, same process): the runtime keeps
+  retrying its default diagnostics connection and the profiler routes it
+  through `adb reverse`.
 - **Release builds**: `EnableDiagnostics=true` gives sampling and heap
   snapshots. Instrumenting additionally needs `MONO_DIAGNOSTICS` baked into
   the APK (environment file, see below) and a JIT build (no AOT).

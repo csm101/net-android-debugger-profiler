@@ -19,13 +19,18 @@ Conventions (mirroring the debugger project's discipline):
 
 ---
 
-## A. Collection orchestration
-- [ ] Build TestTarget with EnableDiagnostics and deploy
-- [ ] Sampling session on emulator produces a parseable .nettrace
-- [ ] Startup profiling via suspend captures app init
-- [ ] gcdump collection succeeds
-- [ ] Device (adb reverse) path - deferred (U10)
-- [ ] Clean teardown: no orphan dsrouter/trace processes
+## A. Collection orchestration (Device/SessionTests, Category=Device, TestTarget Debug build on emulator-5556)
+- [x] Sampling restart session -> parseable trace, Busy in hotspots - `Sampling_restart_session_finds_busy_method`
+- [x] Instrumenting restart session (suspend, env injection, callspec) - `Instrumenting_restart_session_times_methods_and_counts_allocations`
+- [x] Heap snapshot of running app - `Heap_snapshot_of_running_app_shows_retained_records`
+- [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`
+- [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`
+- [ ] Missing diagnostics component fails with guidance (needs a TestTarget build without EnableDiagnostics)
+- [ ] Release build: instrumenting refused unless MONO_DIAGNOSTICS baked
+- [ ] Startup profiling via suspend captures app init (assert on OnCreate frames)
+- [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
+- [ ] Clean teardown: no orphan dsrouter processes, environment restored (assert override file equals backup)
+- [ ] Stop() on a session without Duration ends collection
 
 ## B. Sampling analysis (Fast/SamplingAnalyzerTests, recorded testtarget-sampling-jit-20s)
 - [x] Busy method appears in top exclusive CPU hotspots - `Busy_method_is_among_top_exclusive_cpu_hotspots`

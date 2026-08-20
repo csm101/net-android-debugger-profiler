@@ -1,0 +1,285 @@
+using System.ComponentModel;
+using System.Text;
+using ModelContextProtocol;
+using ModelContextProtocol.Server;
+using NetAndroidProfiler.Core.Apps;
+using NetAndroidProfiler.Core.Devices;
+using NetAndroidProfiler.Core.Sessions;
+
+namespace NetAndroidProfiler.Mcp;
+
+/// <summary>
+/// MCP tool surface: a thin translation over <see cref="ProfilerSession"/> and
+/// its result store. Every tool returns compact plain text for the model.
+/// </summary>
+[McpServerToolType]
+public sealed class ProfilerTools(SessionHost host)
+{
+    // ------------------------------------------------------------------ devices
+
+    [McpServerTool(Name = "list_devices", ReadOnly = true), Description("Lists adb devices/emulators (serial, model, API level, ABI). Pick a serial for profile_run.")]
+    public async Task<string> ListDevices(CancellationToken ct)
+    {
+        var devices = await new AdbClient().ListDevicesAsync(ct);
+        if (devices.Count == 0) return "No adb devices attached.";
+        var sb = new StringBuilder();
+        foreach (var d in devices)
+            sb.AppendLine($"{d.Serial}  state={d.State}  model={d.Model ?? "?"}  api={d.ApiLevel}  abi={d.Abi}{(d.IsEmulator ? $"  (emulator{(d.AvdName is null ? "" : " " + d.AvdName)})" : "")}");
+        return sb.ToString().TrimEnd();
+    }
+
+    [McpServerTool(Name = "check_app", ReadOnly = true), Description(
+        "Inspects the installed APK of a package and reports whether it can be profiled in each mode " +
+        "(diagnostics component, AOT, debuggable, baked MONO_DIAGNOSTICS) with guidance for what is missing.")]
+    public async Task<string> CheckApp(
+        [Description("adb serial (from list_devices)")] string deviceSerial,
+        [Description("Android package name (ApplicationId)")] string packageName,
+        CancellationToken ct = default)
+    {
+        var adb = new AdbClient();
+        var dev = (await adb.ListDevicesAsync(ct)).FirstOrDefault(d => d.Serial == deviceSerial)
+            ?? throw new McpException($"Device {deviceSerial} not attached.");
+        var p = await new AppInspector(adb).InspectAsync(deviceSerial, packageName, dev.Abi, ct);
+        var sb = new StringBuilder();
+        sb.AppendLine($"package={p.Package} abi={p.Abi} debuggable={p.IsDebuggable} diagnosticsComponent={p.HasDiagnosticsComponent} aot={p.HasAotLibraries} monoDiagnosticsBaked={p.HasMonoDiagnosticsBaked}");
+        foreach (var mode in Enum.GetValues<ProfilingMode>())
+        {
+            var problems = p.Check(mode);
+            sb.AppendLine($"{mode}: {(problems.Any(x => x.IsBlocking) ? "NOT AVAILABLE" : problems.Count > 0 ? "ok with warnings" : "ok")}");
+            foreach (var pr in problems) sb.AppendLine($"  - {(pr.IsBlocking ? "blocking" : "warning")}: {pr.Message}");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    // ------------------------------------------------------------------ sessions
+
+    [McpServerTool(Name = "profile_run"), Description(
+        "One-shot profiling session: configures the device/app, collects for durationSeconds, analyzes into a SQLite database and returns a summary. " +
+        "mode: sampling (CPU, default), instrumenting (exact enter/leave timings + allocations, needs callspec, restarts the app), heap (live-heap snapshot by type). " +
+        "launch: restart (default; suspend until the session is up) or attach (app already running; sampling/heap only).")]
+    public async Task<string> ProfileRun(
+        [Description("adb serial of the device")] string deviceSerial,
+        [Description("Android package name (ApplicationId)")] string packageName,
+        [Description("sampling | instrumenting | heap")] string mode = "sampling",
+        [Description("Collection time in seconds (ignored for heap)")] int durationSeconds = 20,
+        [Description("restart | attach")] string launch = "restart",
+        [Description("Instrumenting: Mono callspec, e.g. 'N:My.App' or 'T:My.App.Service,M:My.App.Other:Method'. Exclude hot leaf methods.")] string? callspec = null,
+        [Description("Instrumenting: also record every allocation (type, size, allocating method)")] bool trackAllocations = true,
+        [Description("restart: keep the app suspended until the session is up (captures startup)")] bool suspendOnStart = true,
+        [Description("Optional friendly name used in the session id")] string? name = null,
+        CancellationToken ct = default)
+    {
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name);
+        var live = host.Create(spec);
+        SessionInfo info;
+        try { info = await live.Session.RunAsync(ct); }
+        catch (Exception e) when (e is ProfilerException or ToolException)
+        {
+            throw new McpException(e.Message + "\n" + string.Join("\n", live.Session.LogLines.TakeLast(15)));
+        }
+        return TextFormat.Info(info) + "\n\n" + Summary(info.Id);
+    }
+
+    [McpServerTool(Name = "profile_start"), Description(
+        "Starts a profiling session that runs until profile_stop (no fixed duration). Returns immediately with the session id; use profile_status to follow it.")]
+    public string ProfileStart(
+        [Description("adb serial of the device")] string deviceSerial,
+        [Description("Android package name (ApplicationId)")] string packageName,
+        [Description("sampling | instrumenting")] string mode = "sampling",
+        [Description("restart | attach")] string launch = "restart",
+        [Description("Instrumenting: Mono callspec")] string? callspec = null,
+        [Description("Instrumenting: also record allocations")] bool trackAllocations = true,
+        [Description("restart: suspend the app until the session is up")] bool suspendOnStart = true,
+        [Description("Optional friendly name")] string? name = null)
+    {
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name);
+        if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
+        var live = host.Create(spec);
+        live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
+        return $"Started session {live.Session.Id}. Call profile_status to watch it, profile_stop to end collection and analyze.";
+    }
+
+    [McpServerTool(Name = "profile_stop"), Description("Ends collection of a running session (default: the current one), waits for the analysis and returns the summary.")]
+    public async Task<string> ProfileStop([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
+    {
+        var live = host.Live(sessionId) ?? throw new McpException("No running session in this server. See profile_sessions for finished ones.");
+        if (live.RunTask is null) throw new McpException($"Session {live.Session.Id} was not started with profile_start.");
+        live.Session.Stop();
+        SessionInfo info;
+        try { info = await live.RunTask.WaitAsync(ct); }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message + "\n" + string.Join("\n", live.Session.LogLines.TakeLast(15))); }
+        return TextFormat.Info(info) + "\n\n" + Summary(info.Id);
+    }
+
+    [McpServerTool(Name = "profile_status", ReadOnly = true), Description("State of a session started in this server (default: current) with the last log lines.")]
+    public string ProfileStatus([Description("Session id (default: current)")] string? sessionId = null, [Description("Log lines to include")] int logLines = 15)
+    {
+        var live = host.Live(sessionId);
+        if (live is null) return "No live session in this server process. profile_sessions lists finished sessions on disk.";
+        var info = live.Session.Info;
+        return TextFormat.Info(info) + "\n" + string.Join("\n", live.Session.LogLines.TakeLast(Math.Max(0, logLines)));
+    }
+
+    [McpServerTool(Name = "profile_sessions", ReadOnly = true), Description("Lists the sessions stored under the sessions root (newest first).")]
+    public string ProfileSessions([Description("Max entries")] int max = 20)
+    {
+        var list = ProfilerSession.ListSessions(host.SessionsRoot).Take(Math.Max(1, max)).ToList();
+        if (list.Count == 0) return $"No sessions under {host.SessionsRoot}.";
+        var sb = new StringBuilder($"sessions root: {host.SessionsRoot}\n");
+        foreach (var s in list)
+            sb.AppendLine($"{s.id}  {(s.ready ? "ready" : "incomplete")}  mode={s.spec?.Mode}  package={s.spec?.Package}  device={s.spec?.DeviceSerial}");
+        return sb.ToString().TrimEnd();
+    }
+
+    // ------------------------------------------------------------------ results
+
+    [McpServerTool(Name = "profile_hotspots", ReadOnly = true), Description(
+        "Hottest methods of a sampling session. Counts are samples (~1 ms); inclusive = method on stack, exclusive = method on top; *_cpu exclude samples where the thread was blocked (Sleep/Wait).")]
+    public string ProfileHotspots(
+        [Description("Session id (default: current/last)")] string? sessionId = null,
+        [Description("Rows")] int top = 30,
+        [Description("Order by exclusive (true) or inclusive (false)")] bool exclusive = true,
+        [Description("Order by CPU-only counts and hide wait frames")] bool cpuOnly = true,
+        [Description("Substring/wildcard filter on the full method name, e.g. 'MyApp.*'")] string? filter = null)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        var session = s.ReadSession();
+        return TextFormat.Hotspots(s.Hotspots(top, exclusive, cpuOnly, filter), session?.SamplesWithStack, exclusive, cpuOnly);
+    }
+
+    [McpServerTool(Name = "profile_flat", ReadOnly = true), Description("Flat profile: every method with samples, ordered by inclusive CPU samples (alias of profile_hotspots with exclusive=false).")]
+    public string ProfileFlat([Description("Session id")] string? sessionId = null, [Description("Rows")] int top = 50, [Description("Name filter")] string? filter = null)
+        => ProfileHotspots(sessionId, top, exclusive: false, cpuOnly: true, filter);
+
+    [McpServerTool(Name = "profile_tree", ReadOnly = true), Description(
+        "Aggregated call tree. Without nodeId returns the thread roots; pass a node id to list its children. Sampling sessions show sample counts, instrumenting sessions show calls and total/self milliseconds.")]
+    public string ProfileTree([Description("Session id")] string? sessionId = null, [Description("Node id to expand (omit for roots)")] int? nodeId = null, [Description("Max children")] int top = 30)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        bool timing = s.ReadSession()?.Mode == ProfilingMode.Instrumenting.ToString();
+        var rows = timing ? s.TimingTreeChildren(nodeId, top) : s.SampleTreeChildren(nodeId, top);
+        return TextFormat.Tree(rows, timing);
+    }
+
+    [McpServerTool(Name = "profile_callers", ReadOnly = true), Description("Methods that call the given method (sampling sessions), with the number of samples of the edge.")]
+    public string ProfileCallers([Description("Method id or (part of) its full name")] string method, [Description("Session id")] string? sessionId = null, [Description("Rows")] int top = 30)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        int id = ResolveMethod(s, method);
+        return TextFormat.Edges($"callers of #{id}", s.Callers(id, top));
+    }
+
+    [McpServerTool(Name = "profile_callees", ReadOnly = true), Description("Methods called by the given method (sampling sessions), with the number of samples of the edge.")]
+    public string ProfileCallees([Description("Method id or (part of) its full name")] string method, [Description("Session id")] string? sessionId = null, [Description("Rows")] int top = 30)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        int id = ResolveMethod(s, method);
+        return TextFormat.Edges($"callees of #{id}", s.Callees(id, top));
+    }
+
+    [McpServerTool(Name = "profile_timings", ReadOnly = true), Description("Instrumenting sessions: per-method call count, total/self time, min/max/avg, exception exits.")]
+    public string ProfileTimings([Description("Session id")] string? sessionId = null, [Description("Rows")] int top = 30, [Description("Order by self time instead of total")] bool bySelf = false, [Description("Name filter")] string? filter = null)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        return TextFormat.Timings(s.Timings(top, bySelf, filter));
+    }
+
+    [McpServerTool(Name = "alloc_report", ReadOnly = true), Description("Instrumenting sessions with trackAllocations: allocations per type (count, bytes) and, with bySite=true, per allocating instrumented method.")]
+    public string AllocReport([Description("Session id")] string? sessionId = null, [Description("Rows")] int top = 30, [Description("Group by (type, allocating method) instead of type")] bool bySite = false, [Description("Order by count instead of bytes")] bool byCount = false)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        return bySite ? TextFormat.AllocSites(s.AllocationsBySite(top)) : TextFormat.AllocTypes(s.AllocationsByType(top, byCount));
+    }
+
+    [McpServerTool(Name = "heap_report", ReadOnly = true), Description("Heap sessions: live objects per type (count, bytes) of a snapshot.")]
+    public string HeapReport([Description("Session id")] string? sessionId = null, [Description("Snapshot id (default 1)")] int snapshot = 1, [Description("Rows")] int top = 40)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        return TextFormat.Heap(s.HeapByType(snapshot, top));
+    }
+
+    [McpServerTool(Name = "profile_threads", ReadOnly = true), Description("Threads seen in the session with their sample counts.")]
+    public string ProfileThreads([Description("Session id")] string? sessionId = null)
+    {
+        using var s = host.OpenResults(sessionId, out _);
+        return TextFormat.Threads(s.Threads());
+    }
+
+    [McpServerTool(Name = "profile_report", ReadOnly = true), Description("Summary of a session: what it was, top hotspots / timings / allocations depending on the mode, and where the SQLite database is.")]
+    public string ProfileReport([Description("Session id (default: current/last)")] string? sessionId = null) => Summary(host.ResolveId(sessionId));
+
+    // ------------------------------------------------------------------ app output
+
+    [McpServerTool(Name = "get_app_output", ReadOnly = true), Description("Current logcat lines of the app process (by package), most recent last.")]
+    public async Task<string> GetAppOutput([Description("adb serial")] string deviceSerial, [Description("Package name")] string packageName, [Description("Max lines")] int lines = 100, CancellationToken ct = default)
+    {
+        var adb = new AdbClient();
+        var pid = await adb.PidOfAsync(deviceSerial, packageName, ct);
+        if (pid is null) return $"{packageName} is not running on {deviceSerial}.";
+        var text = await adb.LogcatDumpAsync(deviceSerial, pid, ct);
+        var all = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        return string.Join("\n", all.TakeLast(Math.Max(1, lines)));
+    }
+
+    // ------------------------------------------------------------------ helpers
+
+    private string Summary(string id)
+    {
+        using var s = host.OpenResults(id, out _);
+        var row = s.ReadSession();
+        var sb = new StringBuilder();
+        sb.AppendLine($"session={id} mode={row?.Mode} state={row?.State} package={row?.Package} device={row?.DeviceSerial} duration={row?.DurationMs / 1000.0:F1}s");
+        sb.AppendLine($"database={s.DataSource}");
+        if (row?.Mode == ProfilingMode.Sampling.ToString())
+        {
+            sb.AppendLine($"samples={row.TotalSamples} withStack={row.SamplesWithStack} threads={s.Threads().Count}");
+            sb.AppendLine("\nTop exclusive CPU:");
+            sb.AppendLine(TextFormat.Hotspots(s.Hotspots(10, true, true), row.SamplesWithStack, true, true));
+            sb.AppendLine("\nTop inclusive CPU:");
+            sb.AppendLine(TextFormat.Hotspots(s.Hotspots(10, false, true), row.SamplesWithStack, false, true));
+        }
+        else if (row?.Mode == ProfilingMode.Instrumenting.ToString())
+        {
+            sb.AppendLine("\nTop methods by total time:");
+            sb.AppendLine(TextFormat.Timings(s.Timings(10)));
+            sb.AppendLine("\nTop allocations by bytes:");
+            sb.AppendLine(TextFormat.AllocTypes(s.AllocationsByType(10)));
+        }
+        else if (row?.Mode == ProfilingMode.HeapSnapshot.ToString())
+        {
+            sb.AppendLine("\nLive heap by type:");
+            sb.AppendLine(TextFormat.Heap(s.HeapByType(1, 15)));
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    private static int ResolveMethod(Core.Store.ResultStore s, string method)
+    {
+        if (int.TryParse(method, out int id)) return id;
+        return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
+    }
+
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
+        if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
+        var pm = mode.Trim().ToLowerInvariant() switch
+        {
+            "sampling" or "cpu" => ProfilingMode.Sampling,
+            "instrumenting" or "instrument" or "tracing" => ProfilingMode.Instrumenting,
+            "heap" or "memory" or "gcdump" => ProfilingMode.HeapSnapshot,
+            _ => throw new McpException($"Unknown mode '{mode}': use sampling | instrumenting | heap."),
+        };
+        var lm = launch.Trim().ToLowerInvariant() switch
+        {
+            "restart" => LaunchMode.Restart,
+            "attach" => LaunchMode.Attach,
+            _ => throw new McpException($"Unknown launch '{launch}': use restart | attach."),
+        };
+        if (pm == ProfilingMode.Instrumenting && string.IsNullOrWhiteSpace(callspec))
+            throw new McpException("Instrumenting needs a callspec (e.g. N:My.App.Namespace). Instrumenting everything is not supported: it makes the app unusably slow.");
+        return new SessionSpec(deviceSerial.Trim(), packageName.Trim(), pm, lm,
+            durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
+            suspendOnStart, callspec, trackAllocations, name);
+    }
+}

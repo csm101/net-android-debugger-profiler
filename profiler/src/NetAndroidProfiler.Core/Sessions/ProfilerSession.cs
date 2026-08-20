@@ -1,0 +1,353 @@
+using System.Text.Json;
+using NetAndroidProfiler.Core.Analysis;
+using NetAndroidProfiler.Core.Apps;
+using NetAndroidProfiler.Core.Collection;
+using NetAndroidProfiler.Core.Devices;
+using NetAndroidProfiler.Core.Store;
+
+namespace NetAndroidProfiler.Core.Sessions;
+
+/// <summary>How the app process is brought into the session.</summary>
+public enum LaunchMode
+{
+    /// <summary>Force-stop, configure, relaunch (suspended until the session is up when <see cref="SessionSpec.SuspendOnStart"/>). Required for instrumenting (JIT-time).</summary>
+    Restart,
+    /// <summary>Attach to the running process: the app must already be configured to connect to the profiler port.</summary>
+    Attach,
+}
+
+public enum SessionState { Idle, Preparing, WaitingForApp, Collecting, Analyzing, Ready, Failed }
+
+/// <summary>Everything a session needs to run. Immutable; serialized to session.json.</summary>
+public sealed record SessionSpec(
+    string DeviceSerial,
+    string Package,
+    ProfilingMode Mode,
+    LaunchMode Launch = LaunchMode.Restart,
+    TimeSpan? Duration = null,
+    bool SuspendOnStart = true,
+    string? Callspec = null,
+    bool TrackAllocations = true,
+    string? Name = null);
+
+/// <summary>Public snapshot of a session.</summary>
+public sealed record SessionInfo(
+    string Id,
+    SessionState State,
+    SessionSpec Spec,
+    string Directory,
+    string DatabasePath,
+    string? TraceFile,
+    DateTimeOffset CreatedUtc,
+    DateTimeOffset? StartedUtc,
+    DateTimeOffset? EndedUtc,
+    string? Error,
+    IReadOnlyList<string> Warnings);
+
+/// <summary>Thrown for session-level failures (prerequisites, state).</summary>
+public sealed class ProfilerException : Exception
+{
+    public ProfilerException(string message) : base(message) { }
+    public ProfilerException(string message, Exception inner) : base(message, inner) { }
+}
+
+/// <summary>
+/// The facade every frontend uses: orchestrates device setup, collection and
+/// analysis for one profiling session and exposes the result database.
+/// State machine: Idle -> Preparing -> WaitingForApp -> Collecting -> Analyzing -> Ready | Failed.
+/// </summary>
+public sealed class ProfilerSession : IAsyncDisposable
+{
+    public const string ToolVersion = "0.1.0";
+
+    private readonly AdbClient _adb;
+    private readonly List<string> _warnings = new();
+    private readonly List<string> _log = new();
+    private readonly CancellationTokenSource _stopRequested = new();
+    private SessionState _state = SessionState.Idle;
+    private string? _error;
+    private DateTimeOffset? _started, _ended;
+    private string? _traceFile;
+    private DsRouterProcess? _dsrouter;
+    private AppEnvironment? _env;
+    private bool _reverseSet;
+    private ResultStore? _store;
+
+    private ProfilerSession(string id, SessionSpec spec, string directory, AdbClient adb)
+    {
+        Id = id; Spec = spec; Directory = directory; _adb = adb;
+        CreatedUtc = DateTimeOffset.UtcNow;
+    }
+
+    public string Id { get; }
+    public SessionSpec Spec { get; }
+    public string Directory { get; }
+    public DateTimeOffset CreatedUtc { get; }
+    public string DatabasePath => Path.Combine(Directory, "session.db");
+    public string LogPath => Path.Combine(Directory, "session.log");
+    public SessionState State => _state;
+    public event EventHandler<SessionInfo>? StateChanged;
+
+    public SessionInfo Info => new(Id, _state, Spec, Directory, DatabasePath, _traceFile, CreatedUtc, _started, _ended, _error, _warnings.ToList());
+
+    /// <summary>Create a new session directory under <paramref name="sessionsRoot"/>.</summary>
+    public static ProfilerSession Create(SessionSpec spec, string sessionsRoot, AdbClient? adb = null)
+    {
+        string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        string id = $"{stamp}-{Sanitize(spec.Name ?? spec.Package)}-{spec.Mode.ToString().ToLowerInvariant()}";
+        string dir = Path.Combine(sessionsRoot, id);
+        System.IO.Directory.CreateDirectory(dir);
+        var s = new ProfilerSession(id, spec, dir, adb ?? new AdbClient());
+        File.WriteAllText(Path.Combine(dir, "session.json"), JsonSerializer.Serialize(spec, JsonOpts));
+        return s;
+    }
+
+    /// <summary>Open a finished session (its database) from disk.</summary>
+    public static ResultStore OpenResults(string sessionDirectory) => ResultStore.Open(Path.Combine(sessionDirectory, "session.db"));
+
+    /// <summary>Enumerate session directories under <paramref name="sessionsRoot"/> (newest first).</summary>
+    public static IReadOnlyList<(string id, string directory, SessionSpec? spec, bool ready)> ListSessions(string sessionsRoot)
+    {
+        if (!System.IO.Directory.Exists(sessionsRoot)) return [];
+        var list = new List<(string, string, SessionSpec?, bool)>();
+        foreach (var dir in System.IO.Directory.GetDirectories(sessionsRoot).OrderByDescending(d => d))
+        {
+            SessionSpec? spec = null;
+            try { spec = JsonSerializer.Deserialize<SessionSpec>(File.ReadAllText(Path.Combine(dir, "session.json")), JsonOpts); } catch { }
+            list.Add((Path.GetFileName(dir), dir, spec, File.Exists(Path.Combine(dir, "session.db"))));
+        }
+        return list;
+    }
+
+    /// <summary>Result database (available once the session is Ready).</summary>
+    public ResultStore Results => _store ?? throw new ProfilerException($"Session {Id} has no results yet (state {_state})");
+
+    /// <summary>Run the whole session: prepare -> collect (Duration or until StopAsync) -> analyze.</summary>
+    public async Task<SessionInfo> RunAsync(CancellationToken ct)
+    {
+        if (_state != SessionState.Idle) throw new ProfilerException($"Session {Id} already started ({_state})");
+        try
+        {
+            await PrepareAsync(ct).ConfigureAwait(false);
+            await CollectAsync(ct).ConfigureAwait(false);
+            await AnalyzeAsync(ct).ConfigureAwait(false);
+            SetState(SessionState.Ready);
+        }
+        catch (Exception e)
+        {
+            _error = e.Message;
+            Log("FAILED: " + e);
+            SetState(SessionState.Failed);
+            await WriteFailedDbAsync().ConfigureAwait(false);
+            if (e is ProfilerException or ToolException or OperationCanceledException) throw;
+            throw new ProfilerException(e.Message, e);
+        }
+        finally
+        {
+            await CleanupAsync().ConfigureAwait(false);
+        }
+        return Info;
+    }
+
+    /// <summary>Request the end of collection for a session started without a duration.</summary>
+    public void Stop() => _stopRequested.Cancel();
+
+    // ------------------------------------------------------------ pipeline
+
+    private async Task PrepareAsync(CancellationToken ct)
+    {
+        SetState(SessionState.Preparing);
+        var devices = await _adb.ListDevicesAsync(ct).ConfigureAwait(false);
+        var device = devices.FirstOrDefault(d => d.Serial == Spec.DeviceSerial)
+            ?? throw new ProfilerException($"Device {Spec.DeviceSerial} is not attached (adb devices: {string.Join(", ", devices.Select(d => d.Serial))})");
+        if (device.State != "device") throw new ProfilerException($"Device {Spec.DeviceSerial} is in state '{device.State}'");
+        Log($"device {device.Serial} model={device.Model} api={device.ApiLevel} abi={device.Abi} emulator={device.IsEmulator}");
+
+        var prereq = await new AppInspector(_adb).InspectAsync(device.Serial, Spec.Package, device.Abi, ct).ConfigureAwait(false);
+        Log($"app debuggable={prereq.IsDebuggable} diagnostics={prereq.HasDiagnosticsComponent} aot={prereq.HasAotLibraries} monoDiagBaked={prereq.HasMonoDiagnosticsBaked}");
+        var problems = prereq.Check(Spec.Mode);
+        foreach (var p in problems.Where(p => !p.IsBlocking)) { _warnings.Add(p.Message); Log("warning: " + p.Message); }
+        var blocking = problems.Where(p => p.IsBlocking).ToList();
+        if (blocking.Count > 0)
+            throw new ProfilerException("The app cannot be profiled in mode " + Spec.Mode + ":\n - " + string.Join("\n - ", blocking.Select(b => b.Message)));
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Launch == LaunchMode.Attach)
+            throw new ProfilerException("Instrumenting requires LaunchMode.Restart: methods are instrumented when they are JIT-compiled, so the session must be running before the app starts.");
+
+        // Diagnostics transport.
+        _dsrouter = await DsRouterProcess.StartAsync(device.IsEmulator, ct).ConfigureAwait(false);
+        Log($"dsrouter pid={_dsrouter.Pid} appAddress={_dsrouter.AppAddress}");
+        if (!device.IsEmulator)
+        {
+            await _adb.ReverseAsync(device.Serial, DsRouterProcess.AppPort, DsRouterProcess.DeviceHostPort, ct).ConfigureAwait(false);
+            _reverseSet = true;
+        }
+
+        // App-side configuration.
+        _env = new AppEnvironment(_adb, device.Serial, Spec.Package, device.Abi);
+        if (Spec.Launch == LaunchMode.Restart)
+        {
+            await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+            string ports = $"{_dsrouter.AppAddress},{(Spec.SuspendOnStart ? "suspend" : "nosuspend")},connect";
+            if (prereq.IsDebuggable)
+            {
+                var updates = new List<KeyValuePair<string, string?>> { new("DOTNET_DiagnosticPorts", ports) };
+                if (Spec.Mode == ProfilingMode.Instrumenting)
+                    updates.Add(new("MONO_DIAGNOSTICS", BuildMonoDiagnostics()));
+                await _env.ApplyOverrideAsync(updates, ct).ConfigureAwait(false);
+                Log("override environment applied: " + string.Join(" ", updates.Select(u => u.Key + "=" + u.Value)));
+            }
+            else
+            {
+                await _env.SetDeviceProfilePropertyAsync(ports, ct).ConfigureAwait(false);
+                Log("debug.mono.profile set: " + ports);
+            }
+            await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
+            await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
+            Log("app launched");
+        }
+        else
+        {
+            // Attach: the app's own DOTNET_DiagnosticPorts (default 127.0.0.1:9000,connect,nosuspend on EnableDiagnostics builds)
+            // reaches dsrouter through adb reverse; emulators need the reverse too since 127.0.0.1 is the emulator itself.
+            await _adb.ReverseAsync(device.Serial, DsRouterProcess.AppPort, device.IsEmulator ? DsRouterProcess.AppPort : DsRouterProcess.DeviceHostPort, ct).ConfigureAwait(false);
+            _reverseSet = true;
+            var pid = await _adb.PidOfAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false)
+                ?? throw new ProfilerException($"Attach requested but {Spec.Package} is not running on {device.Serial}");
+            Log($"attaching to pid {pid}");
+        }
+    }
+
+    private async Task CollectAsync(CancellationToken ct)
+    {
+        SetState(SessionState.WaitingForApp);
+        var collector = new EventPipeCollector(_dsrouter!.Pid, Log);
+        await collector.WaitForRuntimeAsync(TimeSpan.FromSeconds(Spec.Launch == LaunchMode.Attach ? 20 : 90), ct).ConfigureAwait(false);
+        SetState(SessionState.Collecting);
+        _started = DateTimeOffset.UtcNow;
+
+        switch (Spec.Mode)
+        {
+            case ProfilingMode.Sampling:
+            case ProfilingMode.Instrumenting:
+            {
+                _traceFile = Path.Combine(Directory, "trace.nettrace");
+                var providers = Spec.Mode == ProfilingMode.Sampling ? ProviderSets.Sampling() : ProviderSets.Instrumenting(Spec.TrackAllocations);
+                await collector.CollectToFileAsync(providers, _traceFile, Spec.Duration, _stopRequested.Token, ct).ConfigureAwait(false);
+                break;
+            }
+            case ProfilingMode.HeapSnapshot:
+            {
+                if (Spec.Launch == LaunchMode.Restart)
+                {
+                    // A heap dump requested while the runtime is still initializing yields nothing:
+                    // let the app warm up (Duration doubles as the warm-up time for heap sessions).
+                    var warmUp = Spec.Duration ?? TimeSpan.FromSeconds(5);
+                    Log($"heap snapshot: warming up {warmUp.TotalSeconds:F0}s after launch");
+                    await Task.Delay(warmUp, ct).ConfigureAwait(false);
+                }
+                _heapSnapshot = await collector.TakeHeapSnapshotAsync(TimeSpan.FromSeconds(120), ct).ConfigureAwait(false);
+                break;
+            }
+        }
+        _ended = DateTimeOffset.UtcNow;
+    }
+
+    private HeapSnapshot? _heapSnapshot;
+
+    private async Task AnalyzeAsync(CancellationToken ct)
+    {
+        SetState(SessionState.Analyzing);
+        if (File.Exists(DatabasePath)) File.Delete(DatabasePath);
+        var store = ResultStore.Create(DatabasePath, ToolVersion);
+        long? total = null, withStack = null;
+        switch (Spec.Mode)
+        {
+            case ProfilingMode.Sampling:
+            {
+                var r = await Task.Run(() => new SamplingAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
+                store.WriteSampling(r);
+                total = r.TotalSamples; withStack = r.SamplesWithStack;
+                Log($"sampling analyzed: samples={r.TotalSamples} withStack={r.SamplesWithStack} methods={r.Methods.Count}");
+                break;
+            }
+            case ProfilingMode.Instrumenting:
+            {
+                var r = await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
+                store.WriteInstrumenting(r);
+                Log($"instrumenting analyzed: enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}");
+                if (r.EnterEvents == 0) _warnings.Add("No enter/leave events were received: check the callspec and that the app was (re)started by the session.");
+                break;
+            }
+            case ProfilingMode.HeapSnapshot:
+            {
+                var s = _heapSnapshot!;
+                store.WriteHeapSnapshot(s.TakenUtc, null, s.ByType);
+                Log($"heap snapshot: objects={s.TotalObjects} bytes={s.TotalBytes} types={s.ByType.Count}");
+                break;
+            }
+        }
+        store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Ready", Spec.Package, Spec.DeviceSerial, _started,
+            _started is not null && _ended is not null ? (_ended.Value - _started.Value).TotalMilliseconds : null,
+            _traceFile is null ? null : Path.GetFileName(_traceFile), total, withStack, JsonSerializer.Serialize(Spec, JsonOpts), null));
+        store.Dispose();
+        _store = ResultStore.Open(DatabasePath);
+    }
+
+    private async Task WriteFailedDbAsync()
+    {
+        try
+        {
+            if (File.Exists(DatabasePath)) return;
+            using var store = ResultStore.Create(DatabasePath, ToolVersion);
+            store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Failed", Spec.Package, Spec.DeviceSerial, _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), _error));
+        }
+        catch (Exception e) { Log("cannot write failed-session db: " + e.Message); }
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    private async Task CleanupAsync()
+    {
+        var ct = CancellationToken.None;
+        try { if (_env is not null && _env.HasPendingChanges) { await _env.RestoreAsync(ct).ConfigureAwait(false); Log("app environment restored"); } }
+        catch (Exception e) { Log("restore environment failed: " + e.Message); }
+        try { if (_reverseSet) await _adb.ReverseRemoveAsync(Spec.DeviceSerial, DsRouterProcess.AppPort, ct).ConfigureAwait(false); }
+        catch (Exception e) { Log("adb reverse --remove failed: " + e.Message); }
+        if (_dsrouter is not null) { await _dsrouter.DisposeAsync().ConfigureAwait(false); _dsrouter = null; }
+        try { await File.WriteAllLinesAsync(LogPath, _log, ct).ConfigureAwait(false); } catch { }
+    }
+
+    private string BuildMonoDiagnostics()
+    {
+        var parts = new List<string> { "--diagnostic-mono-profiler=enable" };
+        if (Spec.TrackAllocations) parts.Add("--diagnostic-mono-profiler=alloc");
+        string callspec = string.IsNullOrWhiteSpace(Spec.Callspec) ? "all" : Spec.Callspec.Trim();
+        parts.Add("--diagnostic-mono-profiler-callspec=" + callspec);
+        return string.Join(' ', parts);
+    }
+
+    private void SetState(SessionState s)
+    {
+        _state = s;
+        Log("state " + s);
+        StateChanged?.Invoke(this, Info);
+    }
+
+    private void Log(string line)
+    {
+        lock (_log) _log.Add($"{DateTime.Now:HH:mm:ss.fff} {line}");
+    }
+
+    /// <summary>Session log lines (also written to session.log at the end).</summary>
+    public IReadOnlyList<string> LogLines { get { lock (_log) return _log.ToList(); } }
+
+    public async ValueTask DisposeAsync()
+    {
+        _store?.Dispose();
+        await CleanupAsync().ConfigureAwait(false);
+        _stopRequested.Dispose();
+    }
+
+    private static string Sanitize(string s) => new(s.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_').ToArray());
+
+    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
+}
