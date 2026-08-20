@@ -69,7 +69,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map` (skips unless TestTarget was installed from a `-p:NapWeave=true` build)
 - [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
 - [x] Async methods woven as stubs and counted (session warns their timing is the synchronous part) - `Async_methods_are_woven_and_counted_as_stubs`
-- [ ] Build-time weaving exercised on the reference application
+- [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the reference application`
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)
 - [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`
@@ -88,7 +88,8 @@ Conventions (mirroring the debugger project's discipline):
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
-- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (needs EmbedAssembliesIntoApk=false)
+- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (on-device weaving; needs EmbedAssembliesIntoApk=false)
+- [x] Build-time weaving on the shipped configuration - `Build_time_weaving_session_on_the reference application`
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
 - [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`

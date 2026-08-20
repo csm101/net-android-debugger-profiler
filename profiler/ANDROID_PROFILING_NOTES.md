@@ -322,7 +322,16 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
 - MONO_DIAGNOSTICS / dsrouter / EventPipe are NOT used by this path: no
   suspend, no diagnostics port, works regardless of the U20 provider bug.
   **[verified]**
-- Two prerequisites on the app, both discovered on the reference application and now handled:
+- **Build-time weaving works on the real app as it ships**: the reference application keeps
+  `EmbedAssembliesIntoApk=true`, and a build with `-p:NapWeave=true
+  -p:NapCallspec="T:App.Droid.AppApplication"` (targets handed to MSBuild with
+  `-p:CustomAfterMicrosoftCommonTargets=...`, no csproj edit) wove 13 methods,
+  skipped 2 property accessors, flagged 3 async stubs, and produced real
+  timings in a 12 s session that deployed nothing: IsMainProcess 173 ms
+  (2 calls), InizializzaApplicazione 135 ms (30.9 ms self), ..ctor 133 ms,
+  OnCreate 95.6 ms, AttendiTermineInizializzazione 3.4 ms.
+  **[verified - Build_time_weaving_session_on_the reference application]**
+- Two prerequisites for weaving *on the device*, both discovered on the reference application:
   the app must not embed its assemblies (`EmbedAssembliesIntoApk=false`, or
   the woven copies are dead files), and the original `.pdb` next to a
   rewritten assembly must be moved aside or the runtime silently does not use

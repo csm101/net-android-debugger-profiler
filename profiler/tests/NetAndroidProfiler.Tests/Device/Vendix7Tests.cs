@@ -80,6 +80,32 @@ public class ReferenceAppTests
         Assert.True(s.Results.Count("timing_tree") > 0);
     }
 
+    /// <summary>
+    /// U22 on the real app: the reference application keeps EmbedAssembliesIntoApk=true, so the app is
+    /// woven during its own build and the session only consumes the map, touching
+    /// nothing on the device. Needs a build with
+    /// -p:NapWeave=true -p:NapCallspec="T:App.Droid.AppApplication".
+    /// </summary>
+    [SkippableFact]
+    public async Task Build_time_weaving_session_on_the reference application()
+    {
+        string map = Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_MAP")
+            ?? Path.Combine(SymbolsDir, "nap-weave.map");
+        Skip.IfNot(Enabled && File.Exists(map), $"build App.Droid with -p:NapWeave=true first (no map at {map})");
+
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(12),
+            Engine: InstrumentingEngine.Weaver,
+            WeaveMapPath: map));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var timings = s.Results.Timings(20);
+        Console.WriteLine(string.Join(Environment.NewLine, timings.Select(t => $"{t.Calls,4} calls {t.TotalNs / 1e6,10:F2} ms {t.SelfNs / 1e6,10:F2} self  {t.FullName}")));
+        Assert.NotEmpty(timings);
+        Assert.All(timings, t => Assert.StartsWith("App.Droid.", t.FullName));
+        Assert.Contains(timings, t => t.FullName == "App.Droid.AppApplication.OnCreate");
+    }
+
     [SkippableFact]
     public void the reference application_pdbs_load_and_map_tokens()
     {

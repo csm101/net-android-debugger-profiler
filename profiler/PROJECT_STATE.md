@@ -105,8 +105,9 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 - P3 - Instrumenting: plan A (callspec) works on net10 targets but crashes
   net9 runtimes (U20), so plan B is the path on the real app: Mono.Cecil
   weaver + on-device collector, working on TestTarget and the reference application, with
-  build-time weaving for apps that embed their assemblies (U22). Open: async
-  MoveNext attribution (U8).
+  build-time weaving for apps that embed their assemblies (U22, verified on
+  the reference application in its shipped configuration). The weaver also records allocations
+  by type and allocating method. Open: async MoveNext attribution (U8).
 - P4 - Delphi GUI (gui/): DevExpress VCL, call tree (cxTreeList), hot lists
   (cxGrid), allocations (PivotGrid), timeline (chart); reads SQLite, drives
   Core via local control service.
