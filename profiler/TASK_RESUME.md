@@ -1,50 +1,49 @@
 # Task resume
 
 ## Current task
-Autonomous overnight session (user away, following from phone; explicit
-instruction: do not stop for confirmations, only for real decisions).
+Autonomous overnight session (user away, following from phone). All six
+planned items are done; the full suite is running through the test-runner
+agent for final validation.
 
-## Overnight plan (in order, commit+push after each step)
-1. [done] V7 weaver with a narrow two-type callspec: green
-   (AppApplication..ctor 7.1 s, IsMainProcess 5.3 s, OnCreate 1.85 s).
-2. [in progress] MCP end-to-end tests (TEST_CATALOG section F): spawn the MCP
-   server over stdio from xunit against a prepared sessions root, assert
-   initialize/tools/list and the read-only tools, plus error paths.
-3. U22 - build-time weaving: MSBuild task that weaves selected assemblies
-   after compilation and before packaging, writing the id map next to the
-   APK, so apps that keep EmbedAssembliesIntoApk=true (the reference application) can be
-   instrumented without a special deployment. Engine consumes the map.
-4. P2 memory: diff between two heap snapshots (growth report) + MCP tool;
-   attempt U13 (type names for pre-session vtables).
-5. U15 experiment: controlled TestTarget workload (long leaf vs tiny leaf) to
-   characterize MonoVM sampling leaf attribution.
-6. Weaver quality: option to skip property accessors; async/iterator MoveNext
-   attribution (U8) if the rest lands early.
+## Done tonight (each committed and pushed)
+1. V7 weaver with a narrow callspec: green (AppApplication..ctor 7.1 s).
+2. MCP end-to-end tests over stdio (initialize, tool surface, read-only tools,
+   error paths) - Fast/McpServerTests.
+3. U22 build-time weaving: nap-weave + build/NetAndroidProfiler.Weaving.targets
+   + SessionSpec.WeaveMapPath; device test green on TestTarget.
+4. P2 memory: multi-snapshot sessions, ResultStore.HeapDiff, MCP heap_diff,
+   fast + device tests.
+5. U15 characterized and closed: the sampler folds tiny leaf methods into
+   their caller (LongLeaf 504 exclusive, TinyLeaf absent); recorded in the
+   notes, asserted by a device test, stated in the MCP instructions.
+6. Weaver refinements: property accessors skipped by default, async stubs
+   counted and warned about; docs (ARCHITECTURE engines + .napw format,
+   README, docs/USAGE.md).
 
 ## Next action if interrupted right now
-Continue at the first unfinished item; run the full suite through the
-test-runner agent before the final commit of the night.
+Read the test-runner report; fix anything red. Then pick from the queue below.
+
+## Queue (highest value first)
+- U13: type names for allocations of types loaded before the session (attach
+  sessions show "<vtable 0x...>"); try GCHeapDump + VTableClassReference
+  keywords at session start.
+- U8: async/iterator attribution by weaving the compiler-generated MoveNext
+  and stitching resumptions per state machine instance.
+- Weaver allocations: record allocation events from the weaver engine so the
+  net9 path has memory data too.
+- the reference application: build-time weaving on the real app (needs a build with NapWeave).
+- U6: call-tree storage at scale (query latency for the GUI).
+- P4: Delphi GUI (reads session.db).
 
 ## What works
-- Sampling, heap snapshots, runtime-provider instrumenting (net10 targets),
-  weaver instrumenting (TestTarget and the reference application with a narrow callspec).
-- MCP server registered in Claude Code (register-mcp.cmd); tool set complete
-  for P1 plus engine=weaver.
-- Fast suite 25 passed / 1 skipped (U13).
-
-## What is failing / known limits
-- U20: runtime-provider instrumenting crashes the net9 MonoVM (callspec
-  option). The weaver is the instrumenting path there.
-- Weave scope: whole-namespace weaving on the reference application (7882 methods) never
-  reaches managed code within 240 s; narrow filters only.
-- the reference application weaver needs EmbedAssembliesIntoApk=false until U22 lands.
+Sampling, memory (allocations, snapshots, growth diff), instrumenting through
+the runtime provider (net10) or the weaver (any runtime, on-device or
+build-time), all over MCP; fast suite 31 passed / 1 skipped.
 
 ## Traps / hypotheses
-- Stale .pdb next to a woven assembly silently disables it (deployer moves it
-  aside now).
-- adb exec-out reads must drain stdout before waiting for exit; sizes are
-  verified against stat.
-- Collector static ctor must not touch JNI (deadlocks the UI thread).
-- `am start -W` times out on instrumented apps.
-- A stray dotnet-dsrouter holds port 9000: taskkill before device runs.
-- Git Bash mangles /data/... paths: MSYS_NO_PATHCONV=1.
+- Stale .pdb next to a woven assembly silently disables it (handled).
+- adb exec-out reads must drain stdout before waiting for exit (handled).
+- Collector static ctor must not touch JNI (handled).
+- `am start -W` times out on instrumented apps (handled).
+- Wide callspecs make startup unusably slow: keep filters narrow.
+- The emulator's package service died once mid-session; a reboot fixed it.
