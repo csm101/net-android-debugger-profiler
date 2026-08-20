@@ -46,4 +46,4 @@ Start P0 step 1 below.
 - Suspend mode + slow tool startup may trip app watchdogs.
 
 ## Open items outside P0
-- LICENSE file not chosen yet (user decision before publishing).
+- (none)

@@ -194,3 +194,17 @@ polished.
 
 After coding work, respond with only: files changed, what changed, build/test
 executed, result, next step.
+
+# Licensing and IP (blocking)
+
+- This is proprietary, closed-source software.
+  Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights
+  reserved. The repository is private and must stay private: never publish
+  sources, never add an open-source license.
+- Dependency policy: MIT / BSD / Apache-2.0 only. GPL is forbidden (viral
+  copyleft); LGPL only with explicit user approval and dynamic linking.
+- The GUI uses DevExpress VCL under its commercial license: never
+  redistribute DevExpress sources or components.
+- The first distributed release must ship a THIRD-PARTY-NOTICES.txt with the
+  license texts of all embedded MIT/BSD/Apache components (TraceEvent,
+  Mono.Cecil, ...).

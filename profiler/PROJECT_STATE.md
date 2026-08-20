@@ -31,6 +31,11 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 - AndroidCollector duplicated from the debugger's AndroidLauncher at first;
   shared library extraction deferred (U11).
 
+- Licensing (2026-08-20): proprietary closed source, copyright MCA Software
+  s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
+  MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
+  distributed release.
+
 ## Architecture status
 
 Solution scaffold only (Core, Mcp, Tests - net10.0). No engine code yet.
