@@ -4,17 +4,25 @@
 P1 - Core + MCP (started 2026-08-20 after P0 spike). All P1 steps coded.
 
 ## Current substep
-P1 done. First the reference application run 2026-08-20: sampling works (12k samples, V7
-startup hot path resolved); instrumenting fails at session start on the big
-app (U20, reproduces with stock dotnet-trace) -> test skipped. Session now
-force-stops an app it launched + tags it NAP_SESSION so a stale app cannot
-hijack the next session. V7 reinstalling to clear override state I dirtied
-manually, then reconfirm sampling.
+U20 CLOSED with root cause: net9 MonoVM SIGSEGVs at init when a profiler
+callspec is set (bisected on App.Droid; enable and alloc alone are fine;
+net10 unaffected). monkey-launch flakiness fixed (resolve-activity +
+am start -W in AdbClient.LaunchAsync). P3 started per user decision:
+IL weaving with Mono.Cecil, NO Metalama.
 
 ## Next action if interrupted right now
-After V7 reinstall: NAP_REFAPP=1 rerun Sampling_restart_session_on_the reference application
-(expect green). Then ask user how to proceed on U20 (instrumenting on the
-real app) vs moving to P2 memory. Commit already pushed.
+Commit U20 close-out; then P3 weaver implementation, first cut:
+1. src/NetAndroidProfiler.Collector (netstandard2.0): Profiler.Enter/Leave,
+   env-gated (NAP_PROFILER_OUT), per-thread buffers, binary event file.
+2. Core/Weaving/CecilWeaver (Mono.Cecil 0.11.6): try/finally Enter/Leave
+   injection, method filter, methodId map sidecar.
+3. Fast tests: weave tests/WeaveSample classlib, load woven copy, execute,
+   parse event file.
+4. Device flow: pull dlls from the Debug override dir, weave, push back
+   (backup/restore), inject NAP_PROFILER_OUT, restart, pull event file,
+   analyze into timing_* tables (Engine=Weaver in SessionSpec).
+5. MCP: engine parameter.
+Weaver = Debug builds (fast-deploy override dir); Release later.
 
 ## P1 plan (in order)
 1. [done] U17 Debug-build test.

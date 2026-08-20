@@ -117,9 +117,23 @@ public sealed class AdbClient
 
     public Task ForceStopAsync(string serial, string package, CancellationToken ct) => ShellAsync(serial, $"am force-stop {package}", ct);
 
-    /// <summary>Launch the package's LAUNCHER activity without knowing the activity name.</summary>
+    /// <summary>
+    /// Launch the package's LAUNCHER activity. Resolves the activity name and
+    /// uses an explicit `am start` (monkey's LAUNCHER intent sometimes reuses a
+    /// dead task record after force-stop cycles and never spawns the process -
+    /// observed with App.Droid); falls back to monkey when resolution fails.
+    /// </summary>
     public async Task LaunchAsync(string serial, string package, CancellationToken ct)
     {
+        var resolve = await RunAsync(serial, ["shell", $"cmd package resolve-activity --brief -c android.intent.category.LAUNCHER {package}"], ct).ConfigureAwait(false);
+        string? component = resolve.StdOut.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(package + "/", StringComparison.Ordinal));
+        if (component is not null)
+        {
+            var start = await RunCheckedAsync(serial, ["shell", $"am start -W -n {component}"], ct, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
+                throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
+            return;
+        }
         var r = await RunCheckedAsync(serial, ["shell", $"monkey -p {package} -c android.intent.category.LAUNCHER 1"], ct).ConfigureAwait(false);
         if (r.StdOut.Contains("No activities found", StringComparison.OrdinalIgnoreCase))
             throw new ToolException($"Package {package} has no LAUNCHER activity (or is not installed) on {serial}");

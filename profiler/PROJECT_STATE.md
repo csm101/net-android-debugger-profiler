@@ -31,6 +31,10 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 - AndroidCollector duplicated from the debugger's AndroidLauncher at first;
   shared library extraction deferred (U11).
 
+- P3 decision (2026-08-20, user): after U20 (runtime instrumenting fails on
+  the real app), P3 goes plan B first: **IL weaving with Mono.Cecil - no
+  Metalama dependency** (user's explicit choice). P2 memory milestone stays
+  queued behind it.
 - P1 design decisions (2026-08-20, user):
   - **The profiler never rebuilds the target app.** It profiles the APK as
     the user built it (Debug included - the main use case; the reference application already

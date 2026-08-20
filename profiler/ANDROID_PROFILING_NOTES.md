@@ -324,12 +324,18 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   EnumRegistration.Register, Unity container). trace.nettrace ~38 MB for
   25 s (vs 0.7 MB for TestTarget: real app has far more managed activity).
   **[verified]**
-- **Instrumenting does NOT start** on App.Droid: the EventPipe session with
-  the MonoProfiler MethodInstrumentation keyword fails at StartEventPipeSession
-  (EndOfStreamException), the suspended app is killed, no crash logged.
-  Reproduces with stock dotnet-trace, so it is a toolchain/runtime limit on
-  a large app, not our collector. TestTarget instruments fine. Tracked as
-  KNOWN_UNKNOWNS U20; P3 plan B (IL weaving) is the fallback. **[verified]**
+- **Instrumenting is unavailable on net9 apps**: any
+  `--diagnostic-mono-profiler-callspec=` value makes the net9 MonoVM
+  SIGSEGV during runtime init (registration of the instrumentation filter
+  callback; confirmed by env bisection - enable and enable+alloc boot fine,
+  callspec dies). net10 (TestTarget) is unaffected. See KNOWN_UNKNOWNS U20;
+  instrumenting on the reference application goes through the Cecil weaver (P3). **[verified]**
+- **Launching**: `monkey -p <pkg> -c LAUNCHER 1` sometimes issues the START
+  intent but never spawns the process after force-stop cycles (observed
+  repeatedly with App.Droid; TestTarget unaffected). Resolve the activity
+  (`cmd package resolve-activity --brief -c android.intent.category.LAUNCHER
+  <pkg>`) and use explicit `am start -W -n <component>`; AdbClient.LaunchAsync
+  does this with monkey as fallback. **[verified]**
 - A restart session that launched the app leaves the injected
   DOTNET_DiagnosticPorts in the app's process environment, so the app keeps
   reconnecting to any later dsrouter on the same port and would be profiled

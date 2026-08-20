@@ -117,20 +117,17 @@ line numbers, symbol server per build). Evaluate reuse: Metalama weaving as
 P3 plan B instead of Cecil; Desymbolicate's symbol-server lookup for
 annotate_source on Jenkins builds.
 
-## U20 - MonoProfiler instrumenting fails on the real app (App.Droid)
-Sampling on App.Droid works end-to-end (12k samples, V7.* methods resolved,
-InizializzaApplicazione/IoC hot). Instrumenting (Microsoft-DotNETRuntime
-MonoProfiler, keywords 0x40020200000, callspec N:App.Droid, suspend) fails:
-StartEventPipeSession throws EndOfStreamException ("Attempted to read past
-the end of the stream"), the suspended app never resumes and is killed; no
-tombstone, no monodroid error in logcat. **Reproduces with stock
-`dotnet-trace collect -p <dsrouter> --providers
-Microsoft-DotNETRuntimeMonoProfiler:0x40020200000:5`**, so it is not our
-collector. TestTarget instruments fine with the same keywords/suspend, so
-the trigger is app size/complexity (methods matched at startup JIT, IPC
-payload, or a runtime limit). Hypotheses to test: narrower callspec
-(single type) vs N:App.Droid; nosuspend + attach after startup;
-MethodInstrumentation without MethodTracing; smaller circular buffer;
-newer/older diagnostics tools. Blocks P3 plan A on the real target; plan B
-(IL weaving) is the fallback. Sampling + heap remain the P1 deliverable on
-V7.
+## U20 - Runtime instrumenting unusable on net9 apps (root cause found)
+Root cause isolated 2026-08-20 by env bisection on App.Droid
+(net9.0-android35.0): setting `--diagnostic-mono-profiler-callspec=...`
+makes the net9 MonoVM fail with SIGSEGV (fault addr 0x20) during
+`mono_jit_init_version` -> diagnostics component option handling ->
+`mono_profiler_set_call_instrumentation_filter_callback` (crash-buffer
+backtrace). `enable` alone and `enable`+`alloc` start fine; only the
+callspec option is fatal. TestTarget (net10.0-android) works with identical
+options, so the defect is in the .NET 9 Mono runtime and is presumably
+fixed in .NET 10. Without a callspec the provider instruments every JITted
+method (unusable on a real app), so plan A is effectively unavailable for
+net9 targets like the reference application -> P3 plan B (Mono.Cecil weaving, user decision).
+Optional later: check dotnet/runtime for the fixing commit; retest when
+the reference application moves to net10.
