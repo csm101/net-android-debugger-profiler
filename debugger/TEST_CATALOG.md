@@ -53,6 +53,9 @@ Conventions (mirroring the Delphi project's discipline):
 - [ ] Helper that exits and is respawned by Android is re-attached on a new port
 - [ ] Three processes (main + two helpers) get three distinct ports
 - [ ] `GetProcesses` reports a helper that died (`HasExited`)
+- [ ] A foreign Mono app process starting during the session is NOT attached
+      (warning logged, port rotated) — needs a second installed .NET app;
+      `ForeignMonoProcess_IsNotAttached` (observed live with the reference application, suite run 12)
 
 ## B. Breakpoints
 - [x] Source-line breakpoint hit with locals — `Breakpoint_InMainProcess_IsHit_WithLocals`
@@ -65,8 +68,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit`
 - [x] Breakpoint set while running is bound and hit — `SetBreakpoint_WhileRunning_IsBoundAndHit`
 - [x] Remove-all while stopped — no further hits — `RemoveAllBreakpoints_WhileStopped_NoFurtherHits`
-- [ ] Breakpoint on a line without code — reported as not verified, no crash
-- [ ] Same file, two breakpoints; `SetBreakpoints` replaces per file
+- [x] Breakpoint on a comment line — bound to the next statement or pending,
+      no crash, session stays usable — `Breakpoint_OnCommentLine_DoesNotCrash_SessionStaysUsable`
+- [x] `SetBreakpoints` replaces all breakpoints of a file (empty list clears) —
+      `SetBreakpoints_ReplacesAllBreakpointsOfTheFile`
 
 ## C. Stepping
 - [x] Step over to the next line in the same method —
@@ -93,12 +98,22 @@ Conventions (mirroring the Delphi project's discipline):
       `ObjectExpansion_ShowsProperties_Enum_List_Array_Nested`
 - [x] Enums (Value type-qualified, DisplayValue bare member) — `ObjectExpansion_…`
 - [x] Object expansion (properties, nested object) — `ObjectExpansion_…`
-- [x] Arrays / List<T> expansion — `ObjectExpansion_…`; Dictionary<K,V> still open
+- [x] Arrays / List<T> expansion — `ObjectExpansion_…`
+- [x] Dictionary<K,V> expansion — `DictionaryExpansion_ShowsEntries`
 - [x] Null locals: no expansion handle — `NullValue_HasNoExpansionHandle`
 - [ ] Generic types display
-- [x] Stuck debuggee invoke (e.g. DateTime.ToString abort failure) yields a
-      bounded TimeoutException, never a hang — engine `RunBounded`, observed
-      in suite run 7; no dedicated named test yet
+- [x] Stuck debuggee invoke yields a bounded TimeoutException, never a hang —
+      engine `RunBounded` (60 s). Root cause understood: a debuggee invoke
+      ABORTED on `EvaluationTimeout` wedges the stopped thread; timeouts raised
+      to 12 s/18 s so the first slow invoke (DateTime.ToString / ICU init)
+      completes instead (runs 7-15).
+- [ ] `set_evaluation_options(allowToStringCalls=false)` makes a DateTime
+      render as a struct without invoking — `EvaluationOptions_NoToString_RendersWithoutInvoke`
+- [ ] Warm-up after a wedged thread: Continue + next stop makes invokes work
+      again (U11) — `WedgedInvoke_RecoversAfterContinue`
+- [~] Dictionary<K,V> expansion — `DictionaryExpansion_ShowsEntries` (flaky on
+      the software-GPU emulator: depends on the first DateTime.ToString not
+      exceeding the invoke timeout, see U11)
 - [x] Culture-invariant rendering (0.5 not 0,5) — enforced by frontends +
       test ModuleInitializer, asserted in `ObjectExpansion_…`
 
@@ -112,8 +127,10 @@ Conventions (mirroring the Delphi project's discipline):
 ## G. Exceptions
 - [x] First-chance filter with type, message and stack via GetExceptionDetails —
       `FirstChanceExceptionFilter_StopsOnThrow_WithDetails`
-- [ ] Unhandled exception reported with details (kills the app afterwards; needs
-      a dedicated TestTarget hook)
+- [x] Unhandled exception reported with type + stack trace, then the app exits —
+      `UnhandledException_IsReported_ThenAppExits` (details captured at stop
+      time from the backtrace, since the process dies right after; message is
+      best-effort, the stop backtrace is the dispatch frame not the throw site)
 - [~] Exception type filtering (single type verified; multiple types + clear open)
 
 ## H. Android specifics

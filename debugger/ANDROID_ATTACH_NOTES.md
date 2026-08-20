@@ -89,6 +89,18 @@ Every process of the package (main, `:helper`, ...) reads the **same**
   processes spawned by managed code (main is suspended until step 4), only
   for processes Android starts on its own (boot receivers, exported services
   hit by other apps) — handle those as "connect or die" cases.
+- **The property is device-global, so it is read by every Mono app process
+  that starts while it is fresh — not only ours.** Seen 2026-08-20: the reference application's
+  `App.Droid:crash_report_process` (auto-started by a boot receiver while the
+  TestTarget suite ran) read the property, took the next port and waited for
+  a debugger; without a connection it dies after 30 s and, being a sticky
+  service, respawns until the deadline passes. The engine now attaches only
+  processes whose name matches the debuggee package (`ps` lookup when
+  ActivityManager did not announce the pid), logs a WARNING for foreign
+  processes and still rotates the burnt port. Keep the freshness deadline
+  short (engine default 3 min, `LaunchOptions.PropertyLifetime` /
+  `launch_app propertyLifetimeSeconds`) — this is also why the SDK's
+  `RunActivity` uses a tiny deadline. **[verified]**
 - Each process is a fully independent SDB session: own threads, assemblies,
   breakpoints (pending breakpoints for a file resolve in whichever process
   loads the assembly). Locals/backtrace read fine in both concurrently.
@@ -184,13 +196,20 @@ dotnet build <Project>.csproj -t:Run -p:Configuration=Debug \
   `FileNotFoundException: Mono.Cecil` on the first breakpoint hit, surfaced as
   `DisconnectedException`. Every consumer project must reference
   `Mono.Cecil 0.10.1` itself (Core and SdbProbe do). **[verified]**
-- Method invocation in the debuggee (property getters, `ToString`) can wedge:
-  when the invoke exceeds `EvaluationOptions.EvaluationTimeout` the agent logs
-  `Aborting invocation of method ...` but the abort can fail (seen with
-  `DateTime.ToString()` on a slow software-GPU emulator) and the synchronous
-  Mono.Debugging call never returns. The engine bounds every inspection call
-  (`RunBounded`, 20 s) so a stuck invoke costs a leaked thread instead of a
-  hung frontend. **[verified — suite run 7]**
+- Method invocation in the debuggee (property getters, `ToString`, debugger
+  type proxies) runs on the stopped thread. When an invoke exceeds
+  `EvaluationOptions.EvaluationTimeout` the agent logs `Aborting invocation of
+  method ...`; if the abort cannot interrupt it (seen with the first
+  `DateTime.ToString()` of a process = culture/ICU initialization, several
+  seconds on a software-GPU emulator) **that thread stays wedged: every later
+  invoke on it fails or times out** (`sample.Map.Count` → "could not evaluate",
+  dictionary proxy expansion → 20 s timeout) and, worst case, the synchronous
+  Mono.Debugging call never returns. Engine mitigations: generous defaults
+  (`EvaluationTimeout` 6 s, `MemberEvaluationTimeout` 10 s, tunable via
+  `SetEvaluationOptions` / MCP `set_evaluation_options`, including
+  `AllowToStringCalls=false` for slow targets) and `RunBounded` (45 s) so a
+  stuck invoke costs a leaked thread instead of a hung frontend.
+  **[verified — suite runs 7 and 9, live MCP reproduction 2026-08-20]**
 - Debuggee traces (`Debug.WriteLine`, `Console.WriteLine`, app loggers) reach
   the client as SDB **UserLog** events; `SoftDebuggerSession` hands them to
   `DebuggerSession.DebugWriter(level, category, message)` and, when that is
@@ -222,9 +241,17 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
   35.0.105), `Microsoft.Android.Ref.36`, Mono/CoreCLR/NativeAOT runtime packs
   for 36 only. `UseMonoRuntime` defaults to `true` in 36.1.43 → net10.0-android
   apps still run on MonoVM unless they opt in to CoreCLR/NativeAOT. **[verified]**
-- Emulator: `emulator.exe -avd pixel_7_-_api_33_0` (x86_64, API 33); adb serial
+- Emulator: `emulator.exe -avd pixel_7_-_api_33_0 -port 5554 -gpu host -cores 4`
+  (x86_64, API 33, hw.ramSize=1536 in the AVD config); adb serial
   `emulator-5554`; boot to `sys.boot_completed=1` in well under a minute with
-  snapshot. Host and emulator clocks agreed to the second. **[verified]**
+  snapshot, ~1 min cold. Host and emulator clocks agreed to the second.
+  Stop it with `adb -s emulator-5554 emu kill` (targeted by serial; killing
+  the qemu PID from a non-elevated shell silently fails and a second launch
+  then refuses to start: "multiple emulators with the same AVD").
+  GPU: `-gpu host` (NVIDIA GL) is fast but crashed qemu once after 4 h;
+  `-gpu swiftshader_indirect` is stable but so slow that debuggee invokes
+  time out and the suite becomes flaky (runs 10-11); `-gpu angle_indirect`
+  silently falls back to SwiftShader here. **[verified 2026-08-20]**
 
 ## TestTarget (validation app, `TestTarget/`)
 

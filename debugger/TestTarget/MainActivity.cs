@@ -53,6 +53,12 @@ public class MainActivity : Activity
         object? nothing = _ticks < 0 ? new object() : null;
         var sample = new Sample(_ticks);
         string described = Describe(sample);
+        // Test hook: `adb shell run-as <pkg> touch files/crash-on-tick` makes the next tick
+        // throw an unhandled exception on this timer thread (kills the process).
+        if (File.Exists(Path.Combine(FilesDir!.AbsolutePath, "crash-on-tick")))
+        {
+            throw new ApplicationException($"unhandled failure requested at tick {_ticks}");
+        }
         if (_ticks % 5 == 0)
         {
             try
@@ -89,6 +95,7 @@ public sealed class Sample
         Kind = tick % 2 == 0 ? SampleKind.Even : SampleKind.Odd;
         Numbers = new List<int> { 1, 2, 3 };
         Words = new[] { "alpha", "beta" };
+        Map = new Dictionary<string, int> { ["one"] = 1, ["two"] = 2 };
         Ratio = 0.5;
         When = new DateTime(2026, 8, 20, 12, 0, 0, DateTimeKind.Utc);
         Inner = tick > 0 ? new Sample(0) { Inner = null } : null;
@@ -99,6 +106,7 @@ public sealed class Sample
     public SampleKind Kind { get; }
     public List<int> Numbers { get; }
     public string[] Words { get; }
+    public Dictionary<string, int> Map { get; }
     public double Ratio { get; }
     public DateTime When { get; }
     public Sample? Inner { get; set; }

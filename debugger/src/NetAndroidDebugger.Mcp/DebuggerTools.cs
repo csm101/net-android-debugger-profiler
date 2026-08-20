@@ -39,11 +39,13 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("Launcher activity as pkg/fully.qualified.Name; resolved automatically when omitted")] string? activityName = null,
         [Description("First SDB port; each extra process gets the next one")] int basePort = 10000,
         [Description("msbuild Configuration for deploy")] string configuration = "Debug",
+        [Description("How long (seconds) the device-side debug property stays valid after launch (default 180). Helper processes of the app that start later than this run without debugger; any OTHER Mono app starting within this window is disturbed (it waits for a debugger on our port), so keep it short.")] int? propertyLifetimeSeconds = null,
         CancellationToken ct = default)
     {
         var session = await host.ForLaunchAsync(ct);
         var app = new AppTarget(packageName, activityName, projectPath);
-        var options = new LaunchOptions(deviceSerial, basePort, deploy, configuration);
+        var options = new LaunchOptions(deviceSerial, basePort, deploy, configuration,
+            PropertyLifetime: propertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(propertyLifetimeSeconds.Value) : null);
         await session.LaunchAsync(app, options, ct);
         return "Launched and attached.\n" + TextFormat.Status(session.GetStatus());
     }
@@ -56,7 +58,7 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("Launcher activity pkg/Name; resolved automatically when omitted")] string? activityName = null,
         [Description("First SDB port")] int basePort = 10000,
         CancellationToken ct = default)
-        => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", ct);
+        => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", null, ct);
 
     [McpServerTool(Name = "get_debug_session_status", ReadOnly = true), Description("Session state, stop generation, last stop, attached processes.")]
     public string GetStatus()
@@ -178,6 +180,22 @@ public sealed class DebuggerTools(SessionHost host)
     {
         host.RequireForSetup().SetExceptionFilters(new ExceptionFilters(true, firstChanceTypes));
         return firstChanceTypes.Length == 0 ? "First-chance filters cleared." : "Stopping on: " + string.Join(", ", firstChanceTypes);
+    }
+
+    [McpServerTool(Name = "set_evaluation_options"), Description(
+        "Tunes value evaluation in the debuggee (applies to the current/next session). Lower timeouts for fast devices; " +
+        "on very slow emulators set allowToStringCalls=false (or allowTargetInvoke=false) to avoid wedging the stopped thread " +
+        "on a long-running ToString/property getter. Omitted parameters are left unchanged; call without parameters to read the current values.")]
+    public string SetEvaluationOptions(
+        [Description("Per-expression timeout in ms (default 6000)")] int? evaluationTimeoutMs = null,
+        [Description("Per-member timeout in ms when expanding objects (default 10000)")] int? memberEvaluationTimeoutMs = null,
+        [Description("Call ToString() in the debuggee to render values (default true)")] bool? allowToStringCalls = null,
+        [Description("Allow any method/property invocation in the debuggee (default true; false = fields only)")] bool? allowTargetInvoke = null)
+    {
+        var s = host.RequireForSetup();
+        s.SetEvaluationOptions(evaluationTimeoutMs, memberEvaluationTimeoutMs, allowToStringCalls, allowTargetInvoke);
+        var o = s.GetEvaluationOptions();
+        return $"evaluationTimeoutMs={o.EvaluationTimeoutMs} memberEvaluationTimeoutMs={o.MemberEvaluationTimeoutMs} allowToStringCalls={o.AllowToStringCalls} allowTargetInvoke={o.AllowTargetInvoke}";
     }
 
     // ------------------------------------------------------------------ inspection

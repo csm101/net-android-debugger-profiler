@@ -1,3 +1,4 @@
+using System.Text;
 using Mono.Debugging.Client;
 using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Core.Launch;
@@ -29,6 +30,7 @@ public sealed class DebugSession : IAsyncDisposable
     private SessionState _state = SessionState.NotStarted;
     private long _generation;
     private StopEvent? _lastStop;
+    private (string Type, string Message, string StackTrace)? _lastExceptionSnapshot;
     private string? _lastError;
     private int _nextBreakpointId;
     private long _nextValueId;
@@ -61,8 +63,35 @@ public sealed class DebugSession : IAsyncDisposable
             EvaluationOptions = EvaluationOptions.DefaultOptions,
             ProjectAssembliesOnly = false,
         };
-        _sessionOptions.EvaluationOptions.EvaluationTimeout = 3000;
-        _sessionOptions.EvaluationOptions.MemberEvaluationTimeout = 5000;
+        // Generous by default: the first heavy invocation in a process (culture/ICU init behind
+        // DateTime.ToString, debugger type proxies) can take many seconds on an emulator, and an
+        // invocation that is ABORTED on timeout leaves the stopped thread unusable for further
+        // evaluation. So the timeout must be long enough to let that first invoke finish rather
+        // than be aborted.
+        _sessionOptions.EvaluationOptions.EvaluationTimeout = 12000;
+        _sessionOptions.EvaluationOptions.MemberEvaluationTimeout = 18000;
+    }
+
+    /// <summary>
+    /// Tunes how values are evaluated in the debuggee for all current and future processes of
+    /// this session. Null leaves a setting unchanged. Lower timeouts make inspection snappier
+    /// on fast devices; disabling ToString/target invocation avoids wedging the stopped thread
+    /// on very slow ones (values then show as type names and raw fields).
+    /// </summary>
+    public void SetEvaluationOptions(int? evaluationTimeoutMs = null, int? memberEvaluationTimeoutMs = null, bool? allowToStringCalls = null, bool? allowTargetInvoke = null)
+    {
+        var o = _sessionOptions.EvaluationOptions;
+        if (evaluationTimeoutMs is > 0) o.EvaluationTimeout = evaluationTimeoutMs.Value;
+        if (memberEvaluationTimeoutMs is > 0) o.MemberEvaluationTimeout = memberEvaluationTimeoutMs.Value;
+        if (allowToStringCalls is not null) o.AllowToStringCalls = allowToStringCalls.Value;
+        if (allowTargetInvoke is not null) o.AllowTargetInvoke = allowTargetInvoke.Value;
+        _log($"evaluation options: timeout={o.EvaluationTimeout}ms member={o.MemberEvaluationTimeout}ms toString={o.AllowToStringCalls} invoke={o.AllowTargetInvoke}");
+    }
+
+    public (int EvaluationTimeoutMs, int MemberEvaluationTimeoutMs, bool AllowToStringCalls, bool AllowTargetInvoke) GetEvaluationOptions()
+    {
+        var o = _sessionOptions.EvaluationOptions;
+        return (o.EvaluationTimeout, o.MemberEvaluationTimeout, o.AllowToStringCalls, o.AllowTargetInvoke);
     }
 
     /// <summary>Raised after every state transition (on the thread that caused it).</summary>
@@ -247,11 +276,16 @@ public sealed class DebugSession : IAsyncDisposable
             string? exType = null, message = null;
             if (pd.LastStopReason is StopReason.Exception or StopReason.UnhandledException)
             {
-                // Type is available without evaluating anything; the message may require a
-                // debuggee call and is resolved lazily in GetExceptionDetails (off the event thread).
-                try { exType = pd.StopBacktrace?.FrameCount > 0 ? pd.StopBacktrace.GetFrame(0).GetException()?.Type : null; }
-                catch (Exception ex) { message = $"(exception type unavailable: {ex.Message})"; }
+                // Capture what we can while the VM is certainly suspended: for unhandled exceptions
+                // the runtime may tear the process down right after this event, so a later
+                // GetExceptionDetails call can find the VM no longer suspended.
+                var snap = CaptureExceptionAtStop(pd);
+                exType = snap?.Type;
+                message = snap?.Message;
+                _lastExceptionSnapshot = snap;
             }
+            if (pd.LastStopReason is not (StopReason.Exception or StopReason.UnhandledException))
+                _lastExceptionSnapshot = null;
             ev = new StopEvent(_generation, pd.Pid, pd.LastStopReason, pd.StopThread?.Id ?? 0, loc, exType, message);
             _lastStop = ev;
             InvalidateValuesNoLock(pd.Pid);
@@ -651,39 +685,96 @@ public sealed class DebugSession : IAsyncDisposable
     }
 
     /// <summary>Details of the exception of the last stop, if it was an exception stop.</summary>
+    /// <summary>
+    /// Details of the exception of the last stop. Captured on the event thread the moment the
+    /// process stopped (see <see cref="CaptureExceptionAtStop"/>), because an unhandled exception
+    /// tears the debuggee down immediately afterwards and a later live query would find the VM
+    /// gone (<c>VMNotSuspendedException</c>).
+    /// </summary>
     public (string Type, string Message, string StackTrace)? GetExceptionDetails()
     {
-        var last = LastStop;
-        if (last is null || last.Reason is not (StopReason.Exception or StopReason.UnhandledException)) return null;
-        return RunBounded("GetExceptionDetails", () => GetExceptionDetailsCore(last));
-    }
+        (string Type, string Message, string StackTrace)? snap;
+        StopEvent? last;
+        lock (_lock) { snap = _lastExceptionSnapshot; last = _lastStop; }
+        if (snap is null) return null;
 
-    private (string Type, string Message, string StackTrace)? GetExceptionDetailsCore(StopEvent last)
-    {
-        var pd = RequireStoppedProcess(last.Pid);
-        var bt = pd.StopBacktrace;
-        if (bt is null || bt.FrameCount == 0) return null;
-        var ei = bt.GetFrame(0).GetException();
-        if (ei is null) return null;
-        var trace = string.Join('\n', (ei.StackTrace ?? []).Select(f => $"  at {f.DisplayText}"));
-        return (ei.Type, ResolveExceptionMessage(ei), trace);
+        // Message could not be read on the event thread (evaluation is not allowed there). If it is
+        // still missing and the owning process is stopped and alive, resolve it now on this thread.
+        if (string.IsNullOrEmpty(snap.Value.Message) && last is not null)
+        {
+            try
+            {
+                var resolved = RunBounded("GetExceptionMessage", () => ResolveExceptionMessageLive(last.Pid, last.ThreadId));
+                if (!string.IsNullOrEmpty(resolved))
+                {
+                    snap = (snap.Value.Type, resolved, snap.Value.StackTrace);
+                    lock (_lock) if (_lastExceptionSnapshot is not null) _lastExceptionSnapshot = snap;
+                }
+            }
+            catch (Exception ex) { _log($"resolving exception message failed: {ex.Message}"); }
+        }
+        return snap;
     }
 
     /// <summary>
-    /// <see cref="ExceptionInfo.Message"/> returns "Loading..." while the message is still being
-    /// evaluated in the debuggee; poll it (this runs off the Mono event thread, so blocking is safe)
-    /// until it resolves or a short deadline passes.
+    /// Runs on the Mono event thread while the VM is suspended. Reads ONLY what needs no debuggee
+    /// invocation — the exception type (mirror type name) and the stack trace (from the already
+    /// materialized backtrace). Expression/property evaluation is NOT allowed from inside the stop
+    /// event handler ("vm is not suspended"), so the message is left empty and resolved later by
+    /// <see cref="GetExceptionDetails"/>. Each read is guarded so a failure never loses the rest.
     /// </summary>
-    private static string ResolveExceptionMessage(Mono.Debugging.Client.ExceptionInfo ei)
+    private (string Type, string Message, string StackTrace)? CaptureExceptionAtStop(Engine.ProcessDebugger pd)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
-        while (true)
+        var bt = pd.StopBacktrace;
+        if (bt is null || bt.FrameCount == 0) return null;
+
+        var trace = new StringBuilder();
+        try
         {
-            var m = ei.Message;
-            if (m != "Loading...") return m ?? "";
-            if (DateTime.UtcNow >= deadline) return m;
-            Thread.Sleep(50);
+            var count = Math.Min(bt.FrameCount, 50);
+            for (int i = 0; i < count; i++)
+            {
+                var loc = bt.GetFrame(i).SourceLocation;
+                trace.Append("  at ").Append(loc?.MethodName ?? "?");
+                if (!string.IsNullOrEmpty(loc?.FileName)) trace.Append(" in ").Append(loc.FileName).Append(':').Append(loc.Line);
+                trace.Append('\n');
+            }
         }
+        catch (Exception ex) { _log($"capturing exception stack trace failed: {ex.Message}"); }
+
+        string type = "";
+        try { type = bt.GetFrame(0).GetException()?.Type ?? ""; }
+        catch (Exception ex) { _log($"capturing exception type failed: {ex.Message}"); }
+
+        return (type, "", trace.ToString().TrimEnd());
+    }
+
+    /// <summary>Resolves the exception message via a field/property read on the current thread (VM properly suspended here).</summary>
+    private string ResolveExceptionMessageLive(int pid, long threadId)
+    {
+        Engine.ProcessDebugger? pd;
+        lock (_lock) pd = _processes.TryGetValue(pid, out var e) ? e.Debugger : null;
+        if (pd is null || !pd.IsStopped) return "";
+        var bt = pd.GetBacktrace(threadId);
+        if (bt is null || bt.FrameCount == 0) return "";
+        var frame = bt.GetFrame(0);
+        var tag = _sessionOptions.EvaluationOptions.CurrentExceptionTag ?? "$exception";
+        foreach (var expr in new[] { tag + "._message", tag + ".Message" })
+        {
+            try
+            {
+                var v = frame.GetExpressionValue(expr, _sessionOptions.EvaluationOptions);
+                if (v.IsEvaluating) v.WaitHandle.WaitOne(_sessionOptions.EvaluationOptions.EvaluationTimeout + 2000);
+                if (!v.IsEvaluating && IsConcreteValue(v) && !v.IsNull)
+                {
+                    var s = v.Value ?? "";
+                    var unquoted = s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+                    if (unquoted.Length > 0) return unquoted;
+                }
+            }
+            catch (Exception ex) { _log($"exception message via {expr}: {ex.Message}"); }
+        }
+        return "";
     }
 
     public IReadOnlyList<string> GetAppOutput(int maxLines = 200)
@@ -705,7 +796,7 @@ public sealed class DebugSession : IAsyncDisposable
     /// never-returning call). A stuck evaluation then leaks one thread-pool thread, but the
     /// session, the caller and the test host survive instead of hanging forever.
     /// </summary>
-    private static readonly TimeSpan InspectionTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan InspectionTimeout = TimeSpan.FromSeconds(60);
 
     private T RunBounded<T>(string what, Func<T> f)
     {
@@ -756,6 +847,12 @@ public sealed class DebugSession : IAsyncDisposable
     {
         if (v.IsEvaluating)
             v.WaitHandle.WaitOne(_sessionOptions.EvaluationOptions.EvaluationTimeout + 2000);
+        if (v.IsEvaluating)
+        {
+            // Still not resolved: report it as such instead of a fake null with an expansion handle.
+            const string pending = "<evaluation timed out>";
+            return new VariableSnapshot(v.Name ?? "", v.TypeName ?? "", pending, pending, false, null, IsError: true);
+        }
         string? handle = null;
         if (v.HasChildren && !v.IsError && !v.IsNull)
         {

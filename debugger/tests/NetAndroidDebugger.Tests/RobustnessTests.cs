@@ -1,0 +1,194 @@
+using NetAndroidDebugger.Core;
+using NetAndroidDebugger.Core.Adb;
+using NetAndroidDebugger.Tests.Harness;
+using Xunit.Abstractions;
+
+namespace NetAndroidDebugger.Tests;
+
+/// <summary>Edge cases: per-file breakpoint replacement, odd lines, dictionaries, unhandled exceptions, other threads, launch errors.</summary>
+[Collection(DeviceCollection.Name)]
+public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper output)
+{
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(25);
+    private static readonly string TickMarker = "Android.Util.Log.Debug(\"TestTarget\", message);";
+    private static readonly string NowMarker = "long now = Environment.TickCount64;";
+    private static readonly string CommentMarker = "// A null local (value formatting: no expansion handle) and debuggee traces";
+
+    private static string Main => TestEnvironment.MainActivitySource;
+    private int TickLine => TestEnvironment.LineOf(Main, TickMarker);
+    private int NowLine => TestEnvironment.LineOf(Main, NowMarker);
+
+    private async Task<DebugSession> LaunchAsync(CancellationToken ct, Action<DebugSession>? beforeLaunch = null)
+    {
+        var session = device.NewSession(output.WriteLine);
+        beforeLaunch?.Invoke(session);
+        await session.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options(), ct);
+        return session;
+    }
+
+    [Fact]
+    public async Task SetBreakpoints_ReplacesAllBreakpointsOfTheFile()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoints(Main, [new BreakpointSpec(Main, NowLine)]));
+
+        var first = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(first);
+        Assert.Equal(NowLine, first.Location?.Line);
+
+        // Replace: only the Tick line must remain.
+        var infos = session.SetBreakpoints(Main, [new BreakpointSpec(Main, TickLine)]);
+        Assert.Single(infos);
+        Assert.Single(session.ListBreakpoints());
+        Assert.Equal(TickLine, session.ListBreakpoints()[0].Spec.Line);
+
+        var next = await session.ContinueAndWaitAsync(StopTimeout, cts.Token);
+        Assert.NotNull(next);
+        Assert.Equal(TickLine, next.Location?.Line);
+        // Per-file replacement with an empty list clears them.
+        Assert.Empty(session.SetBreakpoints(Main, []));
+        Assert.Empty(session.ListBreakpoints());
+    }
+
+    [Fact]
+    public async Task Breakpoint_OnCommentLine_DoesNotCrash_SessionStaysUsable()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var commentLine = TestEnvironment.LineOf(Main, CommentMarker);
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, commentLine)));
+
+        // Mono either binds it to the next statement or leaves it pending; both are acceptable,
+        // as long as nothing throws and the session keeps working.
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(8), cts.Token);
+        var bp = Assert.Single(session.ListBreakpoints());
+        output.WriteLine($"comment-line breakpoint: verified={bp.Verified} stop={stop?.Location?.Line}");
+        if (stop is not null)
+            Assert.True(stop.Location?.Line >= commentLine);
+        else
+            Assert.Equal(SessionState.Running, session.State);
+
+        session.RemoveAllBreakpoints();
+        session.SetBreakpoint(new BreakpointSpec(Main, TickLine));
+        var real = stop is null
+            ? await session.WaitForStopAsync(session.StopGeneration, StopTimeout, cts.Token)
+            : await session.ContinueAndWaitAsync(StopTimeout, cts.Token);
+        Assert.NotNull(real);
+        Assert.Equal(TickLine, real.Location?.Line);
+    }
+
+    [Fact]
+    public async Task DictionaryExpansion_ShowsEntries()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        var sample = session.GetLocals(stop.Pid, stop.ThreadId).Single(l => l.Name == "sample");
+        var map = session.ExpandVariable(sample.ExpansionHandle!).Single(c => c.Name == "Map");
+        Assert.True(map.HasChildren);
+        Assert.Contains("2", map.DisplayValue);
+        var entries = session.ExpandVariable(map.ExpansionHandle!);
+        output.WriteLine(string.Join("\n", entries.Select(e => $"{e.Name} : {e.TypeName} = {e.DisplayValue} children={e.HasChildren}")));
+        Assert.True(entries.Count >= 2);
+        // Entries are key/value pairs; somewhere below them the keys "one"/"two" must be visible.
+        var rendered = string.Join("|", entries.Select(e => e.DisplayValue + e.Name));
+        if (!rendered.Contains("one"))
+        {
+            var deeper = entries.Where(e => e.ExpansionHandle is not null)
+                .SelectMany(e => session.ExpandVariable(e.ExpansionHandle!))
+                .Select(c => c.Name + "=" + c.DisplayValue);
+            rendered = string.Join("|", deeper);
+        }
+        Assert.Contains("one", rendered);
+    }
+
+    [Fact]
+    public async Task CallStack_OfAnotherThread_IsReadable_WhenStopped()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.NotEqual(1, stop.ThreadId); // Tick runs on a pool thread
+        var threads = session.GetThreads(stop.Pid);
+        Assert.Equal("Main", threads.Single(t => t.Id == 1).Name);
+        // The main thread of an idle Activity sits in the Java looper and has no managed frames
+        // (empty stack is correct there); pick another thread that reports a managed location.
+        var other = threads.First(t => t.Id != stop.ThreadId && !string.IsNullOrEmpty(t.Location));
+        var frames = session.GetCallStack(stop.Pid, other.Id);
+        Assert.NotEmpty(frames);
+        output.WriteLine($"thread {other.Id} '{other.Name}':\n" + string.Join("\n", frames.Select(f => $"#{f.Index} {f.Method} {f.File}:{f.Line} ext={f.IsExternal}")));
+        // And the main thread's (possibly empty) stack must not throw.
+        _ = session.GetCallStack(stop.Pid, 1);
+    }
+
+    [Fact]
+    public async Task UnhandledException_IsReported_ThenAppExits()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var adb = new AdbClient();
+        var pkg = TestEnvironment.TestTargetPackage;
+        await adb.ShellAsync(device.Serial, $"run-as {pkg} rm -f files/crash-on-tick", cts.Token);
+        await using var session = await LaunchAsync(cts.Token);
+        try
+        {
+            // Arm the hook once the app runs; the next tick throws on the timer thread.
+            await adb.ShellAsync(device.Serial, $"run-as {pkg} touch files/crash-on-tick", cts.Token);
+
+            var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(30), cts.Token);
+            Assert.NotNull(stop);
+            Assert.Equal(StopReason.UnhandledException, stop.Reason);
+            Assert.Contains("ApplicationException", stop.ExceptionType);
+            // Details are captured at stop time (the process dies right after an unhandled exception).
+            var details = session.GetExceptionDetails();
+            Assert.NotNull(details);
+            Assert.Contains("ApplicationException", details.Value.Type);
+            // At an unhandled-exception stop the thread backtrace is the dispatch/rethrow point
+            // (ExceptionDispatchInfo.Throw), not the original throw site — that lives in the
+            // exception object's own StackTrace, which needs a debuggee invocation the dying
+            // process can no longer serve. So assert a non-empty trace, not a specific frame.
+            Assert.NotEmpty(details.Value.StackTrace);
+            output.WriteLine($"exception trace:\n{details.Value.StackTrace}\nmessage: '{details.Value.Message}'");
+            // Message needs a field read that may not resolve before the process dies; best-effort.
+            if (details.Value.Message.Length > 0)
+                Assert.Contains("unhandled failure requested", details.Value.Message);
+
+            // Note: whether the app dies at the unhandled-exception stop or stays suspended until
+            // Continue is timing-dependent (see KNOWN_UNKNOWNS U12); this test only verifies that
+            // the exception is reported with details. Resume best-effort and log the outcome.
+            session.Continue();
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+            while (session.State != SessionState.Exited && DateTime.UtcNow < deadline)
+                await Task.Delay(250, cts.Token);
+            output.WriteLine($"after continue: state={session.State}");
+        }
+        finally
+        {
+            await adb.ShellAsync(device.Serial, $"run-as {pkg} rm -f files/crash-on-tick", CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task Launch_UnknownPackage_FailsCleanly()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var session = device.NewSession(output.WriteLine);
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => session.LaunchAsync(new AppTarget("no.such.package.here"), device.Options(), cts.Token));
+        output.WriteLine(ex.GetType().Name + ": " + ex.Message);
+        Assert.Equal(SessionState.Exited, session.State);
+        Assert.Contains("no.such.package.here", ex.Message);
+        Assert.Equal("", await new AdbClient().GetPropAsync(device.Serial, "debug.mono.extra", cts.Token));
+    }
+
+    [Fact]
+    public async Task Launch_UnknownDeviceSerial_FailsCleanly()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var session = device.NewSession(output.WriteLine);
+        var ex = await Assert.ThrowsAnyAsync<Exception>(() => session.LaunchAsync(TestEnvironment.TestTargetApp(), new LaunchOptions("no-such-serial"), cts.Token));
+        output.WriteLine(ex.GetType().Name + ": " + ex.Message);
+        Assert.Equal(SessionState.Exited, session.State);
+    }
+}

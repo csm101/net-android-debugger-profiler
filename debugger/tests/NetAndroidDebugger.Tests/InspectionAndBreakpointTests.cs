@@ -119,6 +119,9 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
 
         var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
         Assert.NotNull(stop);
+        // Tick fires every second on another pool thread: drop the breakpoint so a slow step
+        // cannot be overtaken by the next hit.
+        session.RemoveAllBreakpoints();
         var inside = await session.StepIntoAsync(stop.Pid, stop.ThreadId, StopTimeout, cts.Token);
         Assert.NotNull(inside);
         Assert.Contains("Describe", inside.Location?.Method);
@@ -168,11 +171,14 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         var byName = children.ToDictionary(c => c.Name);
         output.WriteLine(string.Join("\n", children.Select(c => $"{c.Name} : {c.TypeName} = {c.DisplayValue}")));
 
-        Assert.Equal("1", byName["Tick"].Value);
-        Assert.Equal("\"sample-1\"", byName["Name"].Value);
+        // Which tick we stop on depends on timing; assert shape, not the tick number.
+        var tick = long.Parse(byName["Tick"].Value);
+        Assert.True(tick >= 1);
+        Assert.Equal($"\"sample-{tick}\"", byName["Name"].Value);
         // Mono renders the enum value type-qualified in Value; DisplayValue is the bare member.
-        Assert.Equal("Odd", byName["Kind"].DisplayValue);
-        Assert.Contains("Odd", byName["Kind"].Value);
+        var expectedKind = tick % 2 == 0 ? "Even" : "Odd";
+        Assert.Equal(expectedKind, byName["Kind"].DisplayValue);
+        Assert.Contains(expectedKind, byName["Kind"].Value);
         Assert.Contains("0.5", byName["Ratio"].Value);
         Assert.Contains("3", byName["NumbersCount"].Value);
 
@@ -207,6 +213,6 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.True(session.Evaluate(stop.Pid, stop.ThreadId, 0, "1 +").IsError);
         // The session is still usable afterwards.
         Assert.Equal("2", Eval(session, stop, "1 + 1"));
-        Assert.Contains("sample-1", Eval(session, stop, "sample.Name"));
+        Assert.StartsWith("\"sample-", Eval(session, stop, "sample.Name"));
     }
 }

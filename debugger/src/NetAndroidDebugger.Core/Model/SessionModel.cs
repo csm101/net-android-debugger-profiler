@@ -40,7 +40,9 @@ public sealed record AppTarget(string PackageName, string? ActivityName = null, 
 /// <param name="Configuration">msbuild configuration used for deployment.</param>
 /// <param name="ConnectTimeout">How long to wait for the first agent after <c>am start</c> (the Mono agent itself gives up after 30 s).</param>
 /// <param name="AgentLogLevel">Value of <c>loglevel=</c> in <c>debug.mono.extra</c>.</param>
-/// <param name="PropertyLifetime">Freshness window written into <c>debug.mono.extra</c> (device clock).</param>
+/// <param name="PropertyLifetime">Freshness window written into <c>debug.mono.extra</c> (device clock). The property is
+/// device-global: any Mono app process that starts while it is fresh waits for a debugger on our port, so keep this
+/// short (default 3 minutes) unless helper processes of the debuggee are expected to start later.</param>
 /// <param name="AdbPath">adb executable; defaults to <c>adb</c> on PATH.</param>
 public sealed record LaunchOptions(
     string DeviceSerial,
@@ -53,7 +55,7 @@ public sealed record LaunchOptions(
     string AdbPath = "adb")
 {
     public TimeSpan EffectiveConnectTimeout => ConnectTimeout ?? TimeSpan.FromSeconds(25);
-    public TimeSpan EffectivePropertyLifetime => PropertyLifetime ?? TimeSpan.FromMinutes(30);
+    public TimeSpan EffectivePropertyLifetime => PropertyLifetime ?? TimeSpan.FromMinutes(3);
 }
 
 /// <summary>A debuggee process attached to the session.</summary>

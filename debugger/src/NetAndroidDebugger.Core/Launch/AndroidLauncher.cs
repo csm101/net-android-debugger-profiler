@@ -233,8 +233,21 @@ public sealed class AndroidLauncher : IAsyncDisposable
             {
                 var port = int.Parse(am.Groups["port"].Value);
                 string? name;
-                lock (_gate) { _appPids.Add(pid); _processNames.TryGetValue(pid, out name); }
-                _log($"agent listening: pid {pid} ({name ?? "?"}) port {port}");
+                lock (_gate) _processNames.TryGetValue(pid, out name);
+                name ??= LookupProcessName(pid, ct);
+                var ours = name is not null && BelongsToPackage(name);
+                if (!ours)
+                {
+                    // debug.mono.extra is device-global: any Mono app process that starts while our
+                    // property is fresh reads it and waits for a debugger on our port. It is not our
+                    // debuggee; do not attach it (it exits by itself after the agent's 30 s timeout).
+                    // The port it took is burnt, so rotate anyway.
+                    _log($"WARNING: foreign Mono process pid {pid} ({name ?? "unknown"}) picked up the debug property on port {port}; not attaching. Keep PropertyLifetime short to narrow this window.");
+                    RotateOnly(port, ct);
+                    return;
+                }
+                lock (_gate) { _appPids.Add(pid); _processNames[pid] = name!; }
+                _log($"agent listening: pid {pid} ({name}) port {port}");
                 // Rotate before anyone connects: the next process of the package must see a free port.
                 RotateAndAnnounce(new AgentReady(pid, port, name), ct);
                 return;
@@ -251,14 +264,32 @@ public sealed class AndroidLauncher : IAsyncDisposable
             AppOutput?.Invoke(pid, line);
     }
 
-    private void RotateAndAnnounce(AgentReady ready, CancellationToken ct)
+    private bool BelongsToPackage(string processName)
+        => processName == _app.PackageName || processName.StartsWith(_app.PackageName + ":", StringComparison.Ordinal);
+
+    /// <summary>Resolves a process name through `ps` (synchronous; called on the logcat thread only when ActivityManager did not announce the pid).</summary>
+    private string? LookupProcessName(int pid, CancellationToken ct)
     {
-        // Runs on the logcat reader thread; keep it synchronous so the rotation is done
-        // before the event (and therefore before any connect) happens.
         try
         {
-            if (ready.Port >= _nextPort)
-                _nextPort = ready.Port + 1;
+            var outp = _adb.ShellAsync(_options.DeviceSerial, $"ps -A -o PID,NAME", ct, TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+            foreach (var raw in outp.Split('\n'))
+            {
+                var parts = raw.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length == 2 && int.TryParse(parts[0], out var p) && p == pid)
+                    return parts[1];
+            }
+        }
+        catch (Exception ex) { _log($"ps lookup for pid {pid} failed: {ex.Message}"); }
+        return null;
+    }
+
+    private void RotateOnly(int takenPort, CancellationToken ct)
+    {
+        try
+        {
+            if (takenPort >= _nextPort)
+                _nextPort = takenPort + 1;
             WritePropertyAsync(_nextPort, ct).GetAwaiter().GetResult();
             ForwardAsync(_nextPort, ct).GetAwaiter().GetResult();
         }
@@ -266,6 +297,13 @@ public sealed class AndroidLauncher : IAsyncDisposable
         {
             _log($"port rotation to {_nextPort} failed: {ex.Message}");
         }
+    }
+
+    private void RotateAndAnnounce(AgentReady ready, CancellationToken ct)
+    {
+        // Runs on the logcat reader thread; keep it synchronous so the rotation is done
+        // before the event (and therefore before any connect) happens.
+        RotateOnly(ready.Port, ct);
         _firstAgent.TrySetResult(ready);
         try { AgentDetected?.Invoke(ready); }
         catch (Exception ex) { _log($"AgentDetected handler failed: {ex}"); }
