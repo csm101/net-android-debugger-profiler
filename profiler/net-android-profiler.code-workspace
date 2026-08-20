@@ -1,0 +1,15 @@
+{
+  "folders": [
+    { "name": "net-android-profiler", "path": "." },
+    { "name": "the reference application (profiling target, read-only)", "path": "../../Work/ReferenceApp" },
+    { "name": "net-android-debugger (sibling)", "path": "../net-android-debugger" }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/bin": true,
+      "**/obj": true,
+      "**/.vs": true
+    },
+    "dotnet.defaultSolution": "NetAndroidProfiler.slnx"
+  }
+}

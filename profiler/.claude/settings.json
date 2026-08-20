@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet:*)",
+      "PowerShell(dotnet:*)",
+      "Bash(dotnet-trace:*)",
+      "PowerShell(dotnet-trace:*)",
+      "Bash(dotnet-dsrouter:*)",
+      "PowerShell(dotnet-dsrouter:*)",
+      "Bash(dotnet-gcdump:*)",
+      "PowerShell(dotnet-gcdump:*)",
+      "Bash(adb:*)",
+      "PowerShell(adb:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ]
+  }
+}
