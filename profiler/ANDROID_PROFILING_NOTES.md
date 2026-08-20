@@ -310,6 +310,19 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
 - MONO_DIAGNOSTICS / dsrouter / EventPipe are NOT used by this path: no
   suspend, no diagnostics port, works regardless of the U20 provider bug.
   **[verified]**
+- Two prerequisites on the app, both discovered on the reference application and now handled:
+  the app must not embed its assemblies (`EmbedAssembliesIntoApk=false`, or
+  the woven copies are dead files), and the original `.pdb` next to a
+  rewritten assembly must be moved aside or the runtime silently does not use
+  the woven copy. **[verified - App.Droid: AppApplication..ctor 8.78 s,
+  OnCreate 4.54 s recorded]**
+- Reading files out of the app sandbox: `adb exec-out run-as ... cat` must
+  drain stdout to EOF *before* waiting for the process to exit, otherwise the
+  payload can be truncated (2 KB of a 6656-byte assembly observed); the engine
+  also verifies the size against `stat` and retries. `/data/local/tmp` is not
+  usable for staging (the app user cannot write there). **[verified]**
+- `am start -W` waits for the activity to become idle and times out on a
+  heavily instrumented app: start without `-W`. **[verified]**
 
 ## Analysis
 

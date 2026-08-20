@@ -18,6 +18,7 @@ public sealed class WeaveDeployer
     private readonly string _abi;
     private readonly string _workDir;
     private readonly List<string> _deployed = new();
+    private readonly List<string> _movedPdbs = new();
     private bool _collectorDeployed;
 
     public WeaveDeployer(AdbClient adb, string serial, string package, string abi, string workDir)
@@ -87,6 +88,19 @@ public sealed class WeaveDeployer
         {
             await PushIntoOverrideAsync(woven, remote, backup: true, ct).ConfigureAwait(false);
             _deployed.Add(remote);
+            // The original .pdb no longer matches the rewritten assembly; move it aside
+            // for the duration of the session (a stale pdb can upset the debugger
+            // component that Debug builds load).
+            string pdb = remote[..^4] + ".pdb";
+            if (await RemoteExistsAsync(pdb, ct).ConfigureAwait(false))
+            {
+                try
+                {
+                    await _adb.RunAsAsync(_serial, _package, $"chmod 600 {pdb} 2>/dev/null; mv {pdb} {pdb}.naporig", ct).ConfigureAwait(false);
+                    _movedPdbs.Add(pdb);
+                }
+                catch { /* not fatal */ }
+            }
         }
         return weaver.Map;
     }
@@ -100,6 +114,12 @@ public sealed class WeaveDeployer
             catch (Exception e) { RestoreErrors.Add($"{remote}: {e.Message}"); }
         }
         _deployed.Clear();
+        foreach (var pdb in _movedPdbs)
+        {
+            try { await _adb.RunAsAsync(_serial, _package, $"test -f {pdb}.naporig && mv {pdb}.naporig {pdb}", ct).ConfigureAwait(false); }
+            catch (Exception e) { RestoreErrors.Add($"{pdb}: {e.Message}"); }
+        }
+        _movedPdbs.Clear();
         if (_collectorDeployed)
         {
             try { await _adb.RunAsAsync(_serial, _package, $"rm -f {OverrideDir}/{CecilWeaver.CollectorAssemblyName}.dll", ct).ConfigureAwait(false); }
@@ -134,7 +154,7 @@ public sealed class WeaveDeployer
         return files.Count;
     }
 
-    public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed;
+    public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed || _movedPdbs.Count > 0;
 
     /// <summary>Marker the collector writes the first time a woven method runs.</summary>
     public string MarkerPath => "files/nap-collector-loaded.txt";

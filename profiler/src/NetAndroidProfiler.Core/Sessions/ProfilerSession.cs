@@ -308,7 +308,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         // marker means the app is not running the woven assemblies at all - typically
         // because it loads them from inside the APK instead of the fast-deployment
         // directory the weaver writes to.
-        if (!await _weaveDeployer!.WaitForCollectorMarkerAsync(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false))
+        if (!await _weaveDeployer!.WaitForCollectorMarkerAsync(TimeSpan.FromSeconds(120), ct).ConfigureAwait(false))
             throw new ProfilerException(
                 $"The woven assemblies are not being executed by {Spec.Package}. The app loads its assemblies from " +
                 "inside the APK, so the woven copies in the fast-deployment directory are ignored. Build the app for " +

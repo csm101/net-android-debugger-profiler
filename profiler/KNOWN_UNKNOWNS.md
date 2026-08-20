@@ -132,18 +132,19 @@ net9 targets like the reference application -> P3 plan B (Mono.Cecil weaving, us
 Optional later: check dotnet/runtime for the fixing commit; retest when
 the reference application moves to net10.
 
-## U21 - Weaver on apps that embed their assemblies (root cause found, closed)
-Resolved 2026-08-20: App.Droid.csproj sets `EmbedAssembliesIntoApk=True`, so the
-runtime loads every assembly from inside the APK and the fast-deployment copies
-under files/.__override__/<abi>/ are dead files. The weaver rewrote and
-deployed them correctly (7882 methods) but the app never executed woven code:
-no collector marker, no events. TestTarget (default fast deployment) works.
-The engine now detects this: the collector writes
-files/nap-collector-loaded.txt the first time a woven method runs, and a weaver
-session that does not see the marker within 45 s fails with guidance to rebuild
-with -p:EmbedAssembliesIntoApk=false. Remaining option for apps that must keep
-embedded assemblies: weave at build time (MSBuild task after compilation, before
-packaging) - candidate for P3b.
+## U21 - CLOSED: weaver now works on the reference application (two prerequisites)
+Two independent causes kept the woven assemblies from ever executing on
+App.Droid; both are handled now and a weaver session on the reference application is green
+(AppApplication..ctor 8.78 s, OnCreate 4.54 s / 4.02 s self, real timings):
+1. `EmbedAssembliesIntoApk=True` (set by App.Droid.csproj): the runtime loads
+   assemblies from inside the APK, so rewriting the fast-deployment copies has
+   no effect. Profiling builds need `-p:EmbedAssembliesIntoApk=false`
+   (docs/APP_SETUP.md); the engine detects the situation through the collector
+   marker and says so.
+2. The original `.pdb` next to the rewritten assembly: with it in place the
+   woven assembly was silently not used (Debug builds load the debugger
+   component). The deployer now moves `<assembly>.pdb` aside for the duration
+   of the session and restores it afterwards. This was the last blocker.
 
 ## U22 - Weaver at build time for embedded-assembly apps
 the reference application ships with EmbedAssembliesIntoApk=True; profiling it with the weaver

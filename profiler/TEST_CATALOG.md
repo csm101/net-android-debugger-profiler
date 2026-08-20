@@ -80,6 +80,13 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] profile_annotate_source maps samples onto source lines
 - [ ] Error paths return MCP errors, never hang (unknown device, missing package, bad mode)
 
-## G. the reference application hardening (P3+)
+## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
+- [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
+- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (needs EmbedAssembliesIntoApk=false)
+- [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
+- [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
+- [ ] Weaver with a wide callspec (whole namespace) within a usable time budget
+
+## G2. the reference application hardening (P3+)
 - [ ] Sampling session on real app completes and analyzes
 - [ ] Multi-assembly symbolication (App.Core, App.Shared, ...)

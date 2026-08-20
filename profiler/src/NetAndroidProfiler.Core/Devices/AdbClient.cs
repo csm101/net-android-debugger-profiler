@@ -130,7 +130,9 @@ public sealed class AdbClient
         string? component = resolve.StdOut.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(package + "/", StringComparison.Ordinal));
         if (component is not null)
         {
-            var start = await RunCheckedAsync(serial, ["shell", $"am start -W -n {component}"], ct, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+            // No -W: it waits until the activity is idle, which a heavily instrumented
+            // app can exceed by minutes. Starting the intent is enough.
+            var start = await RunCheckedAsync(serial, ["shell", $"am start -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
             if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
                 throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
             return;
