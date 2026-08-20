@@ -119,29 +119,32 @@ public sealed class AdbClient
     public Task ForceStopAsync(string serial, string package, CancellationToken ct) => ShellAsync(serial, $"am force-stop {package}", ct);
 
     /// <summary>
-    /// Launch the package's LAUNCHER activity. Resolves the activity name and
-    /// uses an explicit `am start` (monkey's LAUNCHER intent sometimes reuses a
-    /// dead task record after force-stop cycles and never spawns the process -
-    /// observed with App.Droid); falls back to monkey when resolution fails.
+    /// Launch the app the way the launcher does.
+    ///
+    /// A monkey LAUNCHER intent is used first because it also clears the package's
+    /// "stopped" state, which a force-stop leaves behind: after a profiling session
+    /// some apps refuse to start again from a plain `am start` (the intent is accepted,
+    /// no process is ever forked, nothing is logged) until a launcher-style intent
+    /// arrives. When the package has no launcher activity, the activity is resolved and
+    /// started explicitly instead.
     /// </summary>
     public async Task LaunchAsync(string serial, string package, CancellationToken ct)
     {
+        var monkey = await RunAsync(serial, ["shell", $"monkey -p {package} -c android.intent.category.LAUNCHER 1"], ct).ConfigureAwait(false);
+        bool monkeyStarted = monkey.Success
+            && !monkey.StdOut.Contains("No activities found", StringComparison.OrdinalIgnoreCase)
+            && monkey.StdOut.Contains("Events injected", StringComparison.OrdinalIgnoreCase);
+        if (monkeyStarted) return;
+
         var resolve = await RunAsync(serial, ["shell", $"cmd package resolve-activity --brief -c android.intent.category.LAUNCHER {package}"], ct).ConfigureAwait(false);
         string? component = resolve.StdOut.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(package + "/", StringComparison.Ordinal));
-        if (component is not null)
-        {
-            // -S force-stops the app first: without it Android can deliver the intent to a
-            // stale task record whose process is already gone ("delivered to currently
-            // running top-most instance") and nothing starts. No -W: waiting for the
-            // activity to go idle can take minutes on an instrumented app.
-            var start = await RunCheckedAsync(serial, ["shell", $"am start -S -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
-            if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
-                throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
-            return;
-        }
-        var r = await RunCheckedAsync(serial, ["shell", $"monkey -p {package} -c android.intent.category.LAUNCHER 1"], ct).ConfigureAwait(false);
-        if (r.StdOut.Contains("No activities found", StringComparison.OrdinalIgnoreCase))
+        if (component is null)
             throw new ToolException($"Package {package} has no LAUNCHER activity (or is not installed) on {serial}");
+
+        // No -W: waiting for the activity to go idle can take minutes on an instrumented app.
+        var start = await RunCheckedAsync(serial, ["shell", $"am start -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+        if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
+            throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
     }
 
     public Task ReverseAsync(string serial, int devicePort, int hostPort, CancellationToken ct) =>

@@ -13,7 +13,9 @@ public sealed record AppPrerequisites(
     bool HasDiagnosticsComponent,
     bool HasAotLibraries,
     bool HasMonoDiagnosticsBaked,
-    IReadOnlyList<string> BakedEnvironmentHints)
+    IReadOnlyList<string> BakedEnvironmentHints,
+    /// <summary>The app carries its assemblies inside the APK instead of the fast-deployment directory.</summary>
+    bool HasAssemblyStore = false)
 {
     /// <summary>Problems that block or degrade <paramref name="mode"/>; empty = ready. Each string is user guidance.</summary>
     public IReadOnlyList<PrerequisiteProblem> Check(ProfilingMode mode)
@@ -70,7 +72,7 @@ public sealed class AppInspector
             throw new ToolException($"Package {package} is not installed on {serial}");
         bool debuggable = await _adb.IsDebuggableAsync(serial, package, ct).ConfigureAwait(false);
 
-        bool diag = false, aot = false, monoDiag = false;
+        bool diag = false, aot = false, monoDiag = false, store = false;
         var hints = new List<string>();
         string tmp = Path.Combine(Path.GetTempPath(), "net-android-profiler", "apk", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tmp);
@@ -83,9 +85,15 @@ public sealed class AppInspector
                 using var zip = ZipFile.OpenRead(local);
                 foreach (var e in zip.Entries)
                 {
+                    if (e.FullName.StartsWith("assemblies/", StringComparison.Ordinal)) store = true;
                     if (!e.FullName.StartsWith($"lib/{abi}/", StringComparison.Ordinal)) continue;
                     string name = Path.GetFileName(e.FullName);
                     if (name == "libmono-component-diagnostics_tracing.so") diag = true;
+                    // Assemblies inside the APK appear either as an assembly store or as
+                    // lib_<Assembly>.dll.so; without them the app is fast-deployed and its
+                    // assemblies live in files/.__override__/<abi>/ on the device.
+                    else if (name == "libassembly-store.so" || (name.StartsWith("lib_", StringComparison.Ordinal) && name.EndsWith(".dll.so", StringComparison.Ordinal)))
+                        store = true;
                     else if (name.StartsWith("libaot-", StringComparison.Ordinal)) aot = true;
                     else if (name == "libxamarin-app.so")
                     {
@@ -107,7 +115,7 @@ public sealed class AppInspector
         {
             try { Directory.Delete(tmp, recursive: true); } catch { }
         }
-        return new AppPrerequisites(package, paths, abi, debuggable, diag, aot, monoDiag, hints);
+        return new AppPrerequisites(package, paths, abi, debuggable, diag, aot, monoDiag, hints, store);
     }
 
     private static IEnumerable<string> AsciiStrings(byte[] data, int minLength)

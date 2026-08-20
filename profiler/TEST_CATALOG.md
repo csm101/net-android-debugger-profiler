@@ -91,7 +91,7 @@ Conventions (mirroring the debugger project's discipline):
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
-- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (on-device weaving; needs EmbedAssembliesIntoApk=false)
+- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (on-device weaving; opt-in with NAP_REFAPP_ONDEVICE=1 and a fast-deployment build, since the reference application ships with embedded assemblies)
 - [x] Build-time weaving on the shipped configuration - `Build_time_weaving_session_on_the reference application`
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`

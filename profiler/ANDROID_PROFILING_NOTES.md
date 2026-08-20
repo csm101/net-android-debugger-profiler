@@ -337,6 +337,10 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   rewritten assembly must be moved aside or the runtime silently does not use
   the woven copy. **[verified - App.Droid: AppApplication..ctor 8.78 s,
   OnCreate 4.54 s recorded]**
+- The profiler must never delete an app's override environment file it did not
+  create: without that file the app does not start, silently. The engine now
+  distinguishes "no file" from "file present but unreadable" and refuses to
+  touch it in the second case. **[verified]**
 - **An app with embedded assemblies must not get an override environment
   file**: writing `files/.__override__/<abi>/environment` creates that
   directory, the runtime then expects to load its assemblies from there and
@@ -355,6 +359,15 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   payload can be truncated (2 KB of a 6656-byte assembly observed); the engine
   also verifies the size against `stat` and retries. `/data/local/tmp` is not
   usable for staging (the app user cannot write there). **[verified]**
+- **Launching after a force-stop**: a force-stop leaves the package in
+  `stopped=true` (visible in `dumpsys package <pkg>`), and for some apps a
+  plain `am start` (even with `-S`) is then accepted without ever forking a
+  process - nothing is logged at all. A launcher-style intent
+  (`monkey -p <pkg> -c android.intent.category.LAUNCHER 1`) clears that state
+  and starts the app, so it is the engine's primary launch path, with
+  `am start -n <component>` as the fallback for packages without a launcher
+  activity. This was behind repeated "the app will not start any more after a
+  session" incidents on the reference application. **[verified]**
 - `am start -W` waits for the activity to become idle and times out on a
   heavily instrumented app: start without `-W`. **[verified]**
 - Weave scope drives feasibility: on the reference application (emulator) weaving a single type

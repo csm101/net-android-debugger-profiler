@@ -60,11 +60,19 @@ public class ReferenceAppTests
         Assert.NotEmpty(allocs);
     }
 
+    /// <summary>
+    /// On-device weaving needs V7 installed from a fast-deployment build
+    /// (-p:EmbedAssembliesIntoApk=false), which is not how the reference application ships: the shipped
+    /// shape is covered by <see cref="Build_time_weaving_session_on_the reference application"/>. Opt in
+    /// with NAP_REFAPP_ONDEVICE=1 after installing such a build, and narrow the callspec
+    /// (NAP_REFAPP_CALLSPEC) - the whole App.Droid namespace is far too wide to start.
+    /// </summary>
     [SkippableFact]
     public async Task Weaver_instrumenting_session_on_the reference application()
     {
-        Skip.IfNot(Enabled, "set NAP_REFAPP=1 to run against the reference application");
-        string callspec = Environment.GetEnvironmentVariable("NAP_REFAPP_CALLSPEC") ?? "N:App.Droid";
+        Skip.IfNot(Enabled && Environment.GetEnvironmentVariable("NAP_REFAPP_ONDEVICE") == "1",
+            "set NAP_REFAPP=1 and NAP_REFAPP_ONDEVICE=1, with V7 installed from a fast-deployment build");
+        string callspec = Environment.GetEnvironmentVariable("NAP_REFAPP_CALLSPEC") ?? "T:App.Droid.AppApplication";
         var asms = (Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_ASMS") ?? "App.Droid").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
             Duration: TimeSpan.FromSeconds(25),

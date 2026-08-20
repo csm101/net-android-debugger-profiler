@@ -218,7 +218,10 @@ public sealed class ProfilerSession : IAsyncDisposable
         {
             await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
             string ports = $"{_dsrouter.AppAddress},{(Spec.SuspendOnStart ? "suspend" : "nosuspend")},connect";
-            if (prereq.IsDebuggable)
+            // The per-app override environment file is only safe for fast-deployed apps:
+            // creating files/.__override__/ for an app that carries its assemblies inside
+            // the APK makes the runtime look for them there and the app stops starting.
+            if (prereq.IsDebuggable && !prereq.HasAssemblyStore)
             {
                 var updates = new List<KeyValuePair<string, string?>>
                 {
@@ -234,7 +237,13 @@ public sealed class ProfilerSession : IAsyncDisposable
             else
             {
                 await _env.SetDeviceProfilePropertyAsync(ports, ct).ConfigureAwait(false);
-                Log("debug.mono.profile set: " + ports);
+                Log($"debug.mono.profile set: {ports}" + (prereq.HasAssemblyStore ? " (app embeds its assemblies: no per-app environment file)" : ""));
+                if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.RuntimeProvider)
+                    throw new ProfilerException(
+                        $"{Spec.Package} carries its assemblies inside the APK, so MONO_DIAGNOSTICS cannot be injected per session " +
+                        "(writing the app's override environment file would stop it from starting). Bake MONO_DIAGNOSTICS into the " +
+                        "build (docs/APP_SETUP.md), rebuild with -p:EmbedAssembliesIntoApk=false, or use engine=weaver with a " +
+                        "build-time weave map.");
             }
             await _adb.LogcatClearAsync(device.Serial, ct).ConfigureAwait(false);
             await _adb.LaunchAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
@@ -257,6 +266,12 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         if (!prereq.IsDebuggable)
             throw new ProfilerException("Weaver instrumenting needs a debuggable build: the profiler configures the app and reads its results through run-as.");
+        if (prereq.HasAssemblyStore && string.IsNullOrWhiteSpace(Spec.WeaveMapPath))
+            throw new ProfilerException(
+                $"{Spec.Package} carries its assemblies inside the APK (assembly store), so rewriting the fast-deployment copies " +
+                "would have no effect - and writing into the app's override directory stops such an app from starting. " +
+                "Weave it during its own build instead (-p:NapWeave=true with build/NetAndroidProfiler.Weaving.targets) and pass " +
+                "the resulting nap-weave.map, or rebuild the app with -p:EmbedAssembliesIntoApk=false. See docs/APP_SETUP.md.");
         if (prereq.HasAotLibraries)
             _warnings.Add("The app contains AOT assemblies; only assemblies present as .dll in the override directory can be woven.");
         await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);

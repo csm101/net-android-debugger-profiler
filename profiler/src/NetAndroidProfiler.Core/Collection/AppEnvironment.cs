@@ -32,12 +32,25 @@ public sealed class AppEnvironment
         return bytes is null ? [] : EnvironmentOverrideFile.Parse(bytes);
     }
 
+    /// <summary>True when the app already has an override environment file.</summary>
+    private async Task<bool> OverrideExistsAsync(CancellationToken ct)
+    {
+        var r = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} ls {OverridePath}"], ct).ConfigureAwait(false);
+        return r.Success && !r.StdOut.Contains("No such", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Read the app's override environment file. Throws when the file exists but cannot
+    /// be read: the caller must not proceed, because a half-known file would be restored
+    /// wrongly - and deleting the app's environment file leaves it unable to start.
+    /// </summary>
     private async Task<byte[]?> ReadOverrideBytesAsync(CancellationToken ct)
     {
-        var exists = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} ls {OverridePath}"], ct).ConfigureAwait(false);
-        if (!exists.Success) return null;
+        if (!await OverrideExistsAsync(ct).ConfigureAwait(false)) return null;
         var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {OverridePath}", ct).ConfigureAwait(false);
-        return data.Length == 0 ? null : data;
+        if (data.Length == 0)
+            throw new ToolException($"The app's environment file ({OverridePath}) exists but could not be read; refusing to modify it.");
+        return data;
     }
 
     /// <summary>
@@ -83,9 +96,16 @@ public sealed class AppEnvironment
         if (_applied)
         {
             if (_backupExisted && _backup is not null)
+            {
                 await WriteOverrideAsync(_backup, ct).ConfigureAwait(false);
-            else
+            }
+            else if (!_backupExisted)
+            {
+                // Only remove a file that did not exist before this session: deleting the
+                // app's own environment file makes it unable to start, and the failure is
+                // silent (no crash in logcat).
                 await _adb.RunAsync(_serial, ["shell", $"run-as {_package} rm -f {OverridePath}"], ct).ConfigureAwait(false);
+            }
         }
         _backup = null; _backupExisted = false; _applied = false;
         if (_propBackup is not null)
