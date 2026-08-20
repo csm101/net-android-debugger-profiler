@@ -18,6 +18,7 @@ public sealed class DebugSession : IAsyncDisposable
     private readonly Action<string> _log;
     private readonly BreakpointStore _store = new();
     private readonly Dictionary<int, ProcessDebuggerEntry> _processes = new();
+    private readonly Dictionary<int, Task> _attaching = new();
     private readonly Dictionary<int, (BreakpointSpec Spec, Breakpoint Bp)> _breakpoints = new();
     private readonly List<string> _appOutput = new();
     private readonly List<string> _debuggerOutput = new();
@@ -133,16 +134,30 @@ public sealed class DebugSession : IAsyncDisposable
         }
     }
 
-    private async Task AttachProcessAsync(AgentReady ready, CancellationToken ct)
+    /// <summary>
+    /// Attaches a debuggee process, deduplicated per pid: the first caller starts the
+    /// connection and every other caller (the direct launch path and the AgentDetected
+    /// event race) awaits the same in-flight task. The process is exposed in
+    /// <see cref="_processes"/> only once the SDB handshake completed, so operations that
+    /// enumerate processes (pause, continue) never touch a half-connected VM.
+    /// </summary>
+    private Task AttachProcessAsync(AgentReady ready, CancellationToken ct)
     {
-        Engine.ProcessDebugger pd;
         lock (_lock)
         {
-            if (_processes.ContainsKey(ready.Pid)) return;
-            if (_state == SessionState.Exited) return;
-            pd = new Engine.ProcessDebugger(ready.Pid, ready.ProcessName ?? _app!.PackageName, ready.Port, _store, _sessionOptions, _log);
-            _processes[ready.Pid] = new ProcessDebuggerEntry(pd);
+            if (_state == SessionState.Exited || _processes.ContainsKey(ready.Pid))
+                return Task.CompletedTask;
+            if (_attaching.TryGetValue(ready.Pid, out var inflight))
+                return inflight;
+            var task = AttachCoreAsync(ready, ct);
+            _attaching[ready.Pid] = task;
+            return task;
         }
+    }
+
+    private async Task AttachCoreAsync(AgentReady ready, CancellationToken ct)
+    {
+        var pd = new Engine.ProcessDebugger(ready.Pid, ready.ProcessName ?? _app!.PackageName, ready.Port, _store, _sessionOptions, _log);
         pd.Stopped += OnProcessStopped;
         pd.Resumed += OnProcessResumed;
         pd.Exited += OnProcessExited;
@@ -150,12 +165,16 @@ public sealed class DebugSession : IAsyncDisposable
         try
         {
             await pd.ConnectAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
+            lock (_lock) _processes[ready.Pid] = new ProcessDebuggerEntry(pd);
         }
         catch
         {
-            lock (_lock) _processes.Remove(ready.Pid);
             pd.Dispose();
             throw;
+        }
+        finally
+        {
+            lock (_lock) _attaching.Remove(ready.Pid);
         }
         Signal();
     }
@@ -228,13 +247,10 @@ public sealed class DebugSession : IAsyncDisposable
             string? exType = null, message = null;
             if (pd.LastStopReason is StopReason.Exception or StopReason.UnhandledException)
             {
-                try
-                {
-                    var ei = pd.StopBacktrace?.FrameCount > 0 ? pd.StopBacktrace.GetFrame(0).GetException() : null;
-                    exType = ei?.Type;
-                    message = ei?.Message;
-                }
-                catch (Exception ex) { message = $"(exception details unavailable: {ex.Message})"; }
+                // Type is available without evaluating anything; the message may require a
+                // debuggee call and is resolved lazily in GetExceptionDetails (off the event thread).
+                try { exType = pd.StopBacktrace?.FrameCount > 0 ? pd.StopBacktrace.GetFrame(0).GetException()?.Type : null; }
+                catch (Exception ex) { message = $"(exception type unavailable: {ex.Message})"; }
             }
             ev = new StopEvent(_generation, pd.Pid, pd.LastStopReason, pd.StopThread?.Id ?? 0, loc, exType, message);
             _lastStop = ev;
@@ -466,6 +482,9 @@ public sealed class DebugSession : IAsyncDisposable
     // ------------------------------------------------------------------ inspection
 
     public IReadOnlyList<ThreadSnapshot> GetThreads(int? pid = null)
+        => RunBounded("GetThreads", () => GetThreadsCore(pid));
+
+    private IReadOnlyList<ThreadSnapshot> GetThreadsCore(int? pid)
     {
         var result = new List<ThreadSnapshot>();
         foreach (var pd in Processes().Where(p => pid is null || p.Pid == pid))
@@ -477,9 +496,19 @@ public sealed class DebugSession : IAsyncDisposable
                 continue;
             }
             foreach (var t in pd.GetThreads())
-                result.Add(new ThreadSnapshot(pd.Pid, t.Id, t.Name ?? "", SafeLocation(t), pd.IsStopped));
+                result.Add(new ThreadSnapshot(pd.Pid, t.Id, ThreadDisplayName(t), SafeLocation(t), pd.IsStopped));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Mono reports no name for the main thread (managed id 1) and for unnamed threads;
+    /// give them a stable label so frontends and models can tell them apart.
+    /// </summary>
+    private static string ThreadDisplayName(ThreadInfo t)
+    {
+        if (!string.IsNullOrEmpty(t.Name)) return t.Name;
+        return t.Id == 1 ? "Main" : $"Thread {t.Id}";
     }
 
     private static string? SafeLocation(ThreadInfo t)
@@ -488,6 +517,11 @@ public sealed class DebugSession : IAsyncDisposable
     }
 
     public IReadOnlyList<FrameSnapshot> GetCallStack(int pid, long threadId, int maxFrames = 50)
+    {
+        return RunBounded("GetCallStack", () => GetCallStackCore(pid, threadId, maxFrames));
+    }
+
+    private IReadOnlyList<FrameSnapshot> GetCallStackCore(int pid, long threadId, int maxFrames)
     {
         var pd = RequireStoppedProcess(pid);
         var bt = pd.GetBacktrace(threadId) ?? throw new ArgumentException($"pid {pid}: no backtrace for thread {threadId}");
@@ -510,22 +544,72 @@ public sealed class DebugSession : IAsyncDisposable
 
     public IReadOnlyList<VariableSnapshot> GetLocals(int pid, long threadId, int frameIndex = 0)
     {
-        var frame = RequireFrame(pid, threadId, frameIndex);
-        return frame.GetAllLocals().Select(v => Describe(pid, v)).ToList();
+        return RunBounded("GetLocals", () =>
+        {
+            var frame = RequireFrame(pid, threadId, frameIndex);
+            return (IReadOnlyList<VariableSnapshot>)frame.GetAllLocals().Select(v => Describe(pid, v)).ToList();
+        });
     }
 
     public VariableSnapshot? GetVariable(int pid, long threadId, int frameIndex, string name)
     {
-        var frame = RequireFrame(pid, threadId, frameIndex);
-        var v = frame.GetAllLocals().FirstOrDefault(l => l.Name == name);
-        return v is null ? null : Describe(pid, v);
+        return RunBounded("GetVariable", () =>
+        {
+            var frame = RequireFrame(pid, threadId, frameIndex);
+            var v = frame.GetAllLocals().FirstOrDefault(l => l.Name == name);
+            return v is null ? null : Describe(pid, v);
+        });
     }
 
     public VariableSnapshot Evaluate(int pid, long threadId, int frameIndex, string expression)
     {
+        return RunBounded("Evaluate", () => EvaluateCore(pid, threadId, frameIndex, expression));
+    }
+
+    private VariableSnapshot EvaluateCore(int pid, long threadId, int frameIndex, string expression)
+    {
         var frame = RequireFrame(pid, threadId, frameIndex);
-        var v = frame.GetExpressionValue(expression, _sessionOptions.EvaluationOptions);
-        return Describe(pid, v);
+        // Reject syntactically invalid expressions up front, without evaluating.
+        var validation = frame.ValidateExpression(expression, _sessionOptions.EvaluationOptions);
+        if (!validation.IsValid)
+        {
+            var msg = string.IsNullOrEmpty(validation.Message) ? "invalid expression" : validation.Message;
+            return new VariableSnapshot(expression, "", msg, msg, false, null, IsError: true);
+        }
+        try
+        {
+            var v = frame.GetExpressionValue(expression, _sessionOptions.EvaluationOptions);
+            if (v.IsEvaluating) v.WaitHandle.WaitOne(_sessionOptions.EvaluationOptions.EvaluationTimeout + 2000);
+            if (!IsConcreteValue(v))
+            {
+                string reason;
+                try { reason = string.IsNullOrEmpty(v.Value) ? "could not evaluate expression" : v.Value; }
+                catch { reason = "could not evaluate expression"; }
+                return new VariableSnapshot(expression, v.TypeName ?? "", reason, reason, false, null, IsError: true);
+            }
+            return Describe(pid, v);
+        }
+        catch (Exception ex)
+        {
+            // The Mono evaluator can also throw (e.g. NotSupportedException when an identifier is
+            // taken for a namespace) instead of returning an error value; surface it as one.
+            return new VariableSnapshot(expression, "", ex.Message, ex.Message, false, null, IsError: true);
+        }
+    }
+
+    /// <summary>
+    /// True only when the evaluated value is a real object/array/primitive/null. Unknown
+    /// identifiers, namespaces, types and (implicit-)not-supported results are not values —
+    /// Mono sometimes returns them without the Error flag, so check the kind explicitly.
+    /// </summary>
+    private static bool IsConcreteValue(Mono.Debugging.Client.ObjectValue v)
+    {
+        if (v.IsError || v.IsUnknown || v.IsNotSupported || v.IsImplicitNotSupported) return false;
+        if (v.IsNull) return true;
+        var kind = v.Flags & Mono.Debugging.Client.ObjectValueFlags.KindMask;
+        return kind is Mono.Debugging.Client.ObjectValueFlags.Object
+            or Mono.Debugging.Client.ObjectValueFlags.Array
+            or Mono.Debugging.Client.ObjectValueFlags.Primitive;
     }
 
     /// <summary>Children of a previously returned value. Handles are invalidated when the owning process resumes.</summary>
@@ -537,8 +621,11 @@ public sealed class DebugSession : IAsyncDisposable
             if (!_values.TryGetValue(expansionHandle, out entry))
                 throw new ArgumentException($"unknown or expired expansion handle '{expansionHandle}'");
         }
-        var children = entry.Value.GetAllChildren(_sessionOptions.EvaluationOptions);
-        return children.Take(maxChildren).Select(c => Describe(entry.Pid, c)).ToList();
+        return RunBounded("ExpandVariable", () =>
+        {
+            var children = entry.Value.GetAllChildren(_sessionOptions.EvaluationOptions);
+            return (IReadOnlyList<VariableSnapshot>)children.Take(maxChildren).Select(c => Describe(entry.Pid, c)).ToList();
+        });
     }
 
     public IReadOnlyList<AssemblyInfo> GetLoadedAssemblies(int? pid = null)
@@ -568,13 +655,35 @@ public sealed class DebugSession : IAsyncDisposable
     {
         var last = LastStop;
         if (last is null || last.Reason is not (StopReason.Exception or StopReason.UnhandledException)) return null;
+        return RunBounded("GetExceptionDetails", () => GetExceptionDetailsCore(last));
+    }
+
+    private (string Type, string Message, string StackTrace)? GetExceptionDetailsCore(StopEvent last)
+    {
         var pd = RequireStoppedProcess(last.Pid);
         var bt = pd.StopBacktrace;
         if (bt is null || bt.FrameCount == 0) return null;
         var ei = bt.GetFrame(0).GetException();
         if (ei is null) return null;
         var trace = string.Join('\n', (ei.StackTrace ?? []).Select(f => $"  at {f.DisplayText}"));
-        return (ei.Type, ei.Message, trace);
+        return (ei.Type, ResolveExceptionMessage(ei), trace);
+    }
+
+    /// <summary>
+    /// <see cref="ExceptionInfo.Message"/> returns "Loading..." while the message is still being
+    /// evaluated in the debuggee; poll it (this runs off the Mono event thread, so blocking is safe)
+    /// until it resolves or a short deadline passes.
+    /// </summary>
+    private static string ResolveExceptionMessage(Mono.Debugging.Client.ExceptionInfo ei)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+        while (true)
+        {
+            var m = ei.Message;
+            if (m != "Loading...") return m ?? "";
+            if (DateTime.UtcNow >= deadline) return m;
+            Thread.Sleep(50);
+        }
     }
 
     public IReadOnlyList<string> GetAppOutput(int maxLines = 200)
@@ -588,6 +697,24 @@ public sealed class DebugSession : IAsyncDisposable
     }
 
     // ------------------------------------------------------------------ helpers
+
+    /// <summary>
+    /// Upper bound for synchronous inspection calls into Mono.Debugging. Method invocation in
+    /// the debuggee (property getters, ToString) can wedge past its own EvaluationTimeout when
+    /// the abort fails (seen: "Aborting invocation of ... DateTime:ToString()" followed by a
+    /// never-returning call). A stuck evaluation then leaks one thread-pool thread, but the
+    /// session, the caller and the test host survive instead of hanging forever.
+    /// </summary>
+    private static readonly TimeSpan InspectionTimeout = TimeSpan.FromSeconds(20);
+
+    private T RunBounded<T>(string what, Func<T> f)
+    {
+        var task = Task.Run(f);
+        if (task.Wait(InspectionTimeout))
+            return task.GetAwaiter().GetResult();
+        _log($"{what}: debuggee evaluation stuck, gave up after {InspectionTimeout.TotalSeconds:F0}s");
+        throw new TimeoutException($"{what} did not complete within {InspectionTimeout.TotalSeconds:F0}s: a method invocation in the debuggee appears to be stuck");
+    }
 
     private IEnumerable<Engine.ProcessDebugger> Processes()
     {

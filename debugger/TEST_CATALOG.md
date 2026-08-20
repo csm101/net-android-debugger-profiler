@@ -41,6 +41,8 @@ Conventions (mirroring the Delphi project's discipline):
       name: `Detach_TerminatesApp_ByDesign`
 - [ ] App exit is reported as session end (e.g. app calls `Process.KillProcess`)
 - [ ] Debugger disconnect mid-run (recovery behavior)
+- [x] Pause stops a running process with reason Pause —
+      `Pause_StopsRunningProcess_AndReportsPauseReason`
 - [ ] Launch fails cleanly when the package is not installed (error, no hang)
 - [ ] Launch fails cleanly when the device is offline / serial wrong
 
@@ -59,16 +61,18 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Breakpoint set before launch resolves when the assembly loads (covered
       implicitly by all breakpoint tests; `Verified` asserted)
 - [ ] Breakpoint set while running (after launch) is bound and hit
-- [ ] Conditional breakpoint (`Condition`)
-- [ ] Hit-count breakpoint
-- [ ] Remove / remove-all while running — breakpoint no longer hits
+- [x] Conditional breakpoint — `ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue`
+- [x] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit`
+- [x] Breakpoint set while running is bound and hit — `SetBreakpoint_WhileRunning_IsBoundAndHit`
+- [x] Remove-all while stopped — no further hits — `RemoveAllBreakpoints_WhileStopped_NoFurtherHits`
 - [ ] Breakpoint on a line without code — reported as not verified, no crash
 - [ ] Same file, two breakpoints; `SetBreakpoints` replaces per file
 
 ## C. Stepping
 - [x] Step over to the next line in the same method —
       `StepOver_AdvancesToNextLine_InSameMethod`
-- [ ] Step into / step out at a plain call site
+- [x] Step into / step out at a plain call site —
+      `StepInto_EntersCallee_AndStepOut_ReturnsToCaller`
 - [ ] Step through async/await
 - [ ] Step over a call that raises an exception
 - [ ] Step in one process while another process is stopped
@@ -79,25 +83,38 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Threads listed when stopped, including the stopping thread —
       `Threads_AreListed_WhenStopped`
 - [ ] Stack of a thread other than the stopping one
-- [ ] Main/UI thread identified (button-click breakpoint on the UI thread)
+- [x] Main/UI thread identified ("Main" label, OnCreate stops on it) —
+      `MainThread_IsLabelledMain_AndOnCreateRunsOnIt`; unnamed threads get
+      "Thread N"
 
 ## E. Locals and values
-- [ ] Primitives (int, long, bool, char, string, double, decimal, DateTime)
-- [ ] Enums and flags
-- [ ] Object expansion (fields, properties)
-- [ ] Arrays / List<T> / Dictionary<K,V> expansion
-- [ ] Null and uninitialized locals
+- [~] Primitives (long, string, double asserted; char/decimal/DateTime display
+      not yet pinned) — `Breakpoint_InMainProcess_IsHit_WithLocals`,
+      `ObjectExpansion_ShowsProperties_Enum_List_Array_Nested`
+- [x] Enums (Value type-qualified, DisplayValue bare member) — `ObjectExpansion_…`
+- [x] Object expansion (properties, nested object) — `ObjectExpansion_…`
+- [x] Arrays / List<T> expansion — `ObjectExpansion_…`; Dictionary<K,V> still open
+- [x] Null locals: no expansion handle — `NullValue_HasNoExpansionHandle`
 - [ ] Generic types display
+- [x] Stuck debuggee invoke (e.g. DateTime.ToString abort failure) yields a
+      bounded TimeoutException, never a hang — engine `RunBounded`, observed
+      in suite run 7; no dedicated named test yet
+- [x] Culture-invariant rendering (0.5 not 0,5) — enforced by frontends +
+      test ModuleInitializer, asserted in `ObjectExpansion_…`
 
 ## F. Evaluate
-- [ ] Simple expression (local arithmetic)
-- [ ] Member access / method call (side-effect policy documented)
-- [ ] Invalid expression yields error, not crash
+- [x] Simple expression and member access — `Evaluate_InvalidExpression_IsErrorNotCrash`
+      (`1 + 1`, `sample.Name`), `ConditionalBreakpoint_…`/`HitCountBreakpoint_…` (`_ticks`)
+- [ ] Method call with side effects (policy: AllowTargetInvoke=true; document limits)
+- [x] Invalid expression (unknown member, broken syntax) yields IsError, session
+      survives — `Evaluate_InvalidExpression_IsErrorNotCrash`
 
 ## G. Exceptions
-- [ ] First-chance filter (break on thrown)
-- [ ] Unhandled exception reported with details
-- [ ] Exception type filtering
+- [x] First-chance filter with type, message and stack via GetExceptionDetails —
+      `FirstChanceExceptionFilter_StopsOnThrow_WithDetails`
+- [ ] Unhandled exception reported with details (kills the app afterwards; needs
+      a dedicated TestTarget hook)
+- [~] Exception type filtering (single type verified; multiple types + clear open)
 
 ## H. Android specifics
 - [ ] Logcat/app output capture during session

@@ -83,6 +83,13 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   be stopped (`InvalidSessionStateException` otherwise).
 - Frontends never see Mono.Debugging types; expansion handles are opaque
   strings (`pid:n`) invalidated when that process resumes.
+- Attach is deduplicated per pid (`_attaching`): the direct launch path and the
+  logcat `AgentDetected` event race on the first process; both await the same
+  in-flight task, and a process is exposed in `_processes` only after its SDB
+  handshake completes, so pause/continue never touch a half-connected VM.
+- Value formatting is culture-sensitive in Mono.Debugging; frontends set
+  `InvariantCulture` at startup so numeric/date output is stable for machine
+  consumers (MCP server `Program.cs`; tests via a `[ModuleInitializer]`).
 
 ## ThirdParty vendoring status
 

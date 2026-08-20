@@ -105,6 +105,36 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
     }
 
     [Fact]
+    public async Task ErrorPaths_ReturnToolErrors_NeverHang()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        async Task<string> ExpectError(string tool, IReadOnlyDictionary<string, object?>? args)
+        {
+            var result = await client.CallToolAsync(tool, args, cancellationToken: ct);
+            var text = string.Join("\n", result.Content.OfType<TextContentBlock>().Select(c => c.Text));
+            output.WriteLine($"[{tool}] isError={result.IsError} {text}");
+            Assert.True(result.IsError == true, $"{tool} should have failed, got: {text}");
+            Assert.False(string.IsNullOrWhiteSpace(text));
+            return text;
+        }
+
+        // No session yet.
+        Assert.Contains("launch_app", await ExpectError("get_locals", null));
+        Assert.Contains("launch_app", await ExpectError("continue_and_wait", new Dictionary<string, object?> { ["timeoutSeconds"] = 1 }));
+        // Unknown device.
+        await ExpectError("launch_app", new Dictionary<string, object?> { ["deviceSerial"] = "no-such-device", ["packageName"] = TestEnvironment.TestTargetPackage });
+        // Session exists but nothing is stopped: inspection must fail fast.
+        await CallAsync(client, "launch_app", new Dictionary<string, object?> { ["deviceSerial"] = device.Serial, ["packageName"] = TestEnvironment.TestTargetPackage }, ct);
+        await ExpectError("get_call_stack", null);
+        await ExpectError("get_locals", new Dictionary<string, object?> { ["pid"] = 1, ["threadId"] = 1 });
+        await ExpectError("expand_variable", new Dictionary<string, object?> { ["handle"] = "1:999" });
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+    }
+
+    [Fact]
     public async Task SetBreakpoint_BeforeLaunch_IsHitOnStartupCode_AndWaitReturnsCurrentStop()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));

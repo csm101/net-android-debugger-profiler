@@ -184,6 +184,13 @@ dotnet build <Project>.csproj -t:Run -p:Configuration=Debug \
   `FileNotFoundException: Mono.Cecil` on the first breakpoint hit, surfaced as
   `DisconnectedException`. Every consumer project must reference
   `Mono.Cecil 0.10.1` itself (Core and SdbProbe do). **[verified]**
+- Method invocation in the debuggee (property getters, `ToString`) can wedge:
+  when the invoke exceeds `EvaluationOptions.EvaluationTimeout` the agent logs
+  `Aborting invocation of method ...` but the abort can fail (seen with
+  `DateTime.ToString()` on a slow software-GPU emulator) and the synchronous
+  Mono.Debugging call never returns. The engine bounds every inspection call
+  (`RunBounded`, 20 s) so a stuck invoke costs a leaked thread instead of a
+  hung frontend. **[verified — suite run 7]**
 - Debuggee traces (`Debug.WriteLine`, `Console.WriteLine`, app loggers) reach
   the client as SDB **UserLog** events; `SoftDebuggerSession` hands them to
   `DebuggerSession.DebugWriter(level, category, message)` and, when that is

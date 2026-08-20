@@ -4,9 +4,11 @@ using Android.Widget;
 namespace TestTarget;
 
 /// <summary>
-/// Minimal debuggee. Two breakpoint fodders:
+/// Minimal debuggee. Breakpoint fodders:
 /// - <see cref="OnIncrementClicked"/>: runs on the UI thread on button tap.
-/// - <see cref="Tick"/>: runs every second on a background thread, no UI needed.
+/// - <see cref="Tick"/>: runs every second on a background thread, no UI needed; exercises
+///   locals of many shapes, a first-chance exception every fifth tick, and a call to
+///   <see cref="Describe"/> for step into / step out.
 /// Extend freely whenever a new debugger feature needs a scenario.
 /// </summary>
 [Activity(Label = "@string/app_name", MainLauncher = true)]
@@ -49,8 +51,56 @@ public class MainActivity : Activity
         // A null local (value formatting: no expansion handle) and debuggee traces
         // (must surface as app output, not debugger log).
         object? nothing = _ticks < 0 ? new object() : null;
+        var sample = new Sample(_ticks);
+        string described = Describe(sample);
+        if (_ticks % 5 == 0)
+        {
+            try
+            {
+                throw new InvalidOperationException($"expected failure at tick {_ticks}");
+            }
+            catch (InvalidOperationException ex)
+            {
+                Android.Util.Log.Debug("TestTarget", "caught: " + ex.Message);
+            }
+        }
         System.Diagnostics.Debug.WriteLine($"trace {message}");
         Console.WriteLine($"console {message}");
         Android.Util.Log.Debug("TestTarget", message);
     }
+
+    private static string Describe(Sample sample)
+    {
+        int count = sample.Numbers.Count;
+        string text = $"{sample.Name}:{sample.Kind}:{count}";
+        return text;
+    }
+}
+
+public enum SampleKind { None, Odd, Even }
+
+/// <summary>Value-formatting fodder: primitives, enum, string, list, array, nested object, property.</summary>
+public sealed class Sample
+{
+    public Sample(long tick)
+    {
+        Tick = tick;
+        Name = $"sample-{tick}";
+        Kind = tick % 2 == 0 ? SampleKind.Even : SampleKind.Odd;
+        Numbers = new List<int> { 1, 2, 3 };
+        Words = new[] { "alpha", "beta" };
+        Ratio = 0.5;
+        When = new DateTime(2026, 8, 20, 12, 0, 0, DateTimeKind.Utc);
+        Inner = tick > 0 ? new Sample(0) { Inner = null } : null;
+    }
+
+    public long Tick { get; }
+    public string Name { get; }
+    public SampleKind Kind { get; }
+    public List<int> Numbers { get; }
+    public string[] Words { get; }
+    public double Ratio { get; }
+    public DateTime When { get; }
+    public Sample? Inner { get; set; }
+    public int NumbersCount => Numbers.Count;
 }

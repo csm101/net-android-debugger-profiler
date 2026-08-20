@@ -1,7 +1,14 @@
+using System.Globalization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NetAndroidDebugger.Mcp;
+
+// Value formatting (doubles, dates) must be stable regardless of the host locale, because the
+// output is consumed by a machine (MCP/DAP client), not a human reading it in their culture.
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
 // MCP server over stdio. stdout carries the protocol; all logging goes to stderr.
 var builder = Host.CreateApplicationBuilder(args);

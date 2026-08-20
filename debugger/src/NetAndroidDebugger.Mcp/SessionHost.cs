@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 using NetAndroidDebugger.Core;
 
 namespace NetAndroidDebugger.Mcp;
@@ -21,7 +22,7 @@ public sealed class SessionHost(ILogger<SessionHost> logger)
     {
         var s = Current;
         if (s is null || s.State is SessionState.NotStarted or SessionState.Exited)
-            throw new InvalidOperationException("No active debug session. Call launch_app first.");
+            throw new McpException("No active debug session. Call launch_app first.");
         return s;
     }
 
@@ -75,8 +76,8 @@ public sealed class SessionHost(ILogger<SessionHost> logger)
     public (int Pid, long ThreadId) ResolveTarget(DebugSession s, int? pid, long? threadId)
     {
         var last = s.LastStop;
-        var p = pid ?? last?.Pid ?? throw new InvalidOperationException("pid not given and no stop has happened yet");
-        var t = threadId ?? (last is not null && last.Pid == p ? last.ThreadId : throw new InvalidOperationException($"threadId not given and pid {p} is not the last stopped process"));
+        var p = pid ?? last?.Pid ?? throw new McpException("pid not given and no stop has happened yet. Wait for a stop, or pass pid/threadId.");
+        var t = threadId ?? (last is not null && last.Pid == p ? last.ThreadId : throw new McpException($"threadId not given and pid {p} is not the last stopped process. Pass threadId."));
         return (p, t);
     }
 

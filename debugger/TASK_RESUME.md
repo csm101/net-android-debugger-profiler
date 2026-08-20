@@ -74,12 +74,66 @@ republished by the user via register-mcp.cmd.
 - Polish found: thread 1 has an empty name; should be labelled as the main
   thread (TEST_CATALOG D "Main/UI thread identified" still open).
 
+## M2 depth (in progress, user delegated the choice: proceed autonomously)
+Done in code (uncommitted): main-thread label ("Main" for unnamed id 1,
+"Thread N" otherwise); TestTarget Tick extended (Sample object with enum,
+List, array, nested, property; Describe() call for step into/out; caught
+InvalidOperationException every 5th tick). New tests:
+tests/InspectionAndBreakpointTests.cs (MainThread label, conditional bp,
+hit-count bp, bp while running, remove-all, pause, step into/out,
+first-chance exception filter + details, object expansion, invalid
+expression) and McpEndToEndTests.ErrorPaths_ReturnToolErrors_NeverHang.
+Run 4: 20/25 (5 red). All 5 fixed (run 5 in flight):
+1. AttachProcessAsync deduped per pid (Dictionary _attaching); process added
+   to _processes only after handshake -> LaunchAsync awaits the real
+   connection (was declaring Running while main still connecting -> pause NRE).
+2. Exception message: StopEvent carries only Type (cheap); ExceptionInfo.Message
+   returns "Loading..." while evaluating, resolved with a bounded poll in
+   GetExceptionDetails (off the event thread). Test asserts message via
+   GetExceptionDetails, type via StopEvent.
+3. Evaluate wraps GetExpressionValue in try/catch (Mono throws
+   NotSupportedException on unknown identifier) -> error VariableSnapshot.
+4. Enum: Value is type-qualified, DisplayValue is bare member; test asserts
+   DisplayValue.
+5. MCP tool errors: SessionHost throws McpException -> surfaced as
+   isError=true with the message (verified by stdio smoke test).
+
+## Runs 5-6
+Run 5: 23/25. Fixed the two: culture-invariant formatting (MCP Program.cs +
+tests ModuleInitializer force InvariantCulture; "0,5" vs "0.5" on it-IT) and
+Evaluate hardened (ValidateExpression up front; result must be a concrete
+value - IsConcreteValue checks KindMask Object/Array/Primitive or IsNull;
+still try/catch). Test now uses `sample.NoSuchMember` and `1 +` instead of
+`noSuchVariable + 1` (that one resolves as a namespace and killed the
+debuggee - engine now survives it, but it is not a representative case).
+Run 6: 15/25 but 8 failures = emulator-5554 CRASHED mid-run (qemu
+EXCEPTION_ACCESS_VIOLATION in nvoglv64.dll path, x:\crash_emulatore.txt;
+NOT a debugger bug). Emulator relaunched with `-gpu swiftshader_indirect`
+(software GPU, avoids the NVIDIA GL path) - use that flag from now on.
+Run 7: HUNG after 1 test. Mono logged "Aborting invocation of method
+String System.DateTime:ToString () on object System.DateTime" (invoke
+timeout on the slow software-GPU emulator), then a synchronous
+Mono.Debugging inspection call never returned -> vstest stuck 30 min; the
+test-runner killed the tree (including the live registered MCP server -
+user must restart the Claude session / republish to get the tools back)
+and left the device dirty (cleaned by me: prop, app, 5 forwards).
+Fix: DebugSession.RunBounded(20 s) wraps every synchronous inspection call
+(GetLocals, GetVariable, Evaluate, ExpandVariable, GetCallStack,
+GetThreads, GetExceptionDetails): a stuck debuggee invoke now costs one
+leaked thread-pool thread and a TimeoutException instead of hanging the
+caller forever. Run 8 in flight.
+
+Run 8: 25/25 GREEN in 2.5 min on the software-GPU emulator; device clean.
+TEST_CATALOG updated (A/B/C/D/E/F/G/I). Committing.
+
 ## Next action if interrupted right now
-Decide with the user: (a) M3 remaining - App.Background service (on demand, needs
-app interaction), physical device over adb connect (U9), the reference application debug
-build specifics (U6); (b) M2 depth - value formatting (main thread label,
-collections, enums), exception filters tests, conditional/hit-count bps,
-set_breakpoint while running test, error-path MCP tests.
+Ask nothing: proceed. Next chunk (M2 leftovers, all emulator-only):
+SetBreakpoints replace-per-file test, breakpoint on no-code line, Dictionary
+expansion, unhandled-exception scenario (dedicated TestTarget hook),
+second-thread call stack, launch error paths (bad package / offline serial).
+Then: logcat filtering (per-pid app output), SourceResolver, the reference application U6
+pause behavior. User should rerun register-mcp.cmd to republish the fixed
+server when convenient.
 Working tree uncommitted (docs, src, tests, TestTarget, DevTools, submodule
 pointer) - suggest a commit to the user.
 
