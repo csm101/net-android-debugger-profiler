@@ -73,7 +73,8 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Breakpoint set before launch resolves when the assembly loads (covered
       implicitly by all breakpoint tests; `Verified` asserted)
 - [x] Conditional breakpoint — `ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue`
-- [x] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit`
+- [~] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit` asserts "at
+      least N hits": the count can restart when another process attaches (U13)
 - [x] Breakpoint set while running is bound and hit — `SetBreakpoint_WhileRunning_IsBoundAndHit`
 - [x] Remove-all while stopped — no further hits — `RemoveAllBreakpoints_WhileStopped_NoFurtherHits`
 - [x] Breakpoint on a comment line — bound to the next statement or pending,
