@@ -347,6 +347,50 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
     }
 
     [Fact]
+    public async Task AppDyingOnItsOwn_IsReportedAsProcessExit()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var adb = new AdbClient();
+        await using var session = await LaunchAsync(cts.Token);
+        var pkg = TestEnvironment.TestTargetPackage;
+        var main = session.GetProcesses().Single(p => p.Name == pkg);
+
+        await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.KILL_APP -p {pkg}", cts.Token);
+
+        // The debugger must notice on its own, without being asked to do anything.
+        var gone = await WaitForAsync(() => session.GetProcesses().FirstOrDefault(p => p.Pid == main.Pid && p.HasExited),
+            TimeSpan.FromSeconds(45), cts.Token);
+        output.WriteLine($"after the app killed itself: state={session.State}, processes: {string.Join(", ", session.GetProcesses())}");
+        Assert.True(gone is not null || session.State == SessionState.Exited,
+            $"the dead main process was not reported; state={session.State}");
+        // And the session never claims something is suspended when nothing is.
+        Assert.False(session.State == SessionState.Stopped && !session.GetProcesses().Any(p => p.IsStopped && !p.HasExited));
+    }
+
+    [Fact]
+    public async Task StepOver_ACallThatThrows_StaysInTheMethod()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        // The throw inside Tick's try/catch: stepping over it must land in the catch block,
+        // in the same method, not derail the session.
+        var throwLine = TestEnvironment.LineOf(Main, "throw new InvalidOperationException($\"expected failure at tick {_ticks}\");");
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, throwLine)));
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(throwLine, stop.Location?.Line);
+
+        session.RemoveAllBreakpoints();
+        var after = await session.StepOverAsync(stop.Pid, stop.ThreadId, StopTimeout, cts.Token);
+        Assert.NotNull(after);
+        output.WriteLine($"stepped from the throw to {after.Location?.Method} line {after.Location?.Line}");
+        Assert.Contains("Tick", after.Location?.Method);
+        Assert.True(after.Location?.Line > throwLine, "the step should land in the catch block below the throw");
+        // The session is still usable afterwards.
+        Assert.NotEmpty(session.GetLocals(after.Pid, after.ThreadId));
+    }
+
+    [Fact]
     public async Task ExceptionFilters_CanBeNarrowedAndCleared()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));

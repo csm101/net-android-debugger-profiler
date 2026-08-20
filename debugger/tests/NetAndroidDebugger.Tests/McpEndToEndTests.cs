@@ -105,6 +105,39 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
     }
 
     [Fact]
+    public async Task SecondLaunch_ReplacesTheFirstSession()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+        var args = new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        };
+
+        var first = await CallAsync(client, "launch_app", args, ct);
+        var firstPid = ExtractMainPid(first);
+
+        // Launching again must close the previous session rather than pile up on it.
+        var second = await CallAsync(client, "launch_app", args, ct);
+        var secondPid = ExtractMainPid(second);
+        Assert.NotEqual(firstPid, secondPid);
+
+        var status = await CallAsync(client, "get_debug_session_status", null, ct);
+        Assert.Contains($"pid={secondPid}", status);
+        Assert.DoesNotContain($"pid={firstPid}", status);
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+    }
+
+    private static int ExtractMainPid(string statusText)
+    {
+        var line = statusText.Split('\n').First(l => l.Contains("process pid=") && l.Contains($"name={TestEnvironment.TestTargetPackage} "));
+        var token = line.Split("pid=")[1].Split(' ')[0];
+        return int.Parse(token);
+    }
+
+    [Fact]
     public async Task ErrorPaths_ReturnToolErrors_NeverHang()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));

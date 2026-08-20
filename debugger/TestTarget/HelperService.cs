@@ -4,6 +4,24 @@ using Android.OS;
 namespace TestTarget;
 
 /// <summary>
+/// Lives in the main process and kills it on request, so tests can watch how the debugger
+/// reports an app that dies on its own:
+/// <c>adb shell am broadcast -a net.androiddebugger.testtarget.KILL_APP</c>.
+/// </summary>
+[BroadcastReceiver(Name = "net.androiddebugger.testtarget.AppKillReceiver", Exported = true)]
+[IntentFilter([AppKillReceiver.KillAction])]
+public class AppKillReceiver : BroadcastReceiver
+{
+    public const string KillAction = "net.androiddebugger.testtarget.KILL_APP";
+
+    public override void OnReceive(Context? context, Intent? intent)
+    {
+        Android.Util.Log.Debug("TestTarget", "main process killing itself on request");
+        Android.OS.Process.KillProcess(Android.OS.Process.MyPid());
+    }
+}
+
+/// <summary>
 /// Lives in the ":helper" process and kills it on request, so tests can watch Android restart a
 /// sticky service and the debugger re-attach the new process:
 /// <c>adb shell am broadcast -a net.androiddebugger.testtarget.KILL_HELPER</c>.

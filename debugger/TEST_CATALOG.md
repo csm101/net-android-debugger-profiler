@@ -45,7 +45,9 @@ Conventions (mirroring the Delphi project's discipline):
       that `LaunchAsync` on an already-running app restarts it cleanly.
 - [ ] Detach leaves app running — known impossible (agent kills the app);
       name: `Detach_TerminatesApp_ByDesign`
-- [ ] App exit is reported as session end (e.g. app calls `Process.KillProcess`)
+- [x] An app that kills itself is reported as a process exit, and the session
+      never claims to be stopped with nothing suspended —
+      `AppDyingOnItsOwn_IsReportedAsProcessExit`
 - [ ] Debugger disconnect mid-run (recovery behavior)
 - [x] Pause stops a running process with reason Pause —
       `Pause_StopsRunningProcess_AndReportsPauseReason`
@@ -92,7 +94,8 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Step through async/await: stop on the line after the await, locals from
       before the await still readable, user frame in the stack, step stays in
       the method — `AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack`
-- [ ] Step over a call that raises an exception
+- [x] Step over a throw inside a try/catch lands in the catch, same method,
+      session still usable — `StepOver_ACallThatThrows_StaysInTheMethod`
 - [x] Step in one process while another stays stopped and inspectable —
       `SteppingOneProcess_LeavesTheOtherStopped`
 
@@ -176,4 +179,5 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] App trace lines (Debug.WriteLine / Console) appear in app output, not
       debugger output — `AppTraces_GoToAppOutput_NotDebuggerOutput` (H)
 - [ ] launch_app with deploy=true redeploys and launches
-- [ ] Second launch_app closes the previous session cleanly
+- [x] A second launch_app replaces the previous session (new pid, old one gone
+      from the status) — `SecondLaunch_ReplacesTheFirstSession`
