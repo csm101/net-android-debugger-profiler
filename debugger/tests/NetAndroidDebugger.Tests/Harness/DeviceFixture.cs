@@ -31,7 +31,11 @@ public sealed class DeviceFixture : IAsyncLifetime
     public DebugSession NewSession(Action<string>? log = null) => new(line =>
     {
         lock (Log) Log.Add(line);
-        log?.Invoke(line);
+        // The engine logs from background threads and those can outlive the test that started the
+        // session; xUnit's output helper throws once its test is over, and an unhandled throw on a
+        // background thread takes the whole test host down. The line is already in Log.
+        try { log?.Invoke(line); }
+        catch (InvalidOperationException) { }
     });
 }
 

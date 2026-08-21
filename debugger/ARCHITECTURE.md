@@ -92,6 +92,10 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   `SetBreakpointsAsync` hold a short settle window (frontends pass 750 ms)
   before answering; the synchronous overloads stay for callers that want the
   raw immediate state. With no process attached they return at once.
+- Expression evaluation runs the expression as written, side effects included.
+  The evaluator already invokes debuggee code to read ordinary properties, so
+  a side-effect-free guarantee is not on offer; `AllowTargetInvoke=false` is
+  the way to refuse invocation entirely.
 - Attach is deduplicated per pid (`_attaching`): the direct launch path and the
   logcat `AgentDetected` event race on the first process; both await the same
   in-flight task, and a process is exposed in `_processes` only after its SDB

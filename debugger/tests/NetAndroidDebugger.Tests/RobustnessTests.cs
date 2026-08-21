@@ -578,16 +578,18 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
             // The debug property is device-global and still fresh: this app reads it too.
             var activity = await adb.ResolveLauncherActivityAsync(device.Serial, foreignPackage, cts.Token);
             await adb.StartActivityAsync(device.Serial, activity, cts.Token);
-            await Task.Delay(TimeSpan.FromSeconds(20), cts.Token);
+
+            // Wait for the engine to say so out loud rather than for a fixed delay: a big app on a
+            // freshly booted emulator can take much longer than a few seconds to reach agent init.
+            var announced = await WaitForAsync(
+                () => session.GetDebuggerOutput(2000).FirstOrDefault(l => l.Contains("foreign Mono process", StringComparison.OrdinalIgnoreCase)),
+                TimeSpan.FromSeconds(90), cts.Token);
+            Assert.True(announced is not null, $"{foreignPackage} never reached its Mono agent init, so the guard had nothing to refuse");
 
             var processes = session.GetProcesses();
             output.WriteLine(string.Join("\n", processes.Select(p => $"{p.Pid} {p.Name} port={p.SdbPort}")));
             Assert.All(processes, p => Assert.StartsWith(TestEnvironment.TestTargetPackage, p.Name));
             Assert.DoesNotContain(processes, p => p.Name.Contains(foreignPackage, StringComparison.OrdinalIgnoreCase));
-
-            // The engine says so out loud, and keeps working afterwards.
-            var log = session.GetDebuggerOutput(2000);
-            Assert.Contains(log, l => l.Contains("foreign Mono process", StringComparison.OrdinalIgnoreCase));
             Assert.NotEmpty(session.GetProcesses().Where(p => ourPids.Contains(p.Pid) && !p.HasExited));
         }
         finally

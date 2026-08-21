@@ -59,19 +59,34 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   exactly one path that zeroes `CurrentHitCount` and our code does not take it,
   so the "shared store gets reset" hypothesis is out; missed hits during
   (re-)registration is what is left. Details in KNOWN_UNKNOWNS.
-- Build green. Suite: **53 tests, 53/53 green** (5 m 37 s, with deploy) —
-  including both the new uid case and the foreign-app guard.
+- Two test-harness repairs from the same run:
+  - `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` slept 20 s and then
+    asserted the engine had announced the refusal. On a freshly booted emulator
+    App.Droid had not reached its Mono agent init yet, so there was nothing to
+    refuse and the test failed while the engine was blameless. It now waits for
+    the announcement (90 s) and says so when it never comes.
+  - `DeviceFixture.NewSession` forwarded engine log lines to xUnit's output
+    helper, which throws once its test is over. An engine log callback from a
+    background thread after teardown took the whole test host down mid-run.
+    That exception is now ignored (the line is kept in the fixture's own log).
+- Suite: **54 tests, 54/54 green** (5 m 33 s). The run before it was 53/54: the
+  only failure was the foreign-app test above, since repaired.
 
 ## Next steps (in order)
-1. The three gaps left, each blocked on something external: a WiFi device
-   (U9), a decision about evaluations with side effects, a way to simulate a
-   mid-run debugger disconnect.
-2. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
+1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The
+   published server is older than everything landed today — including the uid
+   fix, which is what makes the reference application's `the app's own android:process` debuggable. The
+   publish cannot run while the server process holds the files.
+2. The two gaps left both need the WiFi device of U9: attach over
+   `adb connect`, and a mid-run debugger disconnect. `adb forward --remove`
+   does not simulate one (the established connection survives) and
+   `adb kill-server` would take down every other adb client on this machine.
+3. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
    stop; evidence so far is in KNOWN_UNKNOWNS.
-3. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
+4. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
    When merged: point .gitmodules back to upstream, bump the submodule,
    update ARCHITECTURE.md.
-4. M4 candidates: DAP frontend, packaging, SourceResolver (only once a real
+5. M4 candidates: DAP frontend, packaging, SourceResolver (only once a real
    PDB-path mismatch shows up).
 
 ## Environment rules (also in ANDROID_ATTACH_NOTES.md / TEST_CATALOG.md)

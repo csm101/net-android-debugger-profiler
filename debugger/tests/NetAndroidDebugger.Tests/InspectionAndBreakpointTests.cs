@@ -373,6 +373,35 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
     }
 
     /// <summary>
+    /// Policy, decided 2026-08-21: an expression is evaluated as written, side effects included.
+    /// The debugger does not try to detect or block them — the evaluator invokes debuggee code for
+    /// ordinary property reads anyway, so a "no side effects" promise would be a lie. Callers who
+    /// need one set `allowTargetInvoke=false`, which disables invocation altogether.
+    /// </summary>
+    [Fact]
+    public async Task Evaluate_WithSideEffects_MutatesTheDebuggee()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal("3", Eval(session, stop, "sample.Numbers.Count"));
+
+        // A call that mutates the debuggee runs for real.
+        Assert.False(session.Evaluate(stop.Pid, stop.ThreadId, 0, "sample.Numbers.Add(99)").IsError);
+        Assert.Equal("4", Eval(session, stop, "sample.Numbers.Count"));
+        Assert.Equal("99", Eval(session, stop, "sample.Numbers[3]"));
+
+        // Invoke-free mode is the way to refuse side effects: the call cannot run at all.
+        session.SetEvaluationOptions(allowToStringCalls: false, allowTargetInvoke: false);
+        Assert.True(session.Evaluate(stop.Pid, stop.ThreadId, 0, "sample.Numbers.Add(1234)").IsError);
+        // Restore invocation and confirm the blocked call really did nothing.
+        session.SetEvaluationOptions(allowToStringCalls: true, allowTargetInvoke: true);
+        Assert.Equal("4", Eval(session, stop, "sample.Numbers.Count"));
+    }
+
+    /// <summary>
     /// A value typed as an iterator shows the state machine's own fields; its elements live in the
     /// extra group child Mono adds (named "IEnumerator"). That child carries no value of its own,
     /// so the engine labels it — otherwise the elements look as if they were not there at all.

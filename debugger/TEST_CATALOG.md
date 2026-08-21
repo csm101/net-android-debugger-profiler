@@ -27,7 +27,7 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 53 tests in four files, ~5 min on the headless emulator after deploy. Each
+- 54 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -37,6 +37,9 @@ Conventions (mirroring the Delphi project's discipline):
 - TestTarget's `Sample` gained a lazy `Sequence` property (a `yield` iterator)
   so the enumerable case has a debuggee to exercise; the suite must deploy
   once (drop `NAD_SKIP_DEPLOY`) after pulling this.
+- The engine logs from background threads that can outlive a test; the fixture
+  ignores the `InvalidOperationException` xUnit's output helper throws once its
+  test is over, because an unhandled throw there kills the whole test host.
 
 ## A. Launch / attach lifecycle
 - [x] Deploy + launch TestTarget on emulator, debugger attaches —
@@ -51,7 +54,11 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] An app that kills itself is reported as a process exit, and the session
       never claims to be stopped with nothing suspended —
       `AppDyingOnItsOwn_IsReportedAsProcessExit`
-- [ ] Debugger disconnect mid-run (recovery behavior)
+- [ ] Debugger disconnect mid-run (recovery behavior). Still uncovered, and
+      `adb forward --remove tcp:<port>` is **not** a way to simulate it
+      (tried 2026-08-21: the established connection survives, the session
+      keeps running). `adb kill-server` would work but takes down every other
+      adb client on this machine, so it is out. Needs the WiFi device of U9.
 - [x] Pause stops a running process with reason Pause —
       `Pause_StopsRunningProcess_AndReportsPauseReason`
 - [x] Launch fails cleanly when the package is not installed (error names the
@@ -75,7 +82,9 @@ Conventions (mirroring the Delphi project's discipline):
       refused as foreign — `ProcessWithAGlobalName_IsRecognisedByUid_AndAttached`
 - [x] A foreign Mono app process starting during the session is NOT attached
       (warning logged, port rotated, our own processes unaffected) —
-      `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` (skips when no
+      `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` (waits for the
+      engine to announce the refusal — a big foreign app on a cold emulator can
+      take a minute to reach agent init; skips when no
       second .NET app is installed; uses App.Droid when it is)
 
 ## B. Breakpoints
@@ -158,7 +167,12 @@ Conventions (mirroring the Delphi project's discipline):
 ## F. Evaluate
 - [x] Simple expression and member access — `Evaluate_InvalidExpression_IsErrorNotCrash`
       (`1 + 1`, `sample.Name`), `ConditionalBreakpoint_…`/`HitCountBreakpoint_…` (`_ticks`)
-- [ ] Method call with side effects (policy: AllowTargetInvoke=true; document limits)
+- [x] Method call with side effects. Policy (decided 2026-08-21): an expression
+      is evaluated as written, side effects included — the evaluator invokes
+      debuggee code for ordinary property reads anyway, so promising otherwise
+      would be a lie. Refusing side effects means `allowTargetInvoke=false`,
+      which disables invocation altogether —
+      `Evaluate_WithSideEffects_MutatesTheDebuggee`
 - [x] Invalid expression (unknown member, broken syntax) yields IsError, session
       survives — `Evaluate_InvalidExpression_IsErrorNotCrash`
 
