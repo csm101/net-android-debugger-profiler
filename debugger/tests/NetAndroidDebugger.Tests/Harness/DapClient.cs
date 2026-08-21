@@ -110,6 +110,14 @@ public sealed class DapClient : IAsyncDisposable
         return null;
     }
 
+    /// <summary>Writes bytes straight to the adapter, framing included — for malformed input.</summary>
+    public async Task SendRawAsync(string raw, CancellationToken ct)
+    {
+        var bytes = Encoding.UTF8.GetBytes(raw);
+        await _stdin.WriteAsync(bytes, ct);
+        await _stdin.FlushAsync(ct);
+    }
+
     private async Task WriteAsync(JsonObject message, CancellationToken ct)
     {
         var payload = Encoding.UTF8.GetBytes(message.ToJsonString());

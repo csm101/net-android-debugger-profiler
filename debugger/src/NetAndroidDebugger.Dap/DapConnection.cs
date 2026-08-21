@@ -30,7 +30,11 @@ public sealed class DapConnection(Stream input, Stream output)
             if (n == 0) return null;
             read += n;
         }
-        return JsonNode.Parse(Encoding.UTF8.GetString(buffer)) as JsonObject;
+        // A wrong Content-Length or a truncated write leaves us with something that is not JSON.
+        // That is the client's bug, and it must not take the adapter down: report it as a skipped
+        // message so the loop can carry on with the next one.
+        try { return JsonNode.Parse(Encoding.UTF8.GetString(buffer)) as JsonObject; }
+        catch (JsonException ex) { throw new DapMalformedMessageException(ex.Message, ex); }
     }
 
     /// <summary>Reads the header block and returns the announced body length, or null at EOF.</summary>
@@ -99,3 +103,10 @@ public sealed class DapConnection(Stream input, Stream output)
         finally { _writeLock.Release(); }
     }
 }
+
+/// <summary>
+/// A message arrived that is not JSON — a wrong <c>Content-Length</c>, or a truncated write. The
+/// adapter logs it and reads on: the connection itself is still usable.
+/// </summary>
+public sealed class DapMalformedMessageException(string message, Exception? inner = null)
+    : Exception(message, inner);

@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 60 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- 61 tests in five files, ~7-10 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -247,6 +247,9 @@ Conventions (mirroring the Delphi project's discipline):
       request, missing `packageName`, stale frame id, stale variablesReference,
       evaluate with nothing stopped — and the adapter still serves requests —
       `ErrorPaths_AreAnswered_NeverLeaveTheClientWaiting`
+- [x] A malformed message (wrong `Content-Length`, truncated body) is ignored
+      and the adapter keeps serving — it used to crash the process —
+      `MalformedInput_IsIgnored_AndTheAdapterKeepsServing`
 - [ ] Driven by a real editor (VS Code launch configuration) — not automated
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`

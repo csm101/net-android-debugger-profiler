@@ -185,7 +185,7 @@ Two engine defects, both found on the first two stops:
 - **U12 corrected**: an unhandled exception does *not* reliably kill the process
   (alive past 90 s in 2 of 8 runs). The test now accepts both outcomes and
   asserts the session stays coherent.
-- Suite: **60 tests, 60/60 green** on a clean device, with none of the three
+- Suite: **61 tests, 61/61 green** on a clean device, with none of the three
   failure signatures anywhere in the output.
 - The emulator crashed nine times today; roughly one full run in three is lost
   to it. `ensure-emulator.sh` recovers it, but the run has to be repeated.

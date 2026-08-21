@@ -1,8 +1,8 @@
 # net-android-debugger
 
 A debugger for **.NET for Android** applications (C# on MonoVM), designed to be
-driven by AI agents through **MCP** (Model Context Protocol), with an optional
-**DAP** (Debug Adapter Protocol) frontend planned for VS Code.
+driven by AI agents through **MCP** (Model Context Protocol), and by editors
+through **DAP** (Debug Adapter Protocol).
 
 C# code on Android is invisible to JDWP: it runs inside MonoVM and is debugged
 through the **Mono Soft Debugger protocol** (TCP, via `adb forward`). This
@@ -17,10 +17,12 @@ two-frontends-over-one-core layout, same development methodology.
 
 ## Status
 
-M0 (spike) done, M1 (engine + MCP) in progress: launch/attach with automatic
-attach to helper processes, breakpoints, stepping, call stack, locals,
-evaluation and an MCP stdio server exposing them. See `PROJECT_STATE.md` for
-milestones and `ARCHITECTURE.md` for the design.
+M0-M3 done, M4 in progress: launch/attach with automatic attach to every process
+of the app (including ones whose `android:process` name is unrelated to the
+package), breakpoints, stepping, call stack, locals, expansion, evaluation,
+exception filters, structured app output — exposed through an MCP stdio server
+and, since 2026-08-21, a Debug Adapter Protocol adapter. See `PROJECT_STATE.md`
+for milestones and `ARCHITECTURE.md` for the design.
 
 ## Using the MCP server with Claude Code
 
@@ -28,21 +30,36 @@ milestones and `ARCHITECTURE.md` for the design.
 register-mcp.cmd
 ```
 
-Publishes the server (Release) to `%LOCALAPPDATA%\net-android-debugger`
-(override with `NAD_INSTALL_DIR`) and registers it once at user scope
+Publishes both frontends (Release) to `%LOCALAPPDATA%\net-android-debugger`
+(override with `NAD_INSTALL_DIR`) and registers the MCP server once at user scope
 (`claude mcp add --scope user net-android-debugger -- dotnet <dir>\NetAndroidDebugger.Mcp.dll`).
 Re-run after changes to republish; stop running sessions first (the dll is locked).
 
 Then: `list_devices` → `launch_app(deviceSerial, packageName[, projectPath, deploy])`
 → `set_breakpoint(file, line)` → `wait_until_stopped` / `continue_and_wait` →
 `get_locals`, `get_call_stack`, `evaluate_expression`, `step_*` → `terminate_app`.
-Breakpoint file paths must be the absolute paths compiled into the app's PDB.
+Breakpoint file paths must be the absolute paths compiled into the app's PDB —
+`get_source_files(file)` reports the paths the running app was actually built
+with, which is how a breakpoint that stays pending is diagnosed.
 
+## Using the DAP adapter from an editor
+
+The same engine is also exposed as a Debug Adapter Protocol adapter, published
+alongside the MCP server. A DAP client runs it directly:
+
+```
+dotnet "%LOCALAPPDATA%\net-android-debugger\NetAndroidDebugger.Dap.dll"
+```
+
+`DevTools/vscode/DAP_CLIENTS.md` has the launch/attach argument reference, a
+ready-made nvim-dap configuration, and what a VS Code extension must contribute
+(VS Code cannot run an arbitrary adapter from `launch.json`).
 ## Layout
 
 ```
 src/NetAndroidDebugger.Core    engine library (frontend-neutral, JSON-free)
 src/NetAndroidDebugger.Mcp     MCP stdio server frontend
+src/NetAndroidDebugger.Dap     Debug Adapter Protocol frontend
 tests/NetAndroidDebugger.Tests integration test suite (xUnit)
 ThirdParty/                    vendored upstream (mono/debugger-libs)
 DevTools/                      argv-driven diagnostic probes

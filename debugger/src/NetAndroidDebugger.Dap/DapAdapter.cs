@@ -35,6 +35,17 @@ public sealed class DapAdapter : IAsyncDisposable
             JsonObject? message;
             try { message = await _conn.ReadAsync(ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { break; }
+            catch (DapMalformedMessageException ex)
+            {
+                // Nothing to answer - without a parsed message there is no seq to answer to.
+                Log("ignoring a malformed message: " + ex.Message);
+                continue;
+            }
+            catch (IOException ex)
+            {
+                Log("the connection broke: " + ex.Message);
+                break;
+            }
             if (message is null) break;
             if (message["type"]?.GetValue<string>() != "request") continue;
 

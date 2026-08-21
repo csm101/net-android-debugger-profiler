@@ -160,6 +160,24 @@ public sealed class DapEndToEndTests(DeviceFixture device, ITestOutputHelper out
         await client.ExpectAsync("disconnect", new JsonObject { ["terminateDebuggee"] = true }, ct);
     }
 
+
+    [Fact]
+    public async Task MalformedInput_IsIgnored_AndTheAdapterKeepsServing()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        var ct = cts.Token;
+        await using var client = Start();
+
+        await client.ExpectAsync("initialize", new JsonObject { ["adapterID"] = "net-android-debugger" }, ct);
+
+        // A wrong Content-Length is the classic client bug: the body it announces does not match
+        // what it wrote. The adapter must not die on it — there is nothing to answer (no seq is
+        // parseable), but the next well-formed request has to work.
+        await client.SendRawAsync("Content-Length: 12\r\n\r\n{\"seq\":1,\"ty", ct);
+
+        var threads = await client.SendAsync("threads", null, ct);
+        Assert.True(threads["success"]!.GetValue<bool>());
+    }
     [Fact]
     public async Task ErrorPaths_AreAnswered_NeverLeaveTheClientWaiting()
     {
