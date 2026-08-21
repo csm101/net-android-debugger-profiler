@@ -21,7 +21,8 @@ uses
   uMainForm in 'src\uMainForm.pas',
   uSessionStore in 'src\uSessionStore.pas',
   uControlClient in 'src\uControlClient.pas',
-  uSetupDialog in 'src\uSetupDialog.pas';
+  uSetupDialog in 'src\uSetupDialog.pas',
+  uTheme in 'src\uTheme.pas';
 
 {$R *.res}
 

@@ -171,6 +171,14 @@ notes written for agents; `Demos/VCL/<component>` is the first place to look).
   the layout comes back as a tree of strangers. `DockTo` returns quietly when the
   target refuses, so the code raises instead - a panel that looks placed but is not
   fails later with "has no parent window".
+- **Light and dark themes**, chosen from the toolbar and remembered in
+  `NapGui.settings.ini` beside the executable. Three layers have to agree or the
+  window looks half-painted: the DevExpress controls follow a skin
+  (Office2019Colorful / Office2019Black), SynEdit and the plain VCL controls take
+  explicit colours, and the panels we paint ourselves (pies, call graph, monitor,
+  the Source wash) read the palette from `uTheme`. The palette follows the one used
+  by CVSTreeGraph, so the tools on this desk look related. Labels need
+  `ParentFont := False` before their colour is set, or the skin's font wins it back.
 - **ExpressBars** ribbon or toolbar for the run controls.
 - **ExpressQuantumGrid** for Report, Details, allocations. Grouping, sorting,
   filtering and layout persistence come for free - that is our "result views".

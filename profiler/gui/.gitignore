@@ -10,3 +10,4 @@ StoreTests.exe
 *.map
 NapGui.layout.ini
 NapGui.trace.log
+NapGui.settings.ini

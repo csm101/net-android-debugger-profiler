@@ -18,15 +18,17 @@ uses
   System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types, System.RegularExpressions,
   Winapi.Windows, Winapi.Messages,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
-  System.Variants, System.IOUtils, System.StrUtils, Data.DB, FireDAC.Comp.Client,
+  System.Variants, System.IOUtils, System.StrUtils, System.IniFiles, Data.DB, FireDAC.Comp.Client,
   cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
   dxDockControl, dxDockPanel,
+  dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
+  dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
-  uSessionStore, uControlClient, uSetupDialog;
+  uSessionStore, uControlClient, uSetupDialog, uTheme;
 
 type
   TMainForm = class(TForm)
@@ -37,6 +39,8 @@ type
     FRefreshButton: TButton;
     FInfoLabel: TLabel;
     FUnits: TComboBox;
+    FThemeBox: TComboBox;
+    FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
     FSummary: TMemo;
     FMonitorTab: TTabSheet;
@@ -145,6 +149,10 @@ type
     procedure HeapSelectionChanged(Sender: TObject);
     procedure UpdateSummary;
     procedure UnitsChanged(Sender: TObject);
+    procedure ThemeChanged(Sender: TObject);
+    procedure ApplyTheme;
+    procedure SaveSettings;
+    procedure LoadSettings;
     procedure ReloadExplorer;
     procedure ExplorerDblClick(Sender: TObject);
     procedure BuildReportTab;
@@ -221,6 +229,11 @@ begin
   FCriticalStyle := TcxStyle.Create(Self);
   FCriticalStyle.Font.Style := [fsBold];
 
+  // One skin controller drives every DevExpress control; the rest of the window is
+  // coloured explicitly by ApplyTheme.
+  FSkinController := TdxSkinController.Create(Self);
+  FSkinController.NativeStyle := False;
+
   BuildToolbar;
 
   // Docking, like AQTime: every panel can be moved, tabbed with another, floated or
@@ -274,6 +287,8 @@ begin
 
   // After the panels have their content: the saved layout moves them around.
   LoadLayout;
+  LoadSettings;
+  ApplyTheme;
 
   FClient := TControlClient.Create;
   FPoll := TTimer.Create(Self);
@@ -305,6 +320,7 @@ var
   I: Integer;
 begin
   SaveLayout;
+  SaveSettings;
   // Dock panels created at runtime must go before the form takes its own children down,
   // otherwise one of them is destroyed after the window it lives in and VCL complains
   // that it "has no parent window". This is what the DevExpress sample does too.
@@ -380,9 +396,18 @@ begin
   FStopButton.Caption := 'Stop';
   FStopButton.OnClick := StopButtonClick;
 
+  FThemeBox := TComboBox.Create(Self);
+  FThemeBox.Parent := FToolbar;
+  FThemeBox.SetBounds(646, 9, 90, 24);
+  FThemeBox.Style := csDropDownList;
+  FThemeBox.Items.Add(ThemeName(atLight));
+  FThemeBox.Items.Add(ThemeName(atDark));
+  FThemeBox.ItemIndex := 0;
+  FThemeBox.OnChange := ThemeChanged;
+
   FUnits := TComboBox.Create(Self);
   FUnits.Parent := FToolbar;
-  FUnits.SetBounds(646, 9, 120, 24);
+  FUnits.SetBounds(744, 9, 120, 24);
   FUnits.Style := csDropDownList;
   FUnits.Items.Add(TimeUnitName(tuAuto));
   FUnits.Items.Add(TimeUnitName(tuSeconds));
@@ -394,7 +419,7 @@ begin
 
   FInfoLabel := TLabel.Create(Self);
   FInfoLabel.Parent := FToolbar;
-  FInfoLabel.Left := 780;
+  FInfoLabel.Left := 876;
   FInfoLabel.Top := 12;
   FInfoLabel.Caption := 'No session open.';
   UpdateButtons('');
@@ -691,15 +716,16 @@ begin
   Result := ARect;
   if AIsCentre then
   begin
-    ACanvas.Brush.Color := $00F0E0C0;
+    ACanvas.Brush.Color := ThemeColors.BoxCentreFill;
     ACanvas.Pen.Width := 2;
   end
   else
   begin
-    ACanvas.Brush.Color := $00F8F8F8;
+    ACanvas.Brush.Color := ThemeColors.BoxFill;
     ACanvas.Pen.Width := 1;
   end;
-  ACanvas.Pen.Color := $00808080;
+  ACanvas.Font.Color := ThemeColors.Text;
+  ACanvas.Pen.Color := ThemeColors.Line;
   ACanvas.Rectangle(Result);
   ACanvas.Pen.Width := 1;
 
@@ -734,7 +760,8 @@ var
   LTotal: Int64;
 begin
   LCanvas := FGraph.Canvas;
-  LCanvas.Brush.Color := clWindow;
+  LCanvas.Brush.Color := ThemeColors.Window;
+  LCanvas.Font.Color := ThemeColors.Text;
   LCanvas.FillRect(FGraph.ClientRect);
   SetLength(FGraphBoxes, 0);
   SetLength(FGraphBoxIds, 0);
@@ -760,7 +787,7 @@ begin
     SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
     FGraphBoxes[High(FGraphBoxes)] := LRect;
     FGraphBoxIds[High(FGraphBoxIds)] := FGraphParents[I].MethodId;
-    LCanvas.Pen.Color := $00A0A0A0;
+    LCanvas.Pen.Color := ThemeColors.Line;
     LCanvas.MoveTo(LRect.CenterPoint.X, LRect.Bottom);
     LCanvas.LineTo(LCentreRect.CenterPoint.X, LCentreRect.Top);
   end;
@@ -781,7 +808,7 @@ begin
     SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
     FGraphBoxes[High(FGraphBoxes)] := LRect;
     FGraphBoxIds[High(FGraphBoxIds)] := FGraphChildren[I].MethodId;
-    LCanvas.Pen.Color := $00A0A0A0;
+    LCanvas.Pen.Color := ThemeColors.Line;
     LCanvas.MoveTo(LCentreRect.CenterPoint.X, LCentreRect.Bottom);
     LCanvas.LineTo(LRect.CenterPoint.X, LRect.Top);
     if LTotal > 0 then
@@ -862,8 +889,8 @@ begin
   if (FEditorStart > 0) and (Line >= FEditorStart) and (Line <= FEditorEnd) then
   begin
     Special := True;
-    FG := clWindowText;
-    BG := $00E8F4FF;      // a pale wash over the method the Report is pointing at
+    FG := ThemeColors.EditorText;
+    BG := ThemeColors.RangeWash;   // a wash over the method the Report is pointing at
   end;
 end;
 
@@ -1081,13 +1108,14 @@ var
 begin
   LCanvas := FMonitor.Canvas;
   LRect := FMonitor.ClientRect;
-  LCanvas.Brush.Color := clWindow;
+  LCanvas.Brush.Color := ThemeColors.Window;
+  LCanvas.Font.Color := ThemeColors.Text;
   LCanvas.FillRect(LRect);
   LRect.Inflate(-40, -30);
   if LRect.Width < 40 then
     Exit;
 
-  LCanvas.Pen.Color := $00D0D0D0;
+  LCanvas.Pen.Color := ThemeColors.Line;
   LCanvas.MoveTo(LRect.Left, LRect.Bottom);
   LCanvas.LineTo(LRect.Right, LRect.Bottom);
   LCanvas.MoveTo(LRect.Left, LRect.Top);
@@ -1109,7 +1137,7 @@ begin
   LStep := LRect.Width / (Length(FMonitorSamples) - 1);
   LPrevX := LRect.Left;
   LPrevY := LRect.Bottom - Round(LRect.Height * (FMonitorSamples[0] / LMax));
-  LCanvas.Pen.Color := $00C08040;
+  LCanvas.Pen.Color := ThemeColors.Accent;
   LCanvas.Pen.Width := 2;
   for I := 1 to High(FMonitorSamples) do
   begin
@@ -1251,6 +1279,96 @@ begin
   finally
     LLines.Free;
   end;
+end;
+
+procedure TMainForm.ThemeChanged(Sender: TObject);
+begin
+  GTheme := TAppTheme(FThemeBox.ItemIndex);
+  ApplyTheme;
+end;
+
+/// Colour everything that does not follow the skin: the plain VCL controls, the editor,
+/// and the panels we paint ourselves.
+procedure TMainForm.ApplyTheme;
+var
+  LColors: TThemeColors;
+begin
+  LColors := ThemeColors;
+  FSkinController.SkinName := SkinNameFor(GTheme);
+  Color := LColors.Window;
+  FToolbar.ParentBackground := False;
+  FToolbar.Color := LColors.Window;
+  FInfoLabel.ParentFont := False;
+  FInfoLabel.Font.Color := LColors.Text;
+  if FLog <> nil then
+  begin
+    FLog.Color := LColors.EditorBack;
+    FLog.Font.Color := LColors.EditorText;
+  end;
+  if FSummary <> nil then
+  begin
+    FSummary.Color := LColors.EditorBack;
+    FSummary.Font.Color := LColors.EditorText;
+  end;
+  // ParentFont has to go first, or the skin's font colour wins straight back.
+  if FEditorHeader <> nil then
+  begin
+    FEditorHeader.ParentFont := False;
+    FEditorHeader.Font.Color := LColors.Text;
+  end;
+  if FMonitorLabel <> nil then
+  begin
+    FMonitorLabel.ParentFont := False;
+    FMonitorLabel.Font.Color := LColors.Text;
+  end;
+  ApplyThemeToEditor(FEditor);
+  if FParentsPie <> nil then FParentsPie.Invalidate;
+  if FChildrenPie <> nil then FChildrenPie.Invalidate;
+  if FGraph <> nil then FGraph.Invalidate;
+  if FMonitor <> nil then FMonitor.Invalidate;
+  Invalidate;
+end;
+
+function SettingsFile: string;
+begin
+  Result := TPath.ChangeExtension(ParamStr(0), '.settings.ini');
+end;
+
+procedure TMainForm.SaveSettings;
+var
+  LIni: TIniFile;
+begin
+  try
+    LIni := TIniFile.Create(SettingsFile);
+    try
+      LIni.WriteString('App', 'Theme', ThemeName(GTheme));
+      LIni.WriteInteger('App', 'TimeUnit', Ord(GTimeUnit));
+    finally
+      LIni.Free;
+    end;
+  except
+    // preferences are a convenience, not a reason to fail on the way out
+  end;
+end;
+
+procedure TMainForm.LoadSettings;
+var
+  LIni: TIniFile;
+begin
+  if not TFile.Exists(SettingsFile) then
+    Exit;
+  LIni := TIniFile.Create(SettingsFile);
+  try
+    if SameText(LIni.ReadString('App', 'Theme', 'Light'), 'Dark') then
+      GTheme := atDark
+    else
+      GTheme := atLight;
+    GTimeUnit := TTimeUnit(LIni.ReadInteger('App', 'TimeUnit', Ord(tuAuto)));
+  finally
+    LIni.Free;
+  end;
+  FThemeBox.ItemIndex := Ord(GTheme);
+  FUnits.ItemIndex := Ord(GTimeUnit);
 end;
 
 procedure TMainForm.UnitsChanged(Sender: TObject);
@@ -1554,9 +1672,8 @@ end;
 /// The share each caller (or callee) has of the focused method's time: the pie is the
 /// same numbers as the table beside it, read at a glance.
 procedure TMainForm.PaintShares(ACanvas: TCanvas; const ARect: TRect; const AShares: TArray<Int64>);
-const
-  Palette: array[0..5] of TColor = ($004040FF, $0040C040, $0000D0FF, $00FF8040, $00C040C0, $00909090);
 var
+  LColors: TThemeColors;
   LTotal, LRunning: Int64;
   LSize, LLeft, LTop: Integer;
   LStartAngle, LSweep: Double;
@@ -1570,7 +1687,8 @@ var
   end;
 
 begin
-  ACanvas.Brush.Color := clWindow;
+  LColors := ThemeColors;
+  ACanvas.Brush.Color := LColors.Window;
   ACanvas.FillRect(ARect);
   LTotal := 0;
   for I := 0 to High(AShares) do
@@ -1593,8 +1711,8 @@ begin
     LStartAngle := 90 - 360 * (LRunning / LTotal);
     LSweep := 360 * (AShares[I] / LTotal);
     Inc(LRunning, AShares[I]);
-    ACanvas.Brush.Color := Palette[I mod Length(Palette)];
-    ACanvas.Pen.Color := clWhite;
+    ACanvas.Brush.Color := LColors.Slices[I mod Length(LColors.Slices)];
+    ACanvas.Pen.Color := LColors.Window;
     // A single slice covering everything must still be drawn: Pie with equal start and
     // end points draws nothing, so fill the whole circle instead.
     if LSweep >= 359.9 then
