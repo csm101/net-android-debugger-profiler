@@ -106,7 +106,18 @@ Conventions (mirroring the debugger project's discipline):
 ## H3. GUI data layer (gui/tests/StoreTests.dpr, Delphi; run against real session databases)
 - [x] Session identity, report rows, tree roots and expansion, details queries, segment history - `StoreTests`
 - [x] A database written before the current schema still opens read-only (missing tables answer empty)
+- [x] The heap chart gets a point per snapshot, with totals - `StoreTests`
 - [ ] Automated in CI: today it is built and run by hand (see gui/tests/build-tests.cmd, then run StoreTests.exe with a session database)
+
+## H4. GUI application (gui/tests/smoke.ps1; starts the real window, no device)
+Every panel and dialog is opened against real session databases of each mode: the
+crashes worth catching - a panel touching a control before it exists, a query that no
+longer matches the schema - all happen while the window is being built.
+- [x] Report, Call tree, Call graph, Source, Summary, Memory and Monitor open on a
+  sampling, an instrumenting and a heap session without a startup error
+- [x] The Settings and the Layouts dialog open on each of them
+- [x] `--export=<file>` writes a non-empty csv and xlsx for each of them
+- [ ] Automated in CI: today it is run by hand, like the data layer checks
 
 ## H2. Control service (Fast/ControlServiceTests, no device)
 - [x] /health reports version, sessions root and port - `Health_reports_the_version_and_where_sessions_live`
