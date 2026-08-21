@@ -1,28 +1,27 @@
 # Task resume
 
 ## Current task
-U8 is closed, both halves. Async bodies (default on) were verified on the reference application
-earlier today; iterators are now woven too - "<Type>.<Method> (iterator body)",
-one call per item produced plus the one that ends the sequence. Verified in
-process (4 items -> 5 resumptions) and on the device (TestTarget: 813 enter /
-813 leave / 29 allocations from 4 woven methods in 10 s). The KNOWN_UNKNOWNS
-entry is gone; ARCHITECTURE, the notes, USAGE, PROJECT_STATE and TEST_CATALOG
-carry the facts.
+U13 and U5, both done.
 
-## Two defects found on the way
-1. The collector's 1 s flush timer was a local rooted only by GC.KeepAlive inside
-   the static constructor, so it was collected right after: events reached disk
-   only when a thread filled its 64 KB buffer. A wide weave scope hid it; a
-   narrow one lost everything (two 0-byte .napw files from a running app). The
-   timer now lives in a static field.
-2. build/NetAndroidProfiler.Weaving.targets runs the *published* nap-weave in
-   build/tools, so weaver changes do nothing until it is republished. This cost
-   an hour: iterator support looked like it found zero iterators in a 31k-method
-   assembly. Republish with
-   dotnet publish src/NetAndroidProfiler.Weave -c Release -o build/tools.
+U13 (allocation type names for pre-session vtables): no path exists with this
+runtime, and the attempts are now recorded so nobody repeats them - the mono
+heap-dump keywords emit nothing even while a real dump walks 104,425 objects,
+and the CLR BulkType events Mono does emit use ids matching neither VTableID
+(0/226) nor ClassID (0/3066). Measured gap: 19 of 226 allocation vtables unnamed,
+~9% of allocation events. Those rows now say what they are
+(MonoProfilerAnalyzer.UnresolvedTypePrefix) and keep exact counts; the TODO-RED
+test became a real test of that contract. The weaver engine is unaffected.
+
+U5 (trace size): collection now stops at SessionSpec.MaxTraceBytes (default
+512 MB, MCP maxTraceMb, 0 = unlimited), warns on the session, and keeps a valid
+analyzable trace - stopping cleanly still produces the rundown, so names resolve.
+Rotation was rejected on purpose: the rundown arrives at session stop, so trace
+parts cannot be symbolicated on their own. Growth measured at ~30 KB/s
+(TestTarget sampling), ~1.5 MB/s (the reference application sampling), ~0.72 MB/s (instrumenting
+N:TestTarget.Workloads).
 
 ## Substep
-Docs updated. Full suite pending, then commit and push.
+Full suite green (61 tests, 58 passed, 3 skipped). Commit and push.
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

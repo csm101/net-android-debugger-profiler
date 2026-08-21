@@ -47,7 +47,16 @@ public sealed record SessionSpec(
     int SnapshotCount = 1,
     TimeSpan? SnapshotInterval = null,
     bool WeavePropertyAccessors = false,
-    bool WeaveAsyncBodies = true);
+    bool WeaveAsyncBodies = true,
+    long? MaxTraceBytes = SessionSpec.DefaultMaxTraceBytes)
+{
+    /// <summary>
+    /// Default ceiling for a .nettrace: a session left running fills the disk otherwise
+    /// (a real app samples at ~1.5 MB/s, so this is roughly six minutes of sampling and
+    /// far less of instrumenting). Pass null for no limit.
+    /// </summary>
+    public const long DefaultMaxTraceBytes = 512L * 1024 * 1024;
+}
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -436,7 +445,15 @@ public sealed class ProfilerSession : IAsyncDisposable
             {
                 _traceFile = Path.Combine(Directory, "trace.nettrace");
                 var providers = Spec.Mode == ProfilingMode.Sampling ? ProviderSets.Sampling() : ProviderSets.Instrumenting(Spec.TrackAllocations);
-                await collector.CollectToFileAsync(providers, _traceFile, Spec.Duration, _stopRequested.Token, ct).ConfigureAwait(false);
+                var collected = await collector.CollectToFileAsync(providers, _traceFile, Spec.Duration, _stopRequested.Token, ct, maxBytes: Spec.MaxTraceBytes).ConfigureAwait(false);
+                if (collected.StoppedBySizeLimit)
+                {
+                    string warning = $"Collection ended early: the trace reached its {collected.Bytes / (1024 * 1024)} MB limit " +
+                                     "and the results cover only the part collected before that. Raise MaxTraceBytes, shorten the " +
+                                     "session, or narrow the callspec (instrumenting traces grow fastest).";
+                    _warnings.Add(warning);
+                    Log("warning: " + warning);
+                }
                 break;
             }
             case ProfilingMode.HeapSnapshot:

@@ -37,6 +37,7 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Stop() on a session without Duration ends collection
 
 - [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
+- [x] U5: collection stops at the trace size limit, keeps a valid trace and warns - `Collection_stops_when_the_trace_reaches_its_size_limit`
 - [x] Iterator bodies are instrumented on the device (one call per item produced) - `Weaver_instruments_iterator_bodies_on_the_device`
 - [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
 - [x] A port already in use is detected before spawning dsrouter - `Fast/DsRouterTests`
@@ -59,8 +60,7 @@ Conventions (mirroring the debugger project's discipline):
 ## C. Memory analysis
 - [x] Exact allocation counts/sizes per type (provider path) - `Allocations_by_type_count_every_record_and_its_payload`
 - [x] Alloc events attributed to innermost instrumented frame - `Allocations_are_attributed_to_the_innermost_instrumented_frame`
-- [x] Unresolved pre-session vtables get placeholders - `Pre_session_vtables_get_placeholder_names_not_exceptions`
-- [ ] TODO-RED U13: pre-session types resolve to names - `Pre_session_types_resolve_to_names` (skipped)
+- [x] U13 (runtime limitation, not a bug): types that predate the session keep exact counts and carry a label saying why they have no name - `Types_that_predate_the_session_are_labelled_not_dropped`
 - [x] Heap snapshot from live session: allocation-heavy type visible (device) - `Heap_snapshot_of_running_app_shows_retained_records`
 - [x] Two snapshots in one session + growth diff - `Two_heap_snapshots_support_a_growth_diff` (device) and `Heap_diff_reports_growth_and_disappearance` (fast: growth, stability, disappearance, new types)
 

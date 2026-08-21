@@ -90,6 +90,10 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   (Category=Device).
 - Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
 - Not yet: Release-build weaving, physical devices, Delphi GUI.
+- Allocation names on the provider path are exact except for types whose vtable
+  predates the session (measured ~9% of allocation events); no runtime path
+  exists to name them (KNOWN_UNKNOWNS U13), and the weaver engine does not have
+  the problem. Long sessions are bounded by MaxTraceBytes (U5, closed).
 
 ## Milestones
 

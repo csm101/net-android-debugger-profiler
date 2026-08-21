@@ -76,6 +76,11 @@ once per item produced, plus the call that ends the sequence. All of these are w
 by default; `weaveAsyncBodies=false` (nap-weave: `--no-async-bodies`) keeps the
 stubs only.
 
+Long sessions: a trace grows at the rate the app produces events (a real app
+samples at roughly 1.5 MB/s), so collection stops at `maxTraceMb` (default 512)
+and the session reports a warning. The part collected before the limit is a
+normal, fully symbolicated profile. Pass `maxTraceMb=0` to remove the limit.
+
 ## 3. Memory
 
 ```

@@ -16,11 +16,20 @@ suspended for tens of seconds, or when dotnet-trace connects late; Debug vs
 Release; device vs emulator. The transient `EndOfStreamException` at session
 start (retry works) needs a proper retry policy.
 
-## U5 - Trace size and duration
-Measured: sampling ~30 KB/s, instrumenting with a busy callspec ~0.75 MB/s
-on TestTarget. Realistic .nettrace sizes for minutes-long the reference application sessions;
-streaming (EventPipe session via DiagnosticsClient) vs post-mortem file
-analysis; rotation strategy.
+## U5 - CLOSED: trace size is capped, not rotated
+Measured growth: ~30 KB/s sampling TestTarget, ~1.5 MB/s sampling the reference application
+(38 MB for 25 s), ~0.72 MB/s instrumenting `N:TestTarget.Workloads`
+(2 MB in 2.9 s, confirmed 2026-08-21). A minutes-long session on a real app is
+therefore hundreds of MB.
+Decision: a session stops collecting when the trace reaches `MaxTraceBytes`
+(default 512 MB, `maxTraceMb` in MCP, 0/null = no limit) and records a warning;
+what was collected stays a valid trace and is analyzed normally. Rotation was
+rejected: a .nettrace is one stream whose rundown - the method names - arrives at
+session stop, so splitting it would produce parts that cannot be symbolicated,
+and stopping cleanly keeps the names (verified:
+`Collection_stops_when_the_trace_reaches_its_size_limit` still resolves
+TestTarget.Workloads methods). Live streaming stays reserved for heap snapshots,
+which need no rundown.
 
 ## U7 - GUI/Core control contract
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
@@ -48,13 +57,33 @@ dsrouter android-emu has no port option; the generic `server-server`
 command with explicit endpoints plus a per-device DiagnosticPort must be
 exercised before the engine supports concurrent sessions on two devices.
 
-## U13 - VTableID -> type name for pre-session types
-MonoProfiler GCAllocation carries VTableID; only vtables created during the
-session resolve (VTableLoaded + ClassLoaded). Candidates for a
-start-of-session type dump: GCHeapDump (0x100000) +
-GCHeapDumpVTableClassReference (0x8000000) keywords; or correlate with the
-runtime provider's BulkType events if Mono emits them with vtable ids.
-Needed for P2 per-type allocation reports.
+## U13 - VTableID -> type name for pre-session types (no path found)
+MonoProfiler GCAllocation carries a VTableID; only vtables created during the
+session get a name (VTableLoaded + ClassLoaded). Measured gap on a restart
+session with suspend (TestTarget, 10 s): 19 of 226 allocation vtables unnamed,
+about 9% of the allocation events - but among them the 3rd, 4th and 5th busiest
+vtables, so it is visible in a report.
+
+Every documented candidate was tried and none works (2026-08-21):
+- **GCHeapDump (0x100000) + GCHeapDumpVTableClassReference (0x8000000)**: no
+  events at all, neither during allocation traffic nor during a real heap dump
+  of 104,425 objects that ran in the same session. The MonoProfiler provider
+  emits nothing while the CLR heap dump walks the heap.
+- **CLR BulkType (Type keyword 0x80000)**: Mono does emit it - 411 types with
+  names in a 10 s session - but its TypeIDs match neither the MonoProfiler
+  VTableIDs (0 of 226) nor its ClassIDs (0 of 3066). Different identity space,
+  useless for naming allocations.
+- **Type rundown**: the runtime's rundown carries methods only, no types.
+- Unknown `--diagnostic-mono-profiler=` options are accepted silently, so the
+  accepted option set cannot be probed that way.
+
+Current behaviour: such rows are labelled
+`<type loaded before the session, vtable 0x...>` and their counts and sizes stay
+exact (`MonoProfilerAnalyzer.UnresolvedTypePrefix`). The weaver engine is
+unaffected - it resolves names through RuntimeTypeHandle - so an app that needs
+exact per-type allocation names can use engine=weaver.
+Next candidates if this becomes important: read the vtable's class pointer from
+the app process (needs a debugger-style reader), or a runtime patch.
 
 ## U14 - Allocation call sites
 GCAllocation has no stack. Options: enable the alloc event inside the

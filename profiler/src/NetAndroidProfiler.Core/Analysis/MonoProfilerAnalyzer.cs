@@ -35,6 +35,12 @@ public sealed class MonoProfilerAnalyzer
         public const ulong InstrumentingWithAllocations = Instrumenting | GcAllocation;
     }
 
+    /// <summary>
+    /// Prefix of the name given to a type whose vtable was created before the session:
+    /// its allocations are counted exactly, only the name is missing (KNOWN_UNKNOWNS U13).
+    /// </summary>
+    public const string UnresolvedTypePrefix = "<type loaded before the session, vtable";
+
     /// <summary>Event ids used here.</summary>
     private static class Events
     {
@@ -154,14 +160,17 @@ public sealed class MonoProfilerAnalyzer
         // Resolve names now that the rundown has been read.
         methods.ResolveNames(runtimeNames, moduleNames);
 
-        // Types.
+        // Types. A vtable only has a name when the runtime announced it during the session
+        // (VTableLoaded + ClassLoaded). Types whose vtable already existed when the session
+        // started have no name available from this runtime - see KNOWN_UNKNOWNS U13 - so they
+        // are labelled for what they are instead of showing a bare pointer.
         var types = new List<TypeRecord>();
         var typeIdByVTable = new Dictionary<ulong, int>();
         foreach (var vt in allocByVTable.Keys)
         {
             string name = vtableToClass.TryGetValue(vt, out var cls) && classNames.TryGetValue(cls, out var cn)
                 ? cn
-                : $"<vtable 0x{vt:X}>";
+                : $"{UnresolvedTypePrefix} 0x{vt:X}>";
             typeIdByVTable[vt] = types.Count;
             types.Add(new TypeRecord(types.Count, name, vt, vtableToClass.GetValueOrDefault(vt)));
         }

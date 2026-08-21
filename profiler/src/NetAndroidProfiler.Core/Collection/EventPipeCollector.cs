@@ -34,6 +34,11 @@ public static class ProviderSets
     ];
 }
 
+/// <summary>Result of streaming a trace to disk.</summary>
+/// <param name="Bytes">Size of the written trace.</param>
+/// <param name="StoppedBySizeLimit">True when the size limit, not the duration or the caller, ended the session.</param>
+public sealed record TraceCollection(long Bytes, bool StoppedBySizeLimit);
+
 /// <summary>Live-heap snapshot aggregated per type.</summary>
 public sealed record HeapSnapshot(DateTimeOffset TakenUtc, long TotalObjects, long TotalBytes, IReadOnlyList<(string typeName, long count, long bytes)> ByType);
 
@@ -106,7 +111,12 @@ public sealed class EventPipeCollector
     /// until <paramref name="duration"/> elapses or <paramref name="stop"/> is
     /// cancelled, then stops the session (rundown included) and drains the stream.
     /// </summary>
-    public async Task CollectToFileAsync(IReadOnlyList<EventPipeProvider> providers, string outputFile, TimeSpan? duration, CancellationToken stop, CancellationToken ct, bool resumeRuntime = true, int circularBufferMb = 256)
+    /// <summary>
+    /// Stream an EventPipe session to <paramref name="outputFile"/> until the duration
+    /// elapses, the caller stops it, or the file reaches <paramref name="maxBytes"/>.
+    /// </summary>
+    /// <returns>How many bytes were written and whether the size limit ended the session.</returns>
+    public async Task<TraceCollection> CollectToFileAsync(IReadOnlyList<EventPipeProvider> providers, string outputFile, TimeSpan? duration, CancellationToken stop, CancellationToken ct, bool resumeRuntime = true, int circularBufferMb = 256, long? maxBytes = null)
     {
         var session = await StartWithRetryAsync(providers, circularBufferMb, ct).ConfigureAwait(false);
         using (session)
@@ -122,15 +132,39 @@ public sealed class EventPipeCollector
 
             using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(stop, ct);
             if (duration is not null) waitCts.CancelAfter(duration.Value);
-            try { await Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token).ConfigureAwait(false); }
+            bool hitLimit = false;
+            try
+            {
+                if (maxBytes is null)
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token).ConfigureAwait(false);
+                }
+                else
+                {
+                    // A trace grows at the rate the app produces events (measured: ~30 KB/s
+                    // sampling TestTarget, ~1.5 MB/s sampling a real app, ~0.75 MB/s
+                    // instrumenting a busy callspec), so an open-ended session can fill a disk.
+                    // Poll the file and end the session cleanly when it reaches the limit:
+                    // what was collected so far is a valid trace and gets analyzed.
+                    while (true)
+                    {
+                        await Task.Delay(TimeSpan.FromMilliseconds(250), waitCts.Token).ConfigureAwait(false);
+                        if (file.Length < maxBytes.Value) continue;
+                        hitLimit = true;
+                        break;
+                    }
+                }
+            }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { /* duration elapsed or stop requested */ }
             ct.ThrowIfCancellationRequested();
 
+            if (hitLimit) _log?.Invoke($"trace size limit reached ({maxBytes} bytes): stopping collection early");
             _log?.Invoke("stopping session");
             try { await session.StopAsync(ct).ConfigureAwait(false); }
             catch (Exception e) when (e is EndOfStreamException or IOException) { _log?.Invoke($"stop: {e.Message} (runtime gone?)"); }
             await copy.ConfigureAwait(false);
             _log?.Invoke($"trace written: {outputFile} ({file.Length} bytes)");
+            return new TraceCollection(file.Length, hitLimit);
         }
     }
 

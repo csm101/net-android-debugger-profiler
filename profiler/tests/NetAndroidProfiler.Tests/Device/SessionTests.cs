@@ -252,6 +252,36 @@ public class SessionTests
         Assert.Contains(timings, t => t.FullName == "TestTarget.Workloads.SequenceProducer.Fibonacci");
     }
 
+    /// <summary>
+    /// U5: a trace grows for as long as the session runs, and an instrumenting session on a
+    /// busy callspec grows fastest. The size limit must end collection cleanly - the part
+    /// already collected stays a valid, analyzable trace - and say so in the session warnings
+    /// rather than failing or filling the disk.
+    /// </summary>
+    [Fact]
+    public async Task Collection_stops_when_the_trace_reaches_its_size_limit()
+    {
+        const long limit = 2 * 1024 * 1024;
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromMinutes(2),                 // far longer than the limit needs
+            Callspec: "N:TestTarget.Workloads",
+            MaxTraceBytes: limit));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var trace = new FileInfo(Path.Combine(s.Directory, "trace.nettrace"));
+        Assert.True(trace.Exists && trace.Length >= limit, $"trace is {trace.Length} bytes");
+        // The check runs every 250 ms, so the file overshoots a little - but nowhere near
+        // what two minutes of collection would have produced.
+        Assert.True(trace.Length < limit * 8, $"trace overshot the limit: {trace.Length} bytes");
+        Assert.Contains(s.Info.Warnings, w => w.Contains("limit", StringComparison.OrdinalIgnoreCase));
+        Assert.True((s.Info.EndedUtc - s.Info.StartedUtc)!.Value < TimeSpan.FromMinutes(2), "the size limit, not the duration, must have ended it");
+        // What was collected is still a usable profile: stopping the session cleanly makes
+        // the runtime emit its rundown, so method names still resolve.
+        var timings = s.Results.Timings(10);
+        Assert.NotEmpty(timings);
+        Assert.Contains(timings, t => t.FullName.StartsWith("TestTarget.Workloads", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task Weaver_instrumenting_session_times_woven_methods()
     {

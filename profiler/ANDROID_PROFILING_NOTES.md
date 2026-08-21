@@ -261,6 +261,15 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   unresolved -> needs a start-of-session type dump (candidate:
   GCHeapDump + GCHeapDumpVTableClassReference keywords) - see KNOWN_UNKNOWNS.
   **[verified gap]**
+- **Naming allocations of pre-session types is not possible with this runtime**
+  (measured 2026-08-21, see KNOWN_UNKNOWNS U13 for the full list of attempts):
+  the heap-dump keywords emit nothing even while a real heap dump walks 104,425
+  objects, and the CLR BulkType events Mono does emit use ids that match neither
+  VTableID nor ClassID. Unnamed rows keep exact counts and are labelled
+  `<type loaded before the session, vtable 0x...>`. **[verified]**
+- Unknown `--diagnostic-mono-profiler=` options are ignored silently - no warning
+  in logcat, the session still runs - so the accepted option set cannot be
+  discovered by trying one. **[verified]**
 - `--diagnostic-mono-profiler=alloc` + GCAllocation keyword reports **every**
   allocation with correct sizes: monoprof3 = 123,115 AllocHeavyRecord (40 B)
   + 123,117 byte[] (96 B) for 6 full Allocate() calls of 20,000 each; no
@@ -455,6 +464,22 @@ were cleaned up correctly. The engine now checks the three sources up front and
 fails immediately with that guidance instead of waiting for a runtime that will
 never connect. **[verified - the three attach tests now configure the port
 themselves and pass in 18-28 s, against 60-90 s of waiting before]**
+
+## Trace growth and the size limit
+
+| what | rate | 512 MB reached in |
+|---|---|---|
+| sampling TestTarget | ~30 KB/s | ~4.7 h |
+| sampling the reference application (real app) | ~1.5 MB/s (38 MB / 25 s) | ~5.7 min |
+| instrumenting `N:TestTarget.Workloads` | ~0.72 MB/s (2 MB / 2.9 s) | ~12 min |
+
+Collection stops when the trace reaches `SessionSpec.MaxTraceBytes` (default
+512 MB; MCP `maxTraceMb`, 0 = unlimited) and the session carries a warning saying
+so. The file overshoots the limit by what is already in flight - measured 2.96 MB
+against a 2 MB limit - because the check runs every 250 ms while the copy keeps
+draining. Stopping this way is clean: the runtime emits its rundown, so method
+names still resolve in the part that was collected. **[verified -
+Collection_stops_when_the_trace_reaches_its_size_limit]**
 
 ## One session at a time per device
 

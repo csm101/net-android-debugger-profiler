@@ -25,7 +25,7 @@ using Microsoft.Diagnostics.Tracing.Parsers.Clr;
 
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("usage: NetTraceProbe providers|events|topn|stacks|monoprof <file.nettrace> [...]");
+    Console.Error.WriteLine("usage: NetTraceProbe providers|events|topn|stacks|monoprof|bulktype <file.nettrace> [...]");
     return 2;
 }
 
@@ -45,6 +45,7 @@ switch (cmd)
     case "stacks": return Stacks(file, args[2], args.Length > 3 ? int.Parse(args[3]) : 5);
     case "monoprof": return MonoProf(file, args.Length > 2 ? int.Parse(args[2]) : 25);
     case "iloffsets": return IlOffsets(file);
+    case "bulktype": return BulkType(file);
     default:
         Console.Error.WriteLine($"unknown command {cmd}");
         return 2;
@@ -327,4 +328,71 @@ static int IlOffsets(string file)
     foreach (var kv in counts) Console.WriteLine($"{kv.Value,8} {kv.Key}");
     foreach (var kv in examples.Take(12)) Console.WriteLine($"  il={kv.Value.il,5} token=0x{kv.Value.token:X8} addr=0x{kv.Value.addr:X}  {kv.Key}");
     return 0;
+}
+
+// U13: do the CLR BulkType events (keyword Type, 0x80000) cover the VTableIDs that
+// MonoProfiler GCAllocation reports? If the ids match, a type dictionary exists for
+// types loaded before the session, which VTableLoaded/ClassLoaded cannot provide.
+static int BulkType(string file)
+{
+    const string Provider = "Microsoft-DotNETRuntimeMonoProfiler";
+    var bulk = new Dictionary<ulong, string>();
+    var allocByVTable = new Dictionary<ulong, long>();
+    var vtableToClass = new Dictionary<ulong, ulong>();
+    var classNames = new Dictionary<ulong, string>();
+
+    using var src = new EventPipeEventSource(file);
+    src.Dynamic.All += _ => { };
+    src.Clr.TypeBulkType += ev =>
+    {
+        for (int i = 0; i < ev.Count; i++)
+        {
+            var v = ev.Values(i);
+            bulk[(ulong)v.TypeID] = v.TypeName;
+        }
+    };
+    src.AllEvents += ev =>
+    {
+        if (ev.ProviderName != Provider) return;
+        switch ((int)ev.ID)
+        {
+            case 39: allocByVTable[ReadU64(ev, 0)] = allocByVTable.GetValueOrDefault(ReadU64(ev, 0)) + 1; break;
+            case 19: vtableToClass[ReadU64(ev, 0)] = ReadU64(ev, 8); break;
+            case 16: classNames[ReadU64(ev, 0)] = ReadUnicodeZ(ev, 16); break;
+        }
+    };
+    src.Process();
+
+    int viaMono = 0, viaBulk = 0, unresolved = 0;
+    var examples = new List<string>();
+    foreach (var (vtable, count) in allocByVTable.OrderByDescending(k => k.Value))
+    {
+        bool mono = vtableToClass.TryGetValue(vtable, out ulong cls) && classNames.ContainsKey(cls);
+        bool viaBulkType = bulk.ContainsKey(vtable);
+        if (mono) viaMono++;
+        else if (viaBulkType) viaBulk++;
+        else unresolved++;
+        if (examples.Count < 12)
+            examples.Add($"  0x{vtable:X}  {count,8} allocs  mono={(mono ? classNames[cls] : "-")}  bulk={(viaBulkType ? bulk[vtable] : "-")}");
+    }
+    Console.WriteLine($"BulkType entries: {bulk.Count}; allocation vtables: {allocByVTable.Count}");
+    Console.WriteLine($"resolved by mono ClassLoaded: {viaMono}; resolved only by BulkType: {viaBulk}; unresolved: {unresolved}");
+    Console.WriteLine($"mono ClassIDs: {classNames.Count}; of these present in BulkType: {classNames.Keys.Count(bulk.ContainsKey)}; vtable->class links: {vtableToClass.Count}");
+    Console.WriteLine(string.Join(Environment.NewLine, examples));
+    if (bulk.Count > 0)
+        Console.WriteLine("sample BulkType ids: " + string.Join(", ", bulk.Take(5).Select(b => $"0x{b.Key:X}={b.Value}")));
+    return 0;
+
+    static ulong ReadU64(TraceEvent ev, int offset) => (ulong)Marshal.ReadInt64(ev.DataStart, offset);
+    static string ReadUnicodeZ(TraceEvent ev, int offset)
+    {
+        var chars = new List<char>();
+        for (int o = offset; o + 1 < ev.EventDataLength; o += 2)
+        {
+            char c = (char)Marshal.ReadInt16(ev.DataStart, o);
+            if (c == ' ') break;
+            chars.Add(c);
+        }
+        return new string(chars.ToArray());
+    }
 }
