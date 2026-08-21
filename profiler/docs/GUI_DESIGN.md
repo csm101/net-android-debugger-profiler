@@ -67,6 +67,90 @@ growth diff between two snapshots. Rows whose type predates the session carry th
 "loaded before the session" label (U13) and must not be hidden: their counts are
 exact.
 
+## What goes inside each panel
+
+Not the names - the contents, taken from the AQTime reference and mapped onto our
+data. This is the part an implementer needs.
+
+### Report
+
+One row per method, the anchor of everything else: selecting a row updates
+Details, Call Tree, Call Graph and Editor. AQTime splits it into categories
+(Routines / Source Files / Modules) and groups rows per thread with an
+"All threads" group; we do the same, since `method` carries the module and
+`thread` the thread.
+
+Columns, sampling (`sample_stat`): Samples exclusive, Samples inclusive, the two
+CPU variants, % of profiled code, Module, Source file. Instrumenting
+(`timing_stat`): Calls, Self time, Total time (with children), Avg, Min, Max,
+Exception exits, % time, % with children.
+
+### Details - two pages, both about the selected method
+
+- **Calls**: two flat tables, Parents (who called it, with the hit count and time
+  of *those* calls) and Children (what it called). Immediate neighbours only,
+  from `sample_edge` / the timing tree.
+- **Lines**: one row per source line of the method with the same per-line values
+  the Editor grid shows. This is our pdb annotation, already implemented for MCP.
+
+### Call Tree - two recursive trees, not one
+
+AQTime's key detail, and the one worth copying exactly:
+
+- **Children pane**: the tree of calls started by the method, in direct order
+  (callee is a child node).
+- **Parents pane**: the tree of calls that led to it, in *reverse* order (the
+  caller appears as a child node). Reading down the tree walks back up the stack.
+- The root of the whole hierarchy is a pseudo-method (`<_Root_>` in AQTime).
+- The **critical path is drawn in bold**: the longest route through the tree,
+  where "longest" is computed on a column the user picks (time, samples, calls).
+  This is what turns a 200k-node tree into something answerable at a glance, and
+  it is cheap for us: the trees are already in `sample_tree` / `timing_tree`.
+
+### Call Graph
+
+The same relationships drawn instead of nested: the selected method as the
+central box, parents above, children below, arrows for the call direction. Each
+box has the name on top and one metric underneath (AQTime uses Time with
+Children), and the critical path is bold here too. Lower priority than the trees:
+same data, prettier, less dense.
+
+### Editor
+
+Source code with a **grid to the left carrying the same columns as the Details
+Lines page**, one row per line. AQTime's IDE integration paints each line's row
+with a rectangle whose red saturation grows with the alert level (white =
+healthy, pink = look at it, deep red = the problem), and shows the values as
+hints on hover; the footer sums the selected rows. That colour scale is worth
+copying: it is what makes a hot loop visible without reading numbers.
+
+Control: **SynEdit** (`C:\Athens\SynEdit`, TurboPack fork for Delphi 12,
+syntax highlighting, code folding, DirectWrite; agent-oriented notes under
+`DOCS/`). **Licensing check before this ships**: SynEdit is MPL 1.1 / LGPL 2.1
+dual-licensed, and our policy is MIT/BSD/Apache-2.0 with LGPL only on explicit
+approval and dynamic linking - which a Delphi build cannot do. Under MPL 1.1 the
+copyleft is per-file: linking it into a closed product is allowed, but any change
+we make to SynEdit's own files must be published. Decision: use it unmodified,
+record the choice in THIRD-PARTY-NOTICES, and keep any customization in our own
+units (descendant classes, event handlers) rather than in its sources.
+
+### Summary
+
+Not a wall of totals: AQTime fills it with top-N answers for the selected result
+set - worst performing routines, most called routines, deepest call stacks. Ours:
+session identity (device, package, mode, engine, duration, segments), then the
+top methods by exclusive samples or self time, the top allocating types and
+methods, and the warnings the session recorded (size limit hit, no enter/leave
+events, unresolved type names).
+
+### Monitor
+
+Live counters while the app runs, on data pages the user assembles (AQTime's
+allocation monitor pairs a Number and a Size counter per class). Ours plots what
+we can produce cheaply during collection: events per second, trace size against
+the limit, session state, and - for heap sessions - live objects and bytes per
+selected type across snapshots.
+
 ## Shell
 
 DevExpress VCL, sources under `C:\Athens\DevExpress` (`DOCS/` holds per-library
@@ -83,7 +167,8 @@ notes written for agents; `Demos/VCL/<component>` is the first place to look).
 - **ExpressCharts** for the Monitor panel and for the heap growth diff.
 - **ExpressFlowChart** is the candidate for the Call Graph panel (later: the
   tree views answer most questions first).
-- Source view: DevExpress has no code editor. Open question below.
+- Source view: DevExpress has no code editor - SynEdit fills that role, see the
+  Editor panel above.
 
 ## Run control
 
@@ -117,9 +202,11 @@ segment selector ("all segments" by default).
 
 ## Open questions
 
-- Which editor control shows annotated source? SynEdit (mature, free, but a
-  third-party dependency to license-check) versus a read-only cxGrid with one row
-  per line, which fits the "results next to code" model and costs nothing extra.
-- Call Graph: worth drawing at all, or do the two tree views cover it?
-- Where does the GUI get sources from for the Editor panel - the build machine's
-  paths in the pdb, or a configured source root (the reference application builds on Jenkins)?
+- Call Graph: worth drawing at all, or do the two tree views plus the critical
+  path cover it? Decide after the trees are usable.
+- Where does the GUI get sources for the Editor panel - the build machine's paths
+  as recorded in the pdb, or a configured source root (the reference application builds on Jenkins)?
+  Related to the symbol-server work in U19.
+- Critical path on a sampling tree: "longest" by inclusive samples is the obvious
+  reading, but a path through a blocked thread is not a bottleneck. Compute it on
+  the CPU-only columns by default.
