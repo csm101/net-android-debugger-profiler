@@ -110,10 +110,13 @@ no debugging logic of its own. Notes that matter to a client:
   a replaced `TaskCompletionSource` (`Signal()`); public events
   (`Stopped`, `StateChanged`) are raised outside the lock on that thread.
 - `AndroidLauncher` runs the logcat reader on a thread-pool task; property
-  rotation is synchronous on that thread (blocking adb calls, ~100 ms) and runs
+  rotation is synchronous on that thread (one adb call) and runs
   at two moments: when ActivityManager announces a process of ours (fork time)
   and when that process announces its agent. Rotating at the first shrinks the
   window in which two processes read the same port; the second is idempotent.
+  The forward is created later, for the port a process actually took, so there
+  is one forward per attached process rather than one per fork — and the
+  rotation window stays as short as it can be.
 - A launch waits for the package to have no live process before it publishes the
   port: `am force-stop` is asynchronous, and a leftover (or a sticky service on
   its way back up) would read the property and take the port.

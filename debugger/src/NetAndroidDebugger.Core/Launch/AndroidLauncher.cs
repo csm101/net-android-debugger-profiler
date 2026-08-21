@@ -489,10 +489,13 @@ public sealed class AndroidLauncher : IAsyncDisposable
         catch (Exception ex) { _log($"ps lookup for pid {pid} failed: {ex.Message}"); }
         return (null, null);
     }
+
     /// <summary>
     /// Publishes the next port. <paramref name="takenPort"/> is the one that must not be handed
     /// out again; when it is already behind us the property is left alone, so the common case of
     /// being called twice for the same process costs nothing.
+    /// This runs on the logcat thread, ahead of the rotation window, so it does exactly one adb
+    /// call: the forward is created later, for the port a process actually took.
     /// </summary>
     private void RotateOnly(int takenPort, CancellationToken ct)
     {
@@ -501,7 +504,6 @@ public sealed class AndroidLauncher : IAsyncDisposable
             if (_shuttingDown || takenPort < _nextPort) return;
             _nextPort = takenPort + 1;
             WritePropertyAsync(_nextPort, ct).GetAwaiter().GetResult();
-            ForwardAsync(_nextPort, ct).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
@@ -514,6 +516,10 @@ public sealed class AndroidLauncher : IAsyncDisposable
         // Runs on the logcat reader thread; keep it synchronous so the rotation is done
         // before the event (and therefore before any connect) happens.
         RotateOnly(ready.Port, ct);
+        // The forward is for the port this process actually took, created now rather than for
+        // every port the rotation ever published: one per attached process, not one per fork.
+        try { ForwardAsync(ready.Port, ct).GetAwaiter().GetResult(); }
+        catch (Exception ex) { _log($"forwarding port {ready.Port} for pid {ready.Pid} failed: {ex.Message}"); }
         _firstAgent.TrySetResult(ready);
         try { AgentDetected?.Invoke(ready); }
         catch (Exception ex) { _log($"AgentDetected handler failed: {ex}"); }
