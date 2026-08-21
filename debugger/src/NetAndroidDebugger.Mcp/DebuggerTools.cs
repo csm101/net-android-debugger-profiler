@@ -14,6 +14,9 @@ public sealed class DebuggerTools(SessionHost host)
 {
     private static TimeSpan Secs(int? s, int dflt) => TimeSpan.FromSeconds(s is > 0 ? s.Value : dflt);
 
+    /// <summary>How long a breakpoint call waits for the runtime to bind before answering.</summary>
+    private static readonly TimeSpan BindSettleTime = TimeSpan.FromMilliseconds(750);
+
     // ------------------------------------------------------------------ lifecycle
 
     [McpServerTool(Name = "list_devices", ReadOnly = true), Description("Lists adb devices/emulators (serial, state, model). Pick a serial for launch_app.")]
@@ -137,23 +140,28 @@ public sealed class DebuggerTools(SessionHost host)
 
     // ------------------------------------------------------------------ breakpoints
 
-    [McpServerTool(Name = "set_breakpoint"), Description("Adds a source-line breakpoint. The file path must match the path compiled into the app's PDB (usually the absolute path of the source on this machine).")]
-    public string SetBreakpoint(
+    [McpServerTool(Name = "set_breakpoint"), Description("Adds a source-line breakpoint. The file path must match the path compiled into the app's PDB (usually the absolute path of the source on this machine). When a session is running, the answer waits briefly for the runtime to bind the breakpoint.")]
+    public async Task<string> SetBreakpoint(
         [Description("Absolute source file path")] string file,
         [Description("1-based line")] int line,
         [Description("Optional C# condition expression")] string? condition = null,
-        [Description("Stop only when hit count >= this value (0 = every hit)")] int hitCount = 0)
+        [Description("Stop only when hit count >= this value (0 = every hit)")] int hitCount = 0,
+        CancellationToken ct = default)
     {
         var s = host.RequireForSetup();
-        return TextFormat.Breakpoint(s.SetBreakpoint(new BreakpointSpec(file, line, condition, hitCount)));
+        var info = await s.SetBreakpointAsync(new BreakpointSpec(file, line, condition, hitCount), BindSettleTime, ct);
+        return TextFormat.Breakpoint(info);
     }
 
     [McpServerTool(Name = "set_breakpoints"), Description("Replaces all breakpoints of one file with the given lines (DAP semantics).")]
-    public string SetBreakpoints([Description("Absolute source file path")] string file, [Description("1-based lines")] int[] lines)
+    public async Task<string> SetBreakpoints(
+        [Description("Absolute source file path")] string file,
+        [Description("1-based lines")] int[] lines,
+        CancellationToken ct = default)
     {
         var s = host.RequireForSetup();
-        var infos = s.SetBreakpoints(file, lines.Select(l => new BreakpointSpec(file, l)).ToList());
-        return string.Join('\n', infos.Select(TextFormat.Breakpoint));
+        var infos = await s.SetBreakpointsAsync(file, lines.Select(l => new BreakpointSpec(file, l)).ToList(), BindSettleTime, ct);
+        return infos.Count == 0 ? "No breakpoints." : string.Join('\n', infos.Select(TextFormat.Breakpoint));
     }
 
     [McpServerTool(Name = "list_breakpoints", ReadOnly = true), Description("Lists breakpoints with ids and verification state.")]

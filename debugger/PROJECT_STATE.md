@@ -58,13 +58,16 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 49 integration tests; TEST_CATALOG has 3 open gaps left, each
-  needing hardware or a product decision.
+  mode). 51 integration tests; TEST_CATALOG has 4 open gaps left.
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints
   on startup code (main) and in App.Core (multi-assembly), locals/expansion,
   stepping, clean terminate. Remaining: App.Background service, physical device
   over adb connect (U9), the reference application build specifics (U6), main-thread labelling.
+  Re-driven 2026-08-21 after the breakpoint-disarm fix: breakpoints on the
+  periodic sync threads plus deep expansion held up (details in
+  ANDROID_ATTACH_NOTES.md); helper process restart is re-attached on a new
+  port live.
 - M4 - Optional DAP frontend + packaging/registration (mirror the Delphi
   project's installer / register-mcp.ps1 approach).
 
@@ -109,6 +112,9 @@ applicable to SDB - dropped unless a need appears.
   all threads during an invocation, so a breakpoint hit meanwhile freezes it
   for good. This was the single biggest source of instability and matters most
   for apps with periodic work (timers, sync services).
+- All timestamps the session reports are on the **device** wall clock: logcat
+  stamps device local time, and output arriving through SDB is shifted by the
+  offset measured once per launch (`AndroidLauncher.DeviceClockOffset`).
 - Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md; open questions in
   KNOWN_UNKNOWNS.md (U13 hit-count baseline is the notable one).
 - Multi-process apps (the reference application spawns `:crash_report_process` at init): every

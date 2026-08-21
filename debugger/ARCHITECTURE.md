@@ -78,11 +78,20 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   (`Stopped`, `StateChanged`) are raised outside the lock on that thread.
 - `AndroidLauncher` runs the logcat reader on a thread-pool task; property
   rotation is synchronous on that thread (blocking adb calls, ~100 ms).
+- Every timestamp the session reports lives on the **device** clock. logcat
+  stamps its lines with device local time; output arriving through the SDB
+  user-log channel is produced on the host, so it is shifted by
+  `AndroidLauncher.DeviceClockOffset`, measured once per launch. Frontends
+  render the value as-is, never a host-local conversion.
 - Inspection calls (`GetLocals`, `GetCallStack`, `Evaluate`) run on the caller's
   thread and call Mono.Debugging directly; they require the target process to
   be stopped (`InvalidSessionStateException` otherwise).
 - Frontends never see Mono.Debugging types; expansion handles are opaque
   strings (`pid:n`) invalidated when that process resumes.
+- Breakpoint binding is asynchronous, so `SetBreakpointAsync` /
+  `SetBreakpointsAsync` hold a short settle window (frontends pass 750 ms)
+  before answering; the synchronous overloads stay for callers that want the
+  raw immediate state. With no process attached they return at once.
 - Attach is deduplicated per pid (`_attaching`): the direct launch path and the
   logcat `AgentDetected` event race on the first process; both await the same
   in-flight task, and a process is exposed in `_processes` only after its SDB

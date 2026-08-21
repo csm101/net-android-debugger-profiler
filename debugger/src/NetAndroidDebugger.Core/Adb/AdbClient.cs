@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -90,6 +91,19 @@ public sealed class AdbClient(string adbPath = "adb")
         if (!long.TryParse(s, out var v))
             throw new AdbException($"unexpected `date +%s` output on {serial}: '{s}'");
         return v;
+    }
+
+    /// <summary>
+    /// Reads the device's wall clock (local time, the same clock logcat stamps its lines with)
+    /// and returns it as a naive <see cref="DateTime"/>.
+    /// </summary>
+    public async Task<DateTime> GetDeviceLocalTimeAsync(string serial, CancellationToken ct)
+    {
+        var s = (await ShellAsync(serial, "date \"+%Y-%m-%d %H:%M:%S\"", ct).ConfigureAwait(false)).Trim();
+        if (!DateTime.TryParseExact(s, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var parsed))
+            throw new AdbException($"unexpected `date` output on {serial}: '{s}'");
+        return parsed;
     }
 
     /// <summary>Resolves the launcher activity of a package as <c>pkg/fully.qualified.Name</c>.</summary>

@@ -42,6 +42,17 @@ public sealed class AndroidLauncher : IAsyncDisposable
     private int _nextPort;
     private bool _propertyOwned;
 
+    /// <summary>
+    /// Device wall clock minus host wall clock, measured once at launch. logcat stamps its lines
+    /// with the device's local time, so every timestamp the session reports is expressed on that
+    /// clock; output that reaches us through the debugger is shifted by this offset to match.
+    /// Zero until the first launch.
+    /// </summary>
+    public TimeSpan DeviceClockOffset { get; private set; }
+
+    /// <summary>Device wall clock now, on the same clock logcat uses.</summary>
+    public DateTime DeviceNow => DateTime.Now + DeviceClockOffset;
+
     public AndroidLauncher(AdbClient adb, AppTarget app, LaunchOptions options, Action<string> log)
     {
         _adb = adb;
@@ -103,6 +114,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
 
         await _adb.ForceStopAsync(serial, _app.PackageName, ct).ConfigureAwait(false);
         var deviceNow = await _adb.GetDeviceEpochSecondsAsync(serial, ct).ConfigureAwait(false);
+        await MeasureDeviceClockOffsetAsync(serial, ct).ConfigureAwait(false);
         _deadline = deviceNow + (long)_options.EffectivePropertyLifetime.TotalSeconds;
 
         await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
@@ -274,14 +286,43 @@ public sealed class AndroidLauncher : IAsyncDisposable
     }
 
     /// <summary>
-    /// logcat's threadtime stamps carry no year (`08-20 09:10:39.891`) and are in device local
-    /// time; assume the current year and fall back to now when it does not parse.
+    /// Measures <see cref="DeviceClockOffset"/>. `date` has one-second resolution, so the reading
+    /// is taken in the middle of the round trip and the result is rounded to the nearest second:
+    /// what matters is the timezone difference, not sub-second precision.
     /// </summary>
-    private static DateTime ParseLogcatTimestamp(string stamp)
-        => DateTime.TryParseExact($"{DateTime.Now.Year}-{stamp}", "yyyy-MM-dd HH:mm:ss.fff",
+    private async Task MeasureDeviceClockOffsetAsync(string serial, CancellationToken ct)
+    {
+        try
+        {
+            var before = DateTime.Now;
+            var deviceTime = await _adb.GetDeviceLocalTimeAsync(serial, ct).ConfigureAwait(false);
+            var hostTime = before + (DateTime.Now - before) / 2;
+            var offset = deviceTime - hostTime;
+            DeviceClockOffset = TimeSpan.FromSeconds(Math.Round(offset.TotalSeconds));
+            if (DeviceClockOffset != TimeSpan.Zero)
+                _log($"device clock differs from the host clock by {DeviceClockOffset}; app output is reported on the device clock");
+        }
+        catch (Exception ex)
+        {
+            // Not worth failing a launch for: timestamps stay on the host clock.
+            _log($"could not measure the device clock offset: {ex.Message}");
+            DeviceClockOffset = TimeSpan.Zero;
+        }
+    }
+
+    /// <summary>
+    /// logcat's threadtime stamps carry no year (`08-20 09:10:39.891`) and are in device local
+    /// time; assume the device's current year and fall back to the device clock when it does not
+    /// parse.
+    /// </summary>
+    private DateTime ParseLogcatTimestamp(string stamp)
+    {
+        var deviceNow = DeviceNow;
+        return DateTime.TryParseExact($"{deviceNow.Year}-{stamp}", "yyyy-MM-dd HH:mm:ss.fff",
             CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
-            : DateTime.Now;
+            : deviceNow;
+    }
 
     private bool BelongsToPackage(string processName)
         => processName == _app.PackageName || processName.StartsWith(_app.PackageName + ":", StringComparison.Ordinal);

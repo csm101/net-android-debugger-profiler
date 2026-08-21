@@ -191,6 +191,32 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
         Assert.DoesNotContain(dbg, l => l.Contains("trace tick", StringComparison.Ordinal) || l.Contains("console tick", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// logcat stamps its lines with the device's local time while output delivered through the
+    /// debugger is produced on the host: both must be reported on the device clock, or a session
+    /// against a device in another timezone shows two interleaved, hours-apart timelines.
+    /// </summary>
+    [Fact]
+    public async Task AppOutput_TimestampsAreOnTheDeviceClock_WhateverTheChannel()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(TestEnvironment.MainActivitySource, TickLine)));
+
+        Assert.NotNull(await session.WaitForStopAsync(0, StopTimeout, cts.Token));
+        Assert.NotNull(await session.ContinueAndWaitAsync(StopTimeout, cts.Token));
+
+        var deviceNow = await new Core.Adb.AdbClient().GetDeviceLocalTimeAsync(device.Serial, cts.Token);
+        var app = session.GetAppOutput(1000);
+        Assert.NotEmpty(app);
+        // The session has just started, so nothing it captured can be far from the device's clock.
+        Assert.All(app, l => Assert.True(
+            (l.Timestamp - deviceNow).Duration() < TimeSpan.FromMinutes(2),
+            $"{l.Tag} line stamped {l.Timestamp:O}, device clock {deviceNow:O}"));
+        // Both channels must be present for the assertion above to mean anything.
+        Assert.Contains(app, l => l.Tag is "stdout" or "stderr");
+        Assert.Contains(app, l => l.Tag is not ("stdout" or "stderr"));
+    }
+
     [Fact]
     public async Task Terminate_EndsSession_AndStopsApp()
     {

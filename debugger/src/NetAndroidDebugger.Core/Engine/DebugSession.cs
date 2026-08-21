@@ -192,7 +192,7 @@ public sealed class DebugSession : IAsyncDisposable
         pd.Resumed += OnProcessResumed;
         pd.Exited += OnProcessExited;
         pd.Output += (p, isErr, text) => AppendAppOutput(
-            new AppLogLine(DateTime.Now, p.Pid, 0, isErr ? 'E' : 'I', isErr ? "stderr" : "stdout", text.TrimEnd()));
+            new AppLogLine(DeviceNow(), p.Pid, 0, isErr ? 'E' : 'I', isErr ? "stderr" : "stdout", text.TrimEnd()));
         try
         {
             await pd.ConnectAsync(TimeSpan.FromSeconds(20), ct).ConfigureAwait(false);
@@ -468,6 +468,35 @@ public sealed class DebugSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Sets a breakpoint and gives Mono a short window to bind it before reporting the result.
+    /// Binding is asynchronous: a breakpoint on a type the runtime has not loaded yet is reported
+    /// unbound (with a status message that reads like a failure) for a few milliseconds and then
+    /// verifies on its own. Waiting removes that misleading answer. Returns as soon as the
+    /// breakpoint is bound, immediately if no process is attached yet (nothing can bind it).
+    /// </summary>
+    /// <param name="spec">The breakpoint to add.</param>
+    /// <param name="settle">How long to wait for binding before answering anyway.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<BreakpointInfo> SetBreakpointAsync(BreakpointSpec spec, TimeSpan settle, CancellationToken ct)
+    {
+        var info = SetBreakpoint(spec);
+        lock (_lock)
+            if (_processes.Count == 0) return info;
+
+        var deadline = DateTime.UtcNow + settle;
+        while (!info.Verified && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25, ct).ConfigureAwait(false);
+            lock (_lock)
+            {
+                if (!_breakpoints.TryGetValue(info.Id, out var entry)) return info;
+                info = DescribeNoLock(info.Id, entry.Spec, entry.Bp);
+            }
+        }
+        return info;
+    }
+
     /// <summary>Replaces all breakpoints of <paramref name="file"/> with <paramref name="specs"/> (DAP-style).</summary>
     public IReadOnlyList<BreakpointInfo> SetBreakpoints(string file, IReadOnlyList<BreakpointSpec> specs)
     {
@@ -480,6 +509,34 @@ public sealed class DebugSession : IAsyncDisposable
             }
         }
         return specs.Select(s => SetBreakpoint(s with { File = file })).ToList();
+    }
+
+    /// <summary>
+    /// Replaces all breakpoints of <paramref name="file"/> and, like
+    /// <see cref="SetBreakpointAsync"/>, gives the runtime a short window to bind them before
+    /// reporting.
+    /// </summary>
+    /// <param name="file">Source file whose breakpoints are replaced.</param>
+    /// <param name="specs">The breakpoints the file should end up with (empty clears it).</param>
+    /// <param name="settle">How long to wait for binding before answering anyway.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task<IReadOnlyList<BreakpointInfo>> SetBreakpointsAsync(
+        string file, IReadOnlyList<BreakpointSpec> specs, TimeSpan settle, CancellationToken ct)
+    {
+        var infos = SetBreakpoints(file, specs);
+        lock (_lock)
+            if (_processes.Count == 0 || infos.Count == 0) return infos;
+
+        var deadline = DateTime.UtcNow + settle;
+        while (infos.Any(i => !i.Verified) && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25, ct).ConfigureAwait(false);
+            lock (_lock)
+                infos = infos
+                    .Select(i => _breakpoints.TryGetValue(i.Id, out var e) ? DescribeNoLock(i.Id, e.Spec, e.Bp) : i)
+                    .ToList();
+        }
+        return infos;
     }
 
     public bool RemoveBreakpoint(int id)
@@ -973,6 +1030,12 @@ public sealed class DebugSession : IAsyncDisposable
         foreach (var k in _values.Where(kv => kv.Value.Pid == pid).Select(kv => kv.Key).ToList())
             _values.Remove(k);
     }
+
+    /// <summary>
+    /// Now, on the device's wall clock — the clock every timestamp in the app output uses.
+    /// Falls back to the host clock before the first launch.
+    /// </summary>
+    private DateTime DeviceNow() => _launcher?.DeviceNow ?? DateTime.Now;
 
     private void AppendAppOutput(AppLogLine line)
     {

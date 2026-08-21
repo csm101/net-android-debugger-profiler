@@ -351,6 +351,36 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
   loaded, then hit on the main thread id 1), helper `:crash_report_process`
   auto-attached on the next port, expansion of `this` with Unity container /
   lists, step over, terminate leaves the device clean. **[verified]**
+- **Re-driven through the MCP server after the breakpoint-disarm fix
+  (2026-08-21):** the scenario the fix targets — a breakpoint on periodic
+  background code while inspection invokes debuggee code — was exercised
+  against a fully started the reference application. Breakpoint on
+  `the sync library's base thread:112`
+  (`AttendiMillisecondi`, the wait every sync thread goes through: WatchDog
+  every 60 s, Sender every 500 ms when it has just polled). Result over five
+  stops on three different sync threads, with deep expansion in between
+  (`WatchDog` / `Sender` graphs, `ThreadsManagerImpl`, `DatabaseImpl`, the
+  Unity container, plus `evaluate_expression` reaching across objects):
+  no freeze, no aborted invocation, no lost process. Also observed live:
+  - the async frame reports the user method on top with the state-machine
+    frames marked `[external]`, and `step_over` walks the user lines;
+  - `:crash_report_process` **ended and was restarted by Android during the
+    session**; the dead one is reported `exited` and the new one is attached
+    on the next free port (10001 → 10002) without touching the main process;
+  - suspending the app makes MQTT time out — the app logs a handled
+    `MqttCommunicationTimedOutException` and an `InvalidOperationException`
+    ("Not allowed to connect while connect/disconnect is pending") and
+    reconnects by itself, consistent with the 5-minute pause measurement
+    above.
+  **[verified]**
+- **Device clock vs host clock (2026-08-21):** the emulator runs in GMT while
+  this host is GMT+2. logcat's `threadtime` stamps are **device local time**,
+  so app output that reaches us through the debugger (stdout/stderr on the SDB
+  user-log channel) must be shifted onto the same clock or the two channels
+  interleave hours apart in one listing. The launcher now measures the offset
+  once per launch (`AndroidLauncher.DeviceClockOffset`, from
+  `adb shell date "+%Y-%m-%d %H:%M:%S"`) and every timestamp the session
+  reports is on the device clock. **[verified]**
 
 ## Sources
 

@@ -49,11 +49,13 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
     public async Task ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine, Condition: "_ticks == 3")));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine, Condition: "_ticks % 7 == 3")));
 
         var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(30), cts.Token);
         Assert.NotNull(stop);
-        Assert.Equal("3", Eval(session, stop, "_ticks"));
+        // A recurring condition on purpose: `_ticks == 3` is only ever true in the app's first
+        // seconds, so a slow attach turns the test into a guaranteed failure instead of a check.
+        Assert.Equal(3, int.Parse(Eval(session, stop, "_ticks")) % 7);
     }
 
     [Fact]
@@ -84,6 +86,30 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.NotNull(stop);
         Assert.Equal(TickLine, stop.Location?.Line);
         Assert.True(session.ListBreakpoints().Single(b => b.Id == bp.Id).Verified);
+    }
+
+    /// <summary>
+    /// Binding is asynchronous, so the value <see cref="DebugSession.SetBreakpoint"/> returns the
+    /// instant it is called says "not bound" with a status message that reads like a failure, even
+    /// for a type that is about to load. The settle window in
+    /// <see cref="DebugSession.SetBreakpointAsync"/> is what the frontends report.
+    /// </summary>
+    [Fact]
+    public async Task SetBreakpointAsync_WaitsForTheRuntimeToBindIt()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token);
+        Assert.Equal(SessionState.Running, session.State);
+
+        var bp = await session.SetBreakpointAsync(new BreakpointSpec(Main, TickLine), TimeSpan.FromSeconds(5), cts.Token);
+        Assert.True(bp.Verified, $"reported unbound: {bp.Message ?? "no message"}");
+
+        // Before any process is attached nothing can bind a breakpoint, so the call must not wait.
+        await using var idle = new DebugSession();
+        var started = DateTime.UtcNow;
+        var pending = await idle.SetBreakpointAsync(new BreakpointSpec(Main, TickLine), TimeSpan.FromSeconds(5), cts.Token);
+        Assert.False(pending.Verified);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(1));
     }
 
     [Fact]

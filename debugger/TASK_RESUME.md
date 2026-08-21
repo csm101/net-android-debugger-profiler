@@ -1,26 +1,59 @@
 # Task resume
 
 ## Current task
-Overnight autonomous session (2026-08-20 → 21). M1/M2 engine work is done and
-the suite is the safety net; the current loop is: pick a gap from
-TEST_CATALOG.md, write the named test, fix whatever it exposes, keep the
-specs in the same change set, commit.
+the reference application re-drive through the freshly published MCP server (2026-08-21), and
+the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
 
 ## State
-- Suite: **49 tests, 49/49 green** (~5 min on the headless emulator). Stability
-  was confirmed by consecutive runs, not a single lucky one.
-- TEST_CATALOG: 57 covered, 3 open (each blocked on hardware or a decision).
-- Commits tonight, newest last: 247cede (stop location falls back to the user
-  frame; U11 measured), 9735b4a (one unhandled exception per process; slow
-  probe isolated), e93abc0 (async/await), eabb4d0 (structured app output;
-  headless emulator), 06f0a9b (**disarm breakpoints during any debuggee
-  invocation** — the root cause of the evening's flakiness), 32f444a (honest
-  hit-count assertion + U13), 230ca40 (sticky service restart), 538ea28 (app
-  dying by itself, throw stepped over, relaunch), 8fd9a1b (foreign app not
-  attached; generic type names), 036016b (deploy, detach, relaunch, screen
-  rotation), 4ba98ea (U13 evidence).
-- Everything above is verified through the test suite. The registered MCP
-  server is older than all of it (see next steps).
+- The MCP server was re-registered by the user, so the tools now run the code
+  with the breakpoint-disarm fix.
+- **the reference application re-driven live and it held.** Breakpoint on
+  `the sync library's base thread:112` (the wait every sync
+  thread goes through), five stops on three different threads, deep expansion
+  in between (WatchDog/Sender graphs, ThreadsManagerImpl, DatabaseImpl, Unity
+  container) and cross-object `evaluate_expression`: no freeze, no aborted
+  invocation, no lost process. Async frames, `step_over` and multi-process
+  re-attach (`:crash_report_process` restarted mid-session → new port 10002)
+  all behaved. Recorded in ANDROID_ATTACH_NOTES.md, the reference application section.
+- **Bug found and fixed during the drive**: app output mixed two clocks.
+  logcat stamps device local time; stdout/stderr delivered through SDB was
+  stamped `DateTime.Now` on the host, so on this emulator (GMT) versus this
+  host (GMT+2) one listing interleaved lines two hours apart. Fixed by
+  measuring the offset once per launch.
+  - `AdbClient.GetDeviceLocalTimeAsync`
+  - `AndroidLauncher.DeviceClockOffset` / `DeviceNow` (also used by
+    `ParseLogcatTimestamp`, which no longer assumes the host's year)
+  - `DebugSession.DeviceNow()` used when stamping SDB output
+  - test `AppOutput_TimestampsAreOnTheDeviceClock_WhateverTheChannel`
+- Second fix of the day: `set_breakpoint` used to answer with the state of the
+  instant it was called ("The breakpoint will not currently be hit") because
+  binding is asynchronous; a moment later the same breakpoint was verified.
+  Core now has `SetBreakpointAsync` / `SetBreakpointsAsync` with a settle
+  window (frontends pass 750 ms, and skip the wait when nothing is attached);
+  the MCP tools use them. Test `SetBreakpointAsync_WaitsForTheRuntimeToBindIt`.
+- `ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue` failed once in a full
+  run and it was the test's fault, not the engine's: `_ticks == 3` is only
+  ever true in the app's first three seconds, so a slow attach makes it
+  unsatisfiable forever. Now `_ticks % 7 == 3`, which recurs.
+- Build green (0 warnings, 0 errors). Suite: **51 tests, 51/51 green**
+  (5 m 14 s; the emulator dropped once mid-run and `ensure-emulator.sh`
+  recovered it).
+
+## Next steps (in order)
+1. New catalogue gap: a member typed `IEnumerable`/`IEnumerable<T>` expands to
+   the compiler's iterator state machine instead of its elements (VS shows a
+   "Results View"). Seen on `UnityContainer.Registrations`. Needs a TestTarget
+   hook plus `IEnumerableMember_ExpandsToItsElements`.
+2. The three older gaps, each blocked on something external: a WiFi device
+   (U9), a decision about evaluations with side effects, a way to simulate a
+   mid-run debugger disconnect.
+3. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
+   stop; evidence so far is in KNOWN_UNKNOWNS.
+4. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
+   When merged: point .gitmodules back to upstream, bump the submodule,
+   update ARCHITECTURE.md.
+5. M4 candidates: DAP frontend, packaging, SourceResolver (only once a real
+   PDB-path mismatch shows up).
 
 ## Environment rules (also in ANDROID_ATTACH_NOTES.md / TEST_CATALOG.md)
 - Only ever touch `emulator-5554`; `emulator-5556` is the user's other AVD
@@ -29,31 +62,14 @@ specs in the same change set, commit.
   (a windowed emulator cannot start while the desktop is locked) and with the
   hardware GPU (a software GPU is slow enough to make evaluation time out).
   It also clears the locks and snapshot a crashed qemu leaves behind.
-- qemu crashed three times tonight; the script recovers it. If a run fails
-  with "device offline"/"device not found", restart and repeat the run.
 - Suite env: `NAD_DEVICE_SERIAL=emulator-5554`, `NAD_SKIP_DEPLOY=1` when
   TestTarget is unchanged.
-
-## Next steps (in order)
-1. **User action**: rerun register-mcp.cmd (with MCP sessions closed). The
-   registered server predates every fix listed above, most importantly the
-   breakpoint disarming — which is exactly what a timer-heavy app like
-   the reference application needs.
-2. Then re-drive the reference application through the MCP tools: breakpoints in the main
-   process while its services run, expansion of real objects, and the
-   evaluation-heavy paths that used to freeze.
-3. The three catalogue gaps left, each blocked on something external: a WiFi
-   device (U9), a decision about evaluations with side effects, a way to
-   simulate a mid-run debugger disconnect.
-4. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
-   stop; the evidence gathered so far is in KNOWN_UNKNOWNS.
-5. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
-   When merged: point .gitmodules back to upstream, bump the submodule,
-   update ARCHITECTURE.md.
-6. M4 candidates when the engine work quiets down: DAP frontend, packaging,
-   SourceResolver (only once a real PDB-path mismatch shows up).
+- Editing a source file and running the suite at the same time breaks the
+  run: the test host rebuilds. Do documentation while the suite is out.
 
 ## Traps worth keeping in mind
+- **Never run `python` here** (not installed): a heredoc into it hangs the
+  shell for the full timeout. It happened again on 2026-08-21.
 - Consumers of the vendored libs must reference Mono.Cecil 0.10.1 explicitly.
 - `debug.mono.extra` is device-global and read at process start: no late
   attach, and other Mono apps starting meanwhile read it too (the launcher
@@ -64,4 +80,5 @@ specs in the same change set, commit.
 - Killing a sticky service makes Android restart it asynchronously; a test
   that does so must tear the app down and wait, or the restarts spill into
   the next test.
-- Never run `python` here (not installed): a heredoc into it hangs the shell.
+- Suspending the reference application makes MQTT time out; the app logs handled exceptions and
+  reconnects. Not a debugger defect.

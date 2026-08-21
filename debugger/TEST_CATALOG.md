@@ -27,7 +27,7 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 49 tests in four files, ~5 min on the headless emulator after deploy. Each
+- 51 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -81,6 +81,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [~] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit` asserts "at
       least N hits": the count can restart when another process attaches (U13)
 - [x] Breakpoint set while running is bound and hit — `SetBreakpoint_WhileRunning_IsBoundAndHit`
+- [x] Setting a breakpoint waits for the runtime to bind it before reporting
+      (binding is asynchronous: the immediate answer says "not bound" with a
+      message that reads like a failure), and does not wait when no process is
+      attached — `SetBreakpointAsync_WaitsForTheRuntimeToBindIt`
 - [x] Remove-all while stopped — no further hits — `RemoveAllBreakpoints_WhileStopped_NoFurtherHits`
 - [x] Breakpoint on a comment line — bound to the next statement or pending,
       no crash, session stays usable — `Breakpoint_OnCommentLine_DoesNotCrash_SessionStaysUsable`
@@ -135,6 +139,11 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] An aborted slow invocation is reported as an error and the debugger stays
       responsive (the debuggee may or may not survive it — both outcomes are
       accepted) — `AbortedSlowInvoke_LeavesTheThreadUsable` (U11)
+- [ ] A member typed as `IEnumerable`/`IEnumerable<T>` expands to its elements
+      rather than to the compiler's iterator state machine (VS calls it the
+      "Results View") — seen live on the reference application (`UnityContainer.Registrations`
+      showed `<>4__this` / `Current` / `IEnumerator`) —
+      `IEnumerableMember_ExpandsToItsElements`
 - [x] Culture-invariant rendering (0.5 not 0,5) — enforced by frontends +
       test ModuleInitializer, asserted in `ObjectExpansion_…`
 
@@ -163,6 +172,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Screen rotation recreates the Activity in the same process and the
       session follows it (OnCreate breakpoint hits again) —
       `ScreenRotation_RecreatesTheActivity_AndTheSessionSurvives`
+- [x] App output timestamps are on the device clock whatever the channel
+      (logcat stamps device local time, debugger-delivered stdout/stderr is
+      produced on the host) —
+      `AppOutput_TimestampsAreOnTheDeviceClock_WhateverTheChannel`
 - [ ] Attach over `adb connect` (WiFi device) — deferred (U9)
 
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
