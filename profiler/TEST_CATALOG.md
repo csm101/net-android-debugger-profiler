@@ -97,6 +97,10 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
 - [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`
 
+## H. Licensing (Fast/ThirdPartyNoticesTests)
+- [x] Every package the shipped build depends on is acknowledged in THIRD-PARTY-NOTICES.txt (read from the .deps.json of NetAndroidProfiler.Mcp and nap-weave, so a new dependency fails the test) - `Every_distributed_package_is_acknowledged`
+- [x] The notices carry the full MIT and Apache-2.0 texts and no copyleft license - `Notices_carry_the_full_license_texts`
+
 ## G2. the reference application hardening (P3+)
 - [ ] Sampling session on real app completes and analyzes
 - [ ] Multi-assembly symbolication (App.Core, App.Shared, ...)

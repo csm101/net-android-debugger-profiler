@@ -85,6 +85,7 @@ build/                            MSBuild targets for build-time weaving
 tests/NetAndroidProfiler.Tests    fast (recorded traces) + device tests (xUnit)
 tests/WeaveSample                 assembly used as weaving input in tests
 DevTools/                         argv-driven diagnostic probes
+THIRD-PARTY-NOTICES.txt           licenses of the components a release ships
 TestTarget/                       Android app used by the test suite
 gui/                              Delphi + DevExpress GUI (future)
 ```
@@ -99,3 +100,16 @@ dotnet test  NetAndroidProfiler.slnx
 Requires: .NET SDK 10+ with the `android` workload, Android SDK
 platform-tools (`adb`), the global tools `dotnet-trace`, `dotnet-dsrouter`,
 `dotnet-gcdump`, and an emulator or attached device for integration tests.
+
+## Licensing
+
+Proprietary and closed source: see `LICENSE`. The repository is private and
+must stay private.
+
+Third-party dependencies are restricted to MIT, BSD and Apache-2.0; GPL is
+excluded. `THIRD-PARTY-NOTICES.txt` lists every component the shipped build
+carries, with its version, license and upstream URL, followed by the full
+license texts. It ships with any distributed release. The list is generated
+from what the build actually distributes and guarded by
+`Fast/ThirdPartyNoticesTests`, which fails when a new dependency is not
+acknowledged.

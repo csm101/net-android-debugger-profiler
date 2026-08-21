@@ -1,9 +1,29 @@
 # Task resume
 
 ## Current task
-Autonomous overnight session (user away, following from phone). Planned work
-done; full suite (fast + device + the reference application) running through the test-runner
-agent for final validation.
+THIRD-PARTY-NOTICES (P5 licensing obligation): produce the notices file the
+project must ship with any distributed release, and keep it from drifting.
+Substep: written, test-guarded, wired into README/PROJECT_STATE/TEST_CATALOG;
+fast suite running through the test-runner agent, then commit and push.
+
+## Files in focus
+THIRD-PARTY-NOTICES.txt, tests/NetAndroidProfiler.Tests/Fast/ThirdPartyNoticesTests.cs,
+README.md, PROJECT_STATE.md, TEST_CATALOG.md (new section H).
+
+## Last completed action
+Notices file written from the real dependency closure (dotnet list package
+--include-transitive on NetAndroidProfiler.Mcp and NetAndroidProfiler.Weave,
+license expressions read from each .nuspec, verbatim license texts fetched from
+upstream). The new test immediately caught two packages listed only in an
+abbreviated form (Microsoft.Data.Sqlite.Core, ModelContextProtocol.Core) - the
+ids are now spelled out and both tests pass.
+
+## Traps found here
+- The docs are CRLF; a scripted edit that writes LF corrupts the line endings
+  silently. Normalize lone LF to CRLF after any scripted patch.
+- The notices must match what is *distributed*, not what the solution
+  references: the test reads the .deps.json of the built output, which is why a
+  test-only package does not have to be acknowledged.
 
 ## Done tonight (each committed and pushed)
 1. V7 weaver with a narrow callspec: green.
@@ -25,7 +45,8 @@ agent for final validation.
     refuses to start.
 
 ## Next action if interrupted right now
-Read the test-runner report; fix anything red. Then pick from the queue.
+Read the test-runner report on the fast suite; if green, commit and push the
+notices file, its test and the doc wiring. Then pick from the queue.
 
 ## Queue (highest value first)
 - U8 diagnosis: why does a woven async state machine stop a net9 app from

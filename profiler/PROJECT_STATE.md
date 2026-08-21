@@ -56,8 +56,15 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
     company symbol server): C:\Work\ReferenceApp\ExternalTools\Desymbolicate.
 - Licensing (2026-08-20): proprietary closed source, copyright MCA Software
   s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
-  MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
-  distributed release.
+  MIT/BSD/Apache-2.0 only, no GPL.
+- THIRD-PARTY-NOTICES.txt (2026-08-21): written and test-guarded. Covers the
+  real dependency closure of the shipped build (TraceEvent, DiagnosticsClient,
+  Microsoft.Data.Sqlite + SQLitePCLRaw, Mono.Cecil, Microsoft.Extensions.*,
+  ModelContextProtocol) with full MIT and Apache-2.0 texts; no GPL/LGPL anywhere
+  in the closure. Fast/ThirdPartyNoticesTests reads the .deps.json of
+  NetAndroidProfiler.Mcp and nap-weave, so an unacknowledged new dependency fails
+  the suite. Test-only packages (xUnit, coverlet) and externally invoked tools
+  (adb, dotnet-dsrouter) are excluded, and the exclusion is stated in the file.
 
 ## Architecture status (2026-08-20)
 
