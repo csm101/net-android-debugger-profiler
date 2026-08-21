@@ -79,9 +79,11 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   threads, stackTrace, scopes, variables, evaluate, continue, next/stepIn/
   stepOut, pause, exceptionInfo, disconnect/terminate, and the stopped /
   continued / output / terminated events. Four end-to-end tests drive the real
-  adapter process. Remaining for M4: packaging/registration (mirror the Delphi
-  project's installer / register-mcp.ps1 approach), and a VS Code launch
-  configuration so a human can drive it.
+  adapter process.
+  Packaging done: register-mcp.cmd publishes both frontends, DAP_CLIENTS.md
+  documents the client contract, and DevTools/vscode/net-android-debugger is a
+  VS Code extension contributing the `net-android` debug type (offline checks
+  only - it has never been run inside a real VS Code).
 
 ## Target MCP tool surface (mirror of delphi-win64-debugger, adapted)
 

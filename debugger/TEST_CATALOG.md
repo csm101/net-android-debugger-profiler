@@ -250,7 +250,12 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A malformed message (wrong `Content-Length`, truncated body) is ignored
       and the adapter keeps serving — it used to crash the process —
       `MalformedInput_IsIgnored_AndTheAdapterKeepsServing`
-- [ ] Driven by a real editor (VS Code launch configuration) — not automated
+- [~] Driven by a real editor: the VS Code extension in
+      `DevTools/vscode/net-android-debugger` contributes the `net-android` debug
+      type, and `node test-extension.js` checks its own logic (adapter path
+      resolution, the missing-adapter message, configuration validation) against
+      a stand-in for the `vscode` module. Nobody has yet run it inside a real
+      VS Code against a real device — that part is still uncovered.
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →

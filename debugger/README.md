@@ -51,9 +51,10 @@ alongside the MCP server. A DAP client runs it directly:
 dotnet "%LOCALAPPDATA%\net-android-debugger\NetAndroidDebugger.Dap.dll"
 ```
 
-`DevTools/vscode/DAP_CLIENTS.md` has the launch/attach argument reference, a
-ready-made nvim-dap configuration, and what a VS Code extension must contribute
-(VS Code cannot run an arbitrary adapter from `launch.json`).
+`DevTools/vscode/DAP_CLIENTS.md` has the launch/attach argument reference and a
+ready-made nvim-dap configuration. For VS Code, which cannot run an arbitrary
+adapter from `launch.json`, `DevTools/vscode/net-android-debugger/` is a small
+extension that contributes the `net-android` debug type.
 ## Layout
 
 ```

@@ -114,6 +114,5 @@ with `launch.json` then reading:
 }
 ```
 
-That extension is **not** part of this repository yet: the adapter is exercised by the end-to-end
-tests, which drive it exactly as an editor does, but no one has driven it from VS Code itself. That
-gap is listed in TEST_CATALOG section K.
+That extension lives in `net-android-debugger/` next to this file — it declares the type and
+nothing else. See its README for how to install it and what is and is not verified about it.
