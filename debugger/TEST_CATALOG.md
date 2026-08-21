@@ -27,13 +27,16 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 51 tests in four files, ~5 min on the headless emulator after deploy. Each
+- 52 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
 - TestTarget is shared by every test: a member that is deliberately slow or
   throwing must live in its own method, or every test that touches that frame
   pays for it (see `SlowProbe` / `EvaluationProbe`).
+- TestTarget's `Sample` gained a lazy `Sequence` property (a `yield` iterator)
+  so the enumerable case has a debuggee to exercise; the suite must deploy
+  once (drop `NAD_SKIP_DEPLOY`) after pulling this.
 
 ## A. Launch / attach lifecycle
 - [x] Deploy + launch TestTarget on emulator, debugger attaches —
@@ -139,11 +142,12 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] An aborted slow invocation is reported as an error and the debugger stays
       responsive (the debuggee may or may not survive it — both outcomes are
       accepted) — `AbortedSlowInvoke_LeavesTheThreadUsable` (U11)
-- [ ] A member typed as `IEnumerable`/`IEnumerable<T>` expands to its elements
-      rather than to the compiler's iterator state machine (VS calls it the
-      "Results View") — seen live on the reference application (`UnityContainer.Registrations`
-      showed `<>4__this` / `Current` / `IEnumerator`) —
-      `IEnumerableMember_ExpandsToItsElements`
+- [x] A value typed as an iterator (`IEnumerable`/`IEnumerable<T>`) shows the
+      state machine's own fields; its elements are reachable through the extra
+      group child Mono adds ("IEnumerator"), which the engine labels so they
+      are not mistaken for absent — seen live on the reference application
+      (`UnityContainer.Registrations`) —
+      `IEnumerableValue_ExposesItsElements_UnderTheEnumeratorGroup`
 - [x] Culture-invariant rendering (0.5 not 0,5) — enforced by frontends +
       test ModuleInitializer, asserted in `ObjectExpansion_…`
 

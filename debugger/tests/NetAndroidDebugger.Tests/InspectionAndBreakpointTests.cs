@@ -371,4 +371,27 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.Equal("2", Eval(session, stop, "1 + 1"));
         Assert.StartsWith("\"sample-", Eval(session, stop, "sample.Name"));
     }
+
+    /// <summary>
+    /// A value typed as an iterator shows the state machine's own fields; its elements live in the
+    /// extra group child Mono adds (named "IEnumerator"). That child carries no value of its own,
+    /// so the engine labels it — otherwise the elements look as if they were not there at all.
+    /// </summary>
+    [Fact]
+    public async Task IEnumerableValue_ExposesItsElements_UnderTheEnumeratorGroup()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+
+        var range = session.Evaluate(stop.Pid, stop.ThreadId, 0, "sample.Sequence");
+        Assert.False(range.IsError);
+        var group = session.ExpandVariable(range.ExpansionHandle!).Single(c => c.Name == "IEnumerator");
+        Assert.Contains("enumerated elements", group.DisplayValue, StringComparison.Ordinal);
+
+        var elements = session.ExpandVariable(group.ExpansionHandle!);
+        Assert.Equal(new[] { "1", "2", "3" }, elements.Select(e => e.Value).ToArray());
+    }
 }

@@ -1022,6 +1022,11 @@ public sealed class DebugSession : IAsyncDisposable
         try { value = v.Value ?? "null"; } catch (Exception ex) { value = $"<error: {ex.Message}>"; }
         string display;
         try { display = v.DisplayValue ?? value; } catch { display = value; }
+        // Mono exposes the elements of an IEnumerable as an extra group child named "IEnumerator",
+        // sitting among the iterator's own fields and carrying no value of its own. Say what it is,
+        // otherwise the elements look absent and the state machine looks like the whole story.
+        if ((v.Flags & Mono.Debugging.Client.ObjectValueFlags.IEnumerable) != 0 && string.IsNullOrEmpty(value))
+            value = display = "<enumerated elements: expand>";
         return new VariableSnapshot(v.Name ?? "", v.TypeName ?? "", value, display, v.HasChildren, handle, v.IsError);
     }
 

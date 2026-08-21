@@ -158,4 +158,17 @@ public sealed class Sample
     public DateTime When { get; }
     public Sample? Inner { get; set; }
     public int NumbersCount => Numbers.Count;
+
+    /// <summary>
+    /// A lazy sequence: its value is a compiler-generated iterator, so a debugger shows the state
+    /// machine's fields and the elements only through the enumerator group.
+    /// </summary>
+    public IEnumerable<int> Sequence => Steps();
+
+    private static IEnumerable<int> Steps()
+    {
+        yield return 1;
+        yield return 2;
+        yield return 3;
+    }
 }

@@ -35,24 +35,25 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   run and it was the test's fault, not the engine's: `_ticks == 3` is only
   ever true in the app's first three seconds, so a slow attach makes it
   unsatisfiable forever. Now `_ticks % 7 == 3`, which recurs.
-- Build green (0 warnings, 0 errors). Suite: **51 tests, 51/51 green**
-  (5 m 14 s; the emulator dropped once mid-run and `ensure-emulator.sh`
-  recovered it).
+- Third item: the "IEnumerable shows the state machine, not the elements" gap
+  turned out to be smaller than it looked. Mono already exposes the elements,
+  as an extra group child named `IEnumerator` sitting among the iterator's own
+  fields — it simply carried no value, so it read as empty. `Describe` now
+  labels it `<enumerated elements: expand>`. TestTarget's `Sample` gained a
+  lazy `Sequence` property to exercise it; the suite needs one deploy.
+  Test `IEnumerableValue_ExposesItsElements_UnderTheEnumeratorGroup`.
+- Build green. Suite: **52 tests, 52/52 green** (4 m 51 s, with deploy).
 
 ## Next steps (in order)
-1. New catalogue gap: a member typed `IEnumerable`/`IEnumerable<T>` expands to
-   the compiler's iterator state machine instead of its elements (VS shows a
-   "Results View"). Seen on `UnityContainer.Registrations`. Needs a TestTarget
-   hook plus `IEnumerableMember_ExpandsToItsElements`.
-2. The three older gaps, each blocked on something external: a WiFi device
+1. The three gaps left, each blocked on something external: a WiFi device
    (U9), a decision about evaluations with side effects, a way to simulate a
    mid-run debugger disconnect.
-3. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
+2. U13 (hit counts): the cheap experiment is logging `CurrentHitCount` per
    stop; evidence so far is in KNOWN_UNKNOWNS.
-4. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
+3. PR mono/debugger-libs#419 is open, CLA signed, no maintainer review yet.
    When merged: point .gitmodules back to upstream, bump the submodule,
    update ARCHITECTURE.md.
-5. M4 candidates: DAP frontend, packaging, SourceResolver (only once a real
+4. M4 candidates: DAP frontend, packaging, SourceResolver (only once a real
    PDB-path mismatch shows up).
 
 ## Environment rules (also in ANDROID_ATTACH_NOTES.md / TEST_CATALOG.md)
