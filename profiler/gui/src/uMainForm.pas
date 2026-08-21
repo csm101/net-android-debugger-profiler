@@ -144,6 +144,8 @@ type
     FStopButton: TdxBarButton;
     FClearButton: TdxBarButton;
     FPaused: Boolean;
+    /// True while the running session is one the live controls can act on.
+    FLiveControllable: Boolean;
     FPendingDialog: string;
     FLog: TcxMemo;
     procedure BuildToolbar;
@@ -2205,7 +2207,8 @@ begin
   end;
   try
     LStatus := FClient.StartSession(LSetup.DeviceSerial, LSetup.Package, LSetup.Mode,
-      LSetup.Engine, LSetup.Callspec, LSetup.DurationSeconds, LSetup.SymbolsDir);
+      LSetup.Engine, LSetup.Callspec, LSetup.DurationSeconds, LSetup.SymbolsDir,
+      LSetup.Assemblies);
   except
     on E: Exception do
     begin
@@ -2215,6 +2218,11 @@ begin
   end;
   FSessionId := LStatus.Id;
   FPaused := False;
+  // Snapshot, Pause and Clear read and rewrite files the collector flushes as it goes,
+  // which only the weaver engine produces. A runtime-provider trace becomes readable
+  // when the session ends, so the buttons stay off rather than failing on the click.
+  FLiveControllable := SameText(LSetup.Mode, 'instrumenting') and
+    not SameText(LSetup.Engine, 'provider');
   SetLength(FMonitorSamples, 0);
   FLog.Lines.Add('session ' + FSessionId + ' started');
   UpdateButtons(LStatus.State);
@@ -2344,9 +2352,9 @@ var
 begin
   LRunning := (FSessionId <> '') and
     ((AState = 'Collecting') or (AState = 'WaitingForApp') or (AState = 'Preparing'));
-  FSnapshotButton.Enabled := LRunning;
-  FPauseButton.Enabled := LRunning;
-  FClearButton.Enabled := LRunning;
+  FSnapshotButton.Enabled := LRunning and FLiveControllable;
+  FPauseButton.Enabled := LRunning and FLiveControllable;
+  FClearButton.Enabled := LRunning and FLiveControllable;
   FStopButton.Enabled := LRunning;
   if not LRunning then
   begin

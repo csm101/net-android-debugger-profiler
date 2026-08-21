@@ -553,7 +553,7 @@ public sealed class ProfilerSession : IAsyncDisposable
             case ProfilingMode.Instrumenting:
             {
                 InstrumentingResult r = Spec.Engine == InstrumentingEngine.Weaver
-                    ? await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false)
+                    ? await AnalyzeWeaverEventsAsync(ct).ConfigureAwait(false)
                     : await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
                 store.WriteInstrumenting(r);
                 Log($"instrumenting analyzed ({Spec.Engine}): enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}" +
@@ -631,6 +631,27 @@ public sealed class ProfilerSession : IAsyncDisposable
     }
 
     // ------------------------------------------------------- live control (U7)
+
+    /// <summary>
+    /// The weaver's events, or an empty result when there are none. A session cleared and
+    /// then stopped before the app produced anything again has nothing to analyze, and an
+    /// empty result is the truth: failing the session would throw away the run instead.
+    /// </summary>
+    private async Task<InstrumentingResult> AnalyzeWeaverEventsAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+        }
+        catch (FileNotFoundException)
+        {
+            _warnings.Add("No events were collected: the session recorded nothing after the last clear, " +
+                          "or no woven method ran. The results are empty, not lost.");
+            Log("instrumenting: no event files to analyze");
+            return new InstrumentingResult(_started ?? DateTimeOffset.UtcNow, TimeSpan.Zero,
+                [], [], [], [], [], [], [], 0, 0, 0, 0);
+        }
+    }
 
     /// <summary>
     /// Refresh the results from what has been collected so far, without stopping the app -

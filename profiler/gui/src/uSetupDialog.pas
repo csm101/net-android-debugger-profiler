@@ -24,6 +24,8 @@ type
     Callspec: string;
     DurationSeconds: Integer;
     SymbolsDir: string;
+    /// Assemblies to weave; empty lets the service infer them from the callspec.
+    Assemblies: TArray<string>;
   end;
 
   TSetupDialog = class(TForm)
@@ -34,6 +36,7 @@ type
     FMode: TcxComboBox;
     FEngine: TcxComboBox;
     FCallspec: TcxTextEdit;
+    FAssemblies: TcxTextEdit;
     FDuration: TcxTextEdit;
     FSymbols: TcxTextEdit;
     FCheckLabel: TcxLabel;
@@ -77,7 +80,7 @@ begin
   BorderStyle := bsDialog;
   Position := poOwnerFormCenter;
   ClientWidth := 560;
-  ClientHeight := 330;
+  ClientHeight := 362;
 
   Label_('Device', 16);
   FDevices := TcxComboBox.Create(Self);
@@ -117,43 +120,49 @@ begin
   FCallspec.SetBounds(140, 144, 400, 24);
   FCallspec.TextHint := 'N:My.App.Namespace or T:My.App.Type';
 
-  Label_('Duration (s)', 176);
+  Label_('Assemblies', 176);
+  FAssemblies := TcxTextEdit.Create(Self);
+  FAssemblies.Parent := Self;
+  FAssemblies.SetBounds(140, 176, 400, 24);
+  FAssemblies.TextHint := 'leave empty to infer from the callspec; otherwise MyApp, MyApp.Core';
+
+  Label_('Duration (s)', 208);
   FDuration := TcxTextEdit.Create(Self);
   FDuration.Parent := Self;
-  FDuration.SetBounds(140, 176, 80, 24);
+  FDuration.SetBounds(140, 208, 80, 24);
   FDuration.Text := '0';
-  with Label_('0 = until you stop it', 176) do
+  with Label_('0 = until you stop it', 208) do
     Left := 232;
 
-  Label_('Build output', 208);
+  Label_('Build output', 240);
   FSymbols := TcxTextEdit.Create(Self);
   FSymbols.Parent := Self;
-  FSymbols.SetBounds(140, 208, 400, 24);
+  FSymbols.SetBounds(140, 240, 400, 24);
   FSymbols.TextHint := 'bin\Debug\net9.0-android35.0 - the pdbs, so results carry source locations';
 
   FCheckLabel := TcxLabel.Create(Self);
   FCheckLabel.Transparent := True;
   FCheckLabel.Parent := Self;
-  FCheckLabel.SetBounds(16, 240, 528, 32);
+  FCheckLabel.SetBounds(16, 272, 528, 32);
   FCheckLabel.Properties.WordWrap := True;
   FCheckLabel.Caption := '';
 
   LCheck := TcxButton.Create(Self);
   LCheck.Parent := Self;
-  LCheck.SetBounds(16, 288, 120, 28);
+  LCheck.SetBounds(16, 320, 120, 28);
   LCheck.Caption := 'Check app';
   LCheck.OnClick := CheckClick;
 
   FOk := TcxButton.Create(Self);
   FOk.Parent := Self;
-  FOk.SetBounds(360, 288, 90, 28);
+  FOk.SetBounds(360, 320, 90, 28);
   FOk.Caption := 'Start';
   FOk.ModalResult := mrOk;
   FOk.Default := True;
 
   LCancel := TcxButton.Create(Self);
   LCancel.Parent := Self;
-  LCancel.SetBounds(456, 288, 90, 28);
+  LCancel.SetBounds(456, 320, 90, 28);
   LCancel.Caption := 'Cancel';
   LCancel.ModalResult := mrCancel;
   LCancel.Cancel := True;
@@ -170,6 +179,7 @@ begin
   // every method makes the app unusable, so the engine refuses an empty one.
   FCallspec.Enabled := LInstrumenting;
   FEngine.Enabled := LInstrumenting;
+  FAssemblies.Enabled := LInstrumenting;
 end;
 
 procedure TSetupDialog.CheckClick(Sender: TObject);
@@ -222,6 +232,12 @@ begin
   if FMode.Text = 'instrumenting' then
   begin
     AResult.Engine := FEngine.Text;
+    // The service infers the assembly from the callspec's first two dotted segments,
+    // which is wrong whenever the namespace is deeper than the assembly name
+    // (N:TestTarget.Workloads lives in TestTarget.dll). Naming them settles it.
+    AResult.Assemblies := Trim(FAssemblies.Text).Split([','], TStringSplitOptions.ExcludeEmpty);
+    for I := 0 to High(AResult.Assemblies) do
+      AResult.Assemblies[I] := Trim(AResult.Assemblies[I]);
     AResult.Callspec := Trim(FCallspec.Text);
   end;
   AResult.DurationSeconds := StrToIntDef(Trim(FDuration.Text), 0);

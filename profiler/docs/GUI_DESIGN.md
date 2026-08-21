@@ -219,6 +219,10 @@ Two honest constraints to surface in the UI, not hide:
 1. **Pause is real only on the weaver engine** (the collector has an `Enabled`
    flag). On the provider engine, pause closes the current segment and resume
    opens a new one; the button should say so.
+1b. **Snapshot, Pause and Clear are greyed out unless the session runs on the weaver
+   engine.** A runtime-provider trace only becomes readable when its session ends, so
+   the service refuses those calls; the toolbar says so by disabling them rather than
+   failing on the click.
 2. **Clear does not remove instrumentation.** Woven IL stays woven and JIT-time
    instrumentation persists for the life of the process, so the overhead remains
    while collection is paused. AQTime behaves the same way on Win32.
@@ -307,6 +311,15 @@ the file name. With no default chosen, the window comes back the way it was clos
 dialogs get exercised without a hand on the mouse (the same reason `--tab=` exists).
 `--export=<file>` writes the report of the session named on the command line and quits,
 so a build script can produce the same spreadsheet the Export button produces.
+
+## Starting a session
+
+The Setup dialog asks for device, package, mode, engine, callspec, **assemblies**,
+duration and build output. The assemblies field is the one that is easy to leave out and
+expensive to get wrong: the service infers the assembly from the first two dotted
+segments of the callspec, which is right when the namespace and the assembly agree and
+wrong when they do not - `N:TestTarget.Workloads` lives in `TestTarget.dll`. Empty means
+"infer"; naming them settles it.
 
 ## Working with the tables
 

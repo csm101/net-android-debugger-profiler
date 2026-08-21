@@ -1,97 +1,82 @@
 # Task resume
 
 ## Current task
-P4, the Delphi GUI, is under way and already runs. gui/ builds headless with
-build-gui.cmd (DevExpress + SynEdit paths taken from the installed IDE) and has:
-the read layer over session.db, the Report grid with captioned columns and
-formatted times, Details (parents/children), a lazy Call Tree with the critical
-path in bold, the control-service client (starts nap.exe serve, owns it), a Setup
-dialog with the prerequisite check, and the live toolbar
-(New session / Snapshot / Pause / Stop) with a log pane.
+P4, the Delphi GUI. It is a working AQTime-shaped application: docking layout,
+light/dark themes, saved layouts, settings, and the panels Report, Details,
+Call tree, Call graph, Source, Memory, Monitor, Summary, Session log, Explorer.
+This round added the toolbar, the tables' working tools and the checks that
+cover them.
 
-Verified by screenshotting the running window, which is how two real defects were
-found:
-- The grid showed negative times. SQLite has no column widths, so FireDAC believed
-  the declared INTEGER and truncated nanosecond totals to 32 bits. Fixed in the
-  schema (v3 declares the wide columns BIGINT) and defensively in the GUI with a
-  FireDAC map rule.
-- A cleared session lost everything afterwards: the collector kept writing to files
-  that had been deleted under it. The control file now carries a generation, and
-  the deployer deletes before bumping it (the other order deletes the fresh files).
-The analyzer now also drops enter/leave pairs whose leave predates the enter and
-reports them as a session warning, instead of letting a negative duration through.
+Landed today (each committed and pushed):
+- Toolbar on `TdxBarManager` (bars Session and View) with glyphs drawn in code
+  and tinted with the theme; the session status moved to a status bar.
+- Live heap chart per snapshot; the Memory panel opens the page that has data.
+- Sampling call tree and its critical path built on `inclusive_cpu` /
+  `exclusive_cpu`: a path through a thread parked in a wait is not a bottleneck.
+- Find panel (Ctrl+F) on every grid; export of the focused table to xlsx, csv,
+  html or text, also available as `--export=<file>`; Ctrl+O and F5.
+- Call graph: right-click walks back, double-click opens the code, arrows have
+  heads, and a cut fan says how many boxes it dropped.
+- Clear on the toolbar, and Snapshot/Pause/Clear greyed out unless the session
+  runs on the weaver engine.
+- gui/tests/smoke.ps1: starts the real window once per panel and per dialog
+  against sessions of each mode and fails on a startup error log.
+- gui/tests/ControlTests.dpr: drives a real device session through the same
+  client the GUI uses.
+
+## What the new checks found (all fixed)
+- A run that died before reading its settings wrote an empty font name and a size
+  of zero; the next run applied them and died the same way. Values are corrected
+  on read and on write now.
+- The Setup dialog could not name the assemblies to weave, and inference from the
+  callspec is wrong whenever the namespace is deeper than the assembly
+  (`N:TestTarget.Workloads` lives in `TestTarget.dll`). There is a field for it.
+- A weaver session cleared and then stopped before new events arrived ended
+  Failed with "No .napw event files". An empty result is the truth: the session
+  now ends Ready with a warning (ProfilerSession.AnalyzeWeaverEventsAsync).
+- Setting the height of a dock panel that had been wrapped into a tab container
+  did nothing, so every call view opened as a 100px sliver.
 
 ## Next
-Editor panel with SynEdit, Summary, Monitor, memory views, then P5 packaging
-(bundle dotnet-dsrouter, register script, versioning, SynEdit in the notices).
+P5 packaging: bundle dotnet-dsrouter with an optional global-tool fallback, a
+register script that does not depend on repo paths, versioning across tool and
+schema, SynEdit in THIRD-PARTY-NOTICES, and an AOT/obfuscation spike (TraceEvent's
+reflection is the likely blocker).
 
 ## Substep
-Waiting on the full .NET suite after the schema change; the Delphi side builds and
-its store tests pass against real sessions.
+Waiting on the full .NET suite after the ProfilerSession change; the Delphi side
+builds, StoreTests and ControlTests pass, smoke.ps1 passes on three sessions.
 
 ## Files in focus
-src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,
-Sessions/ProfilerSession.cs, src/NetAndroidProfiler.Weave/Program.cs,
-src/NetAndroidProfiler.Mcp/ProfilerTools.cs,
-tests/.../Device/ReferenceAppTests.cs (Build_time_weaving_records_async_bodies_on_the reference application),
-tests/.../Fast/WeaverTests.cs.
+gui/src/uMainForm.pas, uGlyphs.pas, uSetupDialog.pas, uControlClient.pas,
+uSessionStore.pas, uSettings.pas, uLayouts.pas;
+gui/tests/{smoke.ps1, ControlTests.dpr, StoreTests.dpr};
+src/NetAndroidProfiler.Core/Sessions/ProfilerSession.cs.
 
 ## Next action if interrupted right now
-Read the test-runner report; fix anything red, then commit and push. After that
-U8 keeps only its iterator half (`yield return` bodies are not woven).
+Read the suite log at scratchpad/suite-gui2.log; if green, start P5.
+
+## How to run what exists
+    gui\build-gui.cmd                       builds NapGui.exe
+    gui\tests\build-tests.cmd               builds StoreTests.exe and ControlTests.exe
+    gui\StoreTests.exe <session.db> [...]   data-layer checks
+    gui\ControlTests.exe <nap.exe> [serial] device path, end to end
+    gui\tests\smoke.ps1 -Sessions @(...)    every panel and dialog of the real window
 
 ## Traps found here
-- Evidence collected before a fix stays in the docs and looks authoritative.
-  Re-test a "known" blocker before investigating it: two unrelated defects
-  produced exactly the symptom U8 attributed to woven async IL.
-- V7 rebuild + install is ~4 min; the woven build is left installed on
-  emulator-5556 with its map in the V7 bin folder.
-
-## Done earlier (each committed and pushed)
-1. V7 weaver with a narrow callspec: green.
-2. MCP end-to-end tests over stdio (tool surface, read-only tools, error paths).
-3. U22 build-time weaving: nap-weave + build/NetAndroidProfiler.Weaving.targets
-   + SessionSpec.WeaveMapPath, verified on TestTarget and on the reference application in its
-   shipped configuration (embedded assemblies, no csproj edit).
-4. P2 memory: multi-snapshot sessions, ResultStore.HeapDiff, MCP heap_diff.
-5. U15 closed: the sampler folds tiny leaf methods into their caller.
-6. Weaver: property accessors skipped by default; async stubs flagged.
-7. Weaver allocation tracking (net9 path finally has memory data).
-8. U8: async state-machine weaving implemented but OFF by default - it stops a
-   real net9 app from starting (evidence and next steps in U8).
-9. U6 closed: 200k-node call tree stays interactive (performance test).
-10. Shipped MSBuild targets guarded by tests (an XML comment with '--' had
-    broken a the reference application build).
-11. Build-time weaving bakes NAP_PROFILER_OUT into the app: injecting it on the
-    device creates files/.__override__/ and an embedded-assembly app then
-    refuses to start.
-
-## Next action if interrupted right now
-Read the test-runner report on the fast suite; if green, commit and push the
-notices file, its test and the doc wiring. Then pick from the queue.
+- Evidence collected before a fix stays in the docs and looks authoritative:
+  re-test a "known" blocker before investigating it.
+- A GUI that writes its preferences on exit can poison its own next start; treat
+  values read from disk as untrusted.
+- `TScrollBox` does not publish `OnKeyDown`, and a `TPaintBox` cannot take focus:
+  keyboard navigation inside a painted panel needs the form, not the control.
+- Filling a `TdxBarCombo` raises the same change event a click does, while half
+  the window does not exist yet.
 
 ## Queue (highest value first)
-- When the GUI starts: add SynEdit (MPL-1.1, used unmodified) to
-  THIRD-PARTY-NOTICES.txt; the dependency policy in CLAUDE.md now allows it.
-- U8 diagnosis: why does a woven async state machine stop a net9 app from
-  starting? (single-method weave, IL dump, verifier).
-- Iterator methods (yield return) instrumented like async bodies.
-- U13: type names for allocations of types loaded before the session.
+- P5 packaging (above).
+- U10: physical devices - never tried, and `adb reverse` differs from the emulator.
 - U4b: suspend choreography against the reference application's watchdogs.
-- P4: Delphi GUI over session.db.
-
-## What works
-Sampling, memory (allocations, snapshots, growth diff), instrumenting through
-the runtime provider (net10) or the weaver (any runtime; on-device or
-build-time), all over MCP. Fast suite 36 passed / 1 skipped.
-
-## Traps (all handled in code, keep in mind when debugging)
-- Three different causes produce "no woven method executed": stale task record
-  (use am start -S), stale files/.__override__ after switching deployment
-  shape, and injecting an override environment file into an embedded-assembly
-  app.
-- Stale .pdb next to a woven assembly silently disables it.
-- adb exec-out must drain stdout before waiting for exit.
-- The collector's static ctor must not touch JNI.
-- Wide callspecs make startup unusably slow.
-- build/tools holds a published copy of nap-weave: republish after changes.
+- U19: symbol-server lookup for Desymbolicate.
+- The MCP device tests still unchecked in TEST_CATALOG (profile_run,
+  profile_start/profile_stop, profile_annotate_source).

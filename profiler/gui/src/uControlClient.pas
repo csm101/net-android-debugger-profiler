@@ -69,7 +69,8 @@ type
     /// Blocking problems for a package in a given mode; empty means "ready".
     function CheckApp(const ASerial, APackage, AMode: string): TArray<string>;
     function StartSession(const ASerial, APackage, AMode, AEngine, ACallspec: string;
-      ADurationSeconds: Integer; const ASymbolsDir: string = ''): TSessionStatus;
+      ADurationSeconds: Integer; const ASymbolsDir: string = '';
+      const AAssemblies: TArray<string> = nil): TSessionStatus;
     function Status(const AId: string): TSessionStatus;
     function Counters(const AId: string): TSessionCounters;
     function Snapshot(const AId: string): Integer;
@@ -334,10 +335,12 @@ begin
 end;
 
 function TControlClient.StartSession(const ASerial, APackage, AMode, AEngine, ACallspec: string;
-  ADurationSeconds: Integer; const ASymbolsDir: string): TSessionStatus;
+  ADurationSeconds: Integer; const ASymbolsDir: string; const AAssemblies: TArray<string>): TSessionStatus;
 var
   LBody: TJSONObject;
   LValue: TJSONValue;
+  LArray: TJSONArray;
+  I: Integer;
 begin
   LBody := TJSONObject.Create;
   try
@@ -352,6 +355,16 @@ begin
       LBody.AddPair('durationSeconds', TJSONNumber.Create(ADurationSeconds));
     if ASymbolsDir <> '' then
       LBody.AddPair('symbolsDir', ASymbolsDir);
+    // Which assemblies to weave. Left out, the service infers them from the callspec,
+    // which is right when the namespace and the assembly share a name and wrong when
+    // they do not (N:TestTarget.Workloads lives in TestTarget.dll).
+    if Length(AAssemblies) > 0 then
+    begin
+      LArray := TJSONArray.Create;
+      for I := 0 to High(AAssemblies) do
+        LArray.Add(AAssemblies[I]);
+      LBody.AddPair('weaveAssemblies', LArray);
+    end;
     LValue := Post('sessions', LBody.ToJSON);
   finally
     LBody.Free;

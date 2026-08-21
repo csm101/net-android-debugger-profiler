@@ -119,6 +119,17 @@ longer matches the schema - all happen while the window is being built.
 - [x] `--export=<file>` writes a non-empty csv and xlsx for each of them
 - [ ] Automated in CI: today it is run by hand, like the data layer checks
 
+## H5. GUI control path (gui/tests/ControlTests.dpr, Delphi; needs a device)
+Drives a real session through the client the GUI uses: nap.exe serve, device list,
+prerequisite check, start, counters, the live controls, stop, and the database opened by
+the GUI's own data layer.
+- [x] A sampling session runs and its database opens as a sampling session - `ControlTests`
+- [x] Snapshot is refused on the provider engine, with the reason - `ControlTests`
+- [x] Snapshot, pause, resume and clear all answer on the weaver engine - `ControlTests`
+- [x] A session cleared and stopped before new events arrive ends Ready with an empty
+  result and a warning, not Failed - `ControlTests`
+- [ ] Automated in CI: it needs a device, like the .NET device suite
+
 ## H2. Control service (Fast/ControlServiceTests, no device)
 - [x] /health reports version, sessions root and port - `Health_reports_the_version_and_where_sessions_live`
 - [x] An empty sessions root lists nothing - `An_empty_sessions_root_lists_no_sessions`
