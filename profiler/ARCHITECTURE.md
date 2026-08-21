@@ -65,6 +65,9 @@ Profiling modes:
 | Core/Weaving (P3, in progress) | CecilWeaver (Mono.Cecil): Enter/try/finally/Leave injection into filtered methods (WeaveFilter, callspec-like grammar), id-map sidecar; WeaveAnalyzer parses the collector's .napw event files into the same InstrumentingResult as the runtime provider. Compiler-generated state machines (async methods, iterators) are woven too, reported as "<method> (async body)" / "(iterator body)" |
 | Collector (NetAndroidProfiler.Collector, netstandard2.0, zero deps) | runtime target of woven calls; disabled unless NAP_PROFILER_OUT is set; per-thread .napw event files, 1 s flush |
 | Mcp/ | stdio MCP server over ProfilerSession (P1, next) |
+| src/NetAndroidProfiler.Cli (`nap`) | Non-MCP entry point to Core: `nap serve` is the local control service the GUI drives (HttpListener + System.Text.Json, loopback only), plus one-shot commands. Endpoints in docs/CONTROL_SERVICE.md |
+| Core/Sessions/SessionRegistry | Sessions created by one process, "the current session", results resolution. Shared by the MCP server and the control service |
+| Core/Sessions/SessionSpecFactory | The string-shaped input every frontend receives ("heap", "weaver", callspec) validated into a SessionSpec, so frontends cannot drift |
 | gui/ (P4) | Delphi + DevExpress VCL frontend (AQTime-style), reads SQLite, drives sessions via the local control service of U7. Panel-by-panel design, metric mapping and the AQTime features we do and do not take: docs/GUI_DESIGN.md |
 
 ## Instrumenting engines

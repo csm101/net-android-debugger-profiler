@@ -204,9 +204,11 @@ segment selector ("all segments" by default).
 
 - Call Graph: worth drawing at all, or do the two tree views plus the critical
   path cover it? Decide after the trees are usable.
-- Where does the GUI get sources for the Editor panel - the build machine's paths
-  as recorded in the pdb, or a configured source root (the reference application builds on Jenkins)?
-  Related to the symbol-server work in U19.
+- (decided) Sources for the Editor panel: the user points the session at the C#
+  project folder, and the tool assumes it is the tree the app was built from. The
+  audience is the developer working on that code, not someone profiling an app
+  pulled from a store, so asking is legitimate and guessing is not. The pdb paths
+  are the fallback when nothing was configured.
 - Critical path on a sampling tree: "longest" by inclusive samples is the obvious
   reading, but a path through a blocked thread is not a bottleneck. Compute it on
   the CPU-only columns by default.

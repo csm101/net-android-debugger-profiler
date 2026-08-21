@@ -4,6 +4,7 @@
     <Project Path="src/NetAndroidProfiler.Mcp/NetAndroidProfiler.Mcp.csproj" />
     <Project Path="src/NetAndroidProfiler.Collector/NetAndroidProfiler.Collector.csproj" />
     <Project Path="src/NetAndroidProfiler.Weave/NetAndroidProfiler.Weave.csproj" />
+    <Project Path="src/NetAndroidProfiler.Cli/NetAndroidProfiler.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj" />

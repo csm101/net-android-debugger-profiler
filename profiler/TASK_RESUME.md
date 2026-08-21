@@ -1,26 +1,27 @@
 # Task resume
 
 ## Current task
-P4 groundwork: U7 decided and written (pause / resume / snapshot / clear on top
-of start/stop, `nap serve` on loopback, results read straight from session.db),
-and docs/GUI_DESIGN.md written against the official AQTime documentation.
+`nap serve` implemented: the local control service the Delphi GUI will drive
+(U7), HttpListener + System.Text.Json on loopback, no web framework. Verified end
+to end against real devices - a sampling session started over HTTP produced 1338
+samples and a session.db in the sessions root.
 
-What the AQTime reading established: its Report panel is one row per routine with
-Sample Count / Time / % Samples for sampling and Hit Count / Time / Time with
-Children / % for performance; the Details panel has a Calls page (Parents and
-Children) and a Lines page; Call Tree, Call Graph, Editor, Summary and Monitor
-are separate docked panels; and its live controls are exactly Get Results,
-Clear Results and Enable/Disable Profiling - which is where pause/resume/snapshot/
-clear come from. DevExpress sources and agent-oriented docs are at
-C:\Athens\DevExpress (DOCS/ per library, Demos/VCL first).
+Core grew two frontend-neutral pieces the MCP server now sits on as well:
+SessionRegistry (sessions of one process, "current session", results resolution)
+and SessionSpecFactory (the string-shaped input every frontend gets, validated
+once). That is what stops the two frontends drifting on what "heap" or "weaver"
+means.
 
-Two honest constraints the GUI must show rather than hide: pause is real only on
-the weaver engine (the provider engine closes and reopens a segment), and clearing
-results does not remove instrumentation, so the overhead stays.
+pause / resume / snapshot / clear answer 501 with what is missing (session
+segments in Core, and the device-side toggle of the collector's Enabled flag for
+a real pause). The route exists so the GUI can be written against the final shape.
+
+Windows quirk pinned by a test: a POST without Content-Length gets 411 from
+HTTP.SYS before the service sees it (`curl -X POST` without data; use -d '').
 
 ## Substep
-Design committed. No GUI code yet: P4 starts with the shell (docking + ribbon),
-the Setup screen and the Report grid over sample_stat/timing_stat.
+Full suite green: 71 tests, 68 passed, 3 skipped. Docs written
+(docs/CONTROL_SERVICE.md, U7, ARCHITECTURE, TEST_CATALOG, README, USAGE).
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

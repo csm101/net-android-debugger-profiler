@@ -54,6 +54,7 @@ public class ThirdPartyNoticesTests
         {
             ("NetAndroidProfiler.Mcp", "NetAndroidProfiler.Mcp"),
             ("NetAndroidProfiler.Weave", "nap-weave"),
+            ("NetAndroidProfiler.Cli", "nap"),
         })
             missing.AddRange(DistributedPackages(project, assembly).Where(p => !IsAcknowledged(p, notices)));
 

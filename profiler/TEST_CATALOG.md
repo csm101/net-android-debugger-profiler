@@ -100,6 +100,18 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] profile_start / profile_stop round trip
 - [ ] profile_annotate_source through MCP on a prepared session
 
+## H2. Control service (Fast/ControlServiceTests, no device)
+- [x] /health reports version, sessions root and port - `Health_reports_the_version_and_where_sessions_live`
+- [x] An empty sessions root lists nothing - `An_empty_sessions_root_lists_no_sessions`
+- [x] Unknown route answers 404 naming the path - `An_unknown_route_is_a_404_naming_what_was_asked`
+- [x] A spec Core rejects becomes 400 with the engine's own guidance - `A_spec_the_engine_rejects_comes_back_as_400_with_the_guidance`, `Instrumenting_without_a_callspec_is_refused_before_touching_a_device`
+- [x] Malformed JSON is 400, not 500 - `Malformed_json_is_a_400_not_a_500`
+- [x] A session this service did not start cannot be controlled - `A_session_this_service_did_not_start_cannot_be_controlled`
+- [x] pause/resume/snapshot/clear answer 501 saying what is missing - `The_live_control_verbs_answer_501_until_the_engine_supports_them`
+- [x] /shutdown signals the host - `Shutdown_signals_the_host_to_stop`
+- [x] A POST without Content-Length is rejected by the Windows HTTP stack (documented, not a service bug) - `A_post_without_a_content_length_is_rejected_by_the_http_stack`
+- [ ] A session driven end to end over HTTP (device test; done by hand 2026-08-21: 1338 samples)
+
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
 - [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (on-device weaving; opt-in with NAP_REFAPP_ONDEVICE=1 and a fast-deployment build, since the reference application ships with embedded assemblies)

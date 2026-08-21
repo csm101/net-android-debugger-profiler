@@ -66,10 +66,19 @@ the life of the process - so the overhead stays while collection is paused. AQTi
 has the same property on Win32.
 
 The GUI side of this contract is designed in docs/GUI_DESIGN.md.
-Open: the wire shapes themselves (`POST /sessions`, `POST /sessions/{id}/pause`,
-`.../resume`, `.../snapshot`, `.../clear`, `.../stop`, `GET /devices`), and
-whether segments become rows in the existing tables with a segment id or separate
-databases merged on read.
+
+Implemented 2026-08-21 (`nap serve`, src/NetAndroidProfiler.Cli, documented in
+docs/CONTROL_SERVICE.md): health, devices, app check, session list, start, status,
+stop and shutdown, verified end to end - a sampling session started over HTTP
+produced 1338 samples and a session.db where the GUI will read it. The four live
+verbs answer 501 with what is missing. Core grew `SessionRegistry` and
+`SessionSpecFactory` for this, and the MCP frontend now sits on both, so the two
+frontends cannot drift on what "heap" or "weaver" means.
+
+Open: session segments - whether they become rows in the existing tables with a
+segment id or separate databases merged on read - and the device-side channel for
+toggling the collector's Enabled flag, which is what makes pause real on the
+weaver engine.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

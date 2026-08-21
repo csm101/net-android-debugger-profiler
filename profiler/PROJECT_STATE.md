@@ -128,8 +128,9 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Editor / Summary / Monitor panels, and its Get Results / Clear Results /
   Enable-Disable Profiling actions, which became the pause/resume/snapshot/clear
   contract of U7).
-- P5 - Packaging/registration (register-mcp pattern from the debugger
-  project).
+- P5 - Packaging/registration (register-mcp pattern from the debugger project),
+  now also covering `nap` (control service + one-shot commands) and the decision
+  to ship dotnet-dsrouter inside the package instead of requiring the global tool.
 
 ## MCP tool surface (P1, implemented)
 

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      nap: the non-MCP entry point to Core. `nap serve` is the local control service the
+      Delphi GUI drives (KNOWN_UNKNOWNS U7); the one-shot commands are for scripts and CI.
+      Deliberately built on HttpListener and System.Text.Json: no web framework, nothing
+      to redistribute beyond what Core already needs.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NetAndroidProfiler.Cli</RootNamespace>
+    <AssemblyName>nap</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
+  </ItemGroup>
+
+</Project>

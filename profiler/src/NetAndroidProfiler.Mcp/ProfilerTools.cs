@@ -374,42 +374,19 @@ public sealed class ProfilerTools(SessionHost host)
         return s.FindMethodId(method) ?? throw new McpException($"No method matches '{method}'.");
     }
 
+    /// <summary>Translate the tool arguments into a spec; Core owns the aliases and the validation.</summary>
     private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512)
     {
-        if (string.IsNullOrWhiteSpace(deviceSerial)) throw new McpException("deviceSerial is required (see list_devices).");
-        if (string.IsNullOrWhiteSpace(packageName)) throw new McpException("packageName is required.");
-        var pm = mode.Trim().ToLowerInvariant() switch
+        try
         {
-            "sampling" or "cpu" => ProfilingMode.Sampling,
-            "instrumenting" or "instrument" or "tracing" => ProfilingMode.Instrumenting,
-            "heap" or "memory" or "gcdump" => ProfilingMode.HeapSnapshot,
-            _ => throw new McpException($"Unknown mode '{mode}': use sampling | instrumenting | heap."),
-        };
-        var lm = launch.Trim().ToLowerInvariant() switch
+            return SessionSpecFactory.Build(deviceSerial, packageName, mode, launch, durationSeconds, callspec,
+                trackAllocations, suspendOnStart, name, keepAppRunning, engine,
+                SessionSpecFactory.SplitList(weaveAssemblies), SessionSpecFactory.SplitList(weaveReferenceDirs),
+                weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb);
+        }
+        catch (ProfilerException e)
         {
-            "restart" => LaunchMode.Restart,
-            "attach" => LaunchMode.Attach,
-            _ => throw new McpException($"Unknown launch '{launch}': use restart | attach."),
-        };
-        if (pm == ProfilingMode.Instrumenting && string.IsNullOrWhiteSpace(callspec) && string.IsNullOrWhiteSpace(weaveMapPath))
-            throw new McpException("Instrumenting needs a callspec (e.g. N:My.App.Namespace). Instrumenting everything is not supported: it makes the app unusably slow.");
-        var eng = engine.Trim().ToLowerInvariant() switch
-        {
-            "provider" or "runtime" or "" => InstrumentingEngine.RuntimeProvider,
-            "weaver" or "cecil" or "il" => InstrumentingEngine.Weaver,
-            _ => throw new McpException($"Unknown engine '{engine}': use provider | weaver."),
-        };
-        var asms = string.IsNullOrWhiteSpace(weaveAssemblies) ? null
-            : weaveAssemblies.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-        return new SessionSpec(deviceSerial.Trim(), packageName.Trim(), pm, lm,
-            durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
-            suspendOnStart, callspec, trackAllocations, name, keepAppRunning, eng, asms,
-            string.IsNullOrWhiteSpace(weaveReferenceDirs) ? null : weaveReferenceDirs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
-            string.IsNullOrWhiteSpace(weaveMapPath) ? null : weaveMapPath.Trim(),
-            Math.Max(1, snapshots),
-            TimeSpan.FromSeconds(Math.Max(1, snapshotIntervalSeconds)),
-            weavePropertyAccessors,
-            weaveAsyncBodies,
-            maxTraceMb > 0 ? maxTraceMb * 1024L * 1024L : null);
+            throw new McpException(e.Message);
+        }
     }
 }
