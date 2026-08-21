@@ -22,6 +22,7 @@ uses
   cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
+  cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
   dxDockControl, dxDockPanel,
@@ -35,21 +36,21 @@ type
   private
     FStore: TSessionStore;
     FToolbar: TPanel;
-    FOpenButton: TButton;
-    FRefreshButton: TButton;
-    FInfoLabel: TLabel;
-    FUnits: TComboBox;
-    FThemeBox: TComboBox;
+    FOpenButton: TcxButton;
+    FRefreshButton: TcxButton;
+    FInfoLabel: TcxLabel;
+    FUnits: TcxComboBox;
+    FThemeBox: TcxComboBox;
     FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
-    FSummary: TMemo;
+    FSummary: TcxMemo;
     FMonitorTab: TTabSheet;
     FMonitor: TPaintBox;
-    FMonitorLabel: TLabel;
+    FMonitorLabel: TcxLabel;
     FMonitorSamples: TArray<Int64>;
     FMonitorLast: TSessionCounters;
     FMemoryTab: TTabSheet;
-    FMemoryPages: TPageControl;
+    FMemoryPages: TcxPageControl;
     FAllocTypeGrid: TcxGrid;
     FAllocTypeView: TcxGridDBTableView;
     FAllocTypeQuery: TFDQuery;
@@ -62,9 +63,9 @@ type
     FHeapView: TcxGridDBTableView;
     FHeapQuery: TFDQuery;
     FHeapSource: TDataSource;
-    FHeapFrom: TComboBox;
-    FHeapTo: TComboBox;
-    FHeapGrowth: TCheckBox;
+    FHeapFrom: TcxComboBox;
+    FHeapTo: TcxComboBox;
+    FHeapGrowth: TcxCheckBox;
     FExplorer: TcxTreeList;
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
@@ -95,7 +96,7 @@ type
     FGraphBoxIds: TArray<Integer>;
     FEditorTab: TTabSheet;
     FEditor: TSynEdit;
-    FEditorHeader: TLabel;
+    FEditorHeader: TcxLabel;
     FEditorHighlighter: TSynCSSyn;
     FEditorFile: string;
     FEditorStart: Integer;
@@ -124,12 +125,12 @@ type
     FClient: TControlClient;
     FSessionId: string;
     FPoll: TTimer;
-    FStartButton: TButton;
-    FSnapshotButton: TButton;
-    FPauseButton: TButton;
-    FStopButton: TButton;
+    FStartButton: TcxButton;
+    FSnapshotButton: TcxButton;
+    FPauseButton: TcxButton;
+    FStopButton: TcxButton;
     FPaused: Boolean;
-    FLog: TMemo;
+    FLog: TcxMemo;
     procedure BuildToolbar;
     procedure BuildExplorer;
     function AddDockPanel(const ACaption: string; ATarget: TdxCustomDockControl;
@@ -278,12 +279,12 @@ begin
   BuildMonitorTab;
   BuildSummaryTab;
 
-  FLog := TMemo.Create(Self);
+  FLog := TcxMemo.Create(Self);
   FLog.Parent := FLogPanel;
   FLog.Align := alClient;
-  FLog.ScrollBars := ssVertical;
-  FLog.ReadOnly := True;
-  FLog.Font.Name := 'Consolas';
+  FLog.Properties.ScrollBars := ssVertical;
+  FLog.Properties.ReadOnly := True;
+  FLog.Style.Font.Name := 'Consolas';
 
   // After the panels have their content: the saved layout moves them around.
   LoadLayout;
@@ -352,7 +353,7 @@ begin
   FToolbar.Height := 40;
   FToolbar.BevelOuter := bvNone;
 
-  FOpenButton := TButton.Create(Self);
+  FOpenButton := TcxButton.Create(Self);
   FOpenButton.Parent := FToolbar;
   FOpenButton.Left := 8;
   FOpenButton.Top := 8;
@@ -360,7 +361,7 @@ begin
   FOpenButton.Caption := 'Open session...';
   FOpenButton.OnClick := OpenButtonClick;
 
-  FRefreshButton := TButton.Create(Self);
+  FRefreshButton := TcxButton.Create(Self);
   FRefreshButton.Parent := FToolbar;
   FRefreshButton.Left := 126;
   FRefreshButton.Top := 8;
@@ -368,13 +369,13 @@ begin
   FRefreshButton.Caption := 'Refresh';
   FRefreshButton.OnClick := RefreshButtonClick;
 
-  FStartButton := TButton.Create(Self);
+  FStartButton := TcxButton.Create(Self);
   FStartButton.Parent := FToolbar;
   FStartButton.SetBounds(232, 8, 110, 25);
   FStartButton.Caption := 'New session...';
   FStartButton.OnClick := StartButtonClick;
 
-  FSnapshotButton := TButton.Create(Self);
+  FSnapshotButton := TcxButton.Create(Self);
   FSnapshotButton.Parent := FToolbar;
   FSnapshotButton.SetBounds(350, 8, 90, 25);
   FSnapshotButton.Caption := 'Snapshot';
@@ -382,7 +383,7 @@ begin
   FSnapshotButton.ShowHint := True;
   FSnapshotButton.OnClick := SnapshotButtonClick;
 
-  FPauseButton := TButton.Create(Self);
+  FPauseButton := TcxButton.Create(Self);
   FPauseButton.Parent := FToolbar;
   FPauseButton.SetBounds(448, 8, 90, 25);
   FPauseButton.Caption := 'Pause';
@@ -390,34 +391,34 @@ begin
   FPauseButton.ShowHint := True;
   FPauseButton.OnClick := PauseButtonClick;
 
-  FStopButton := TButton.Create(Self);
+  FStopButton := TcxButton.Create(Self);
   FStopButton.Parent := FToolbar;
   FStopButton.SetBounds(546, 8, 90, 25);
   FStopButton.Caption := 'Stop';
   FStopButton.OnClick := StopButtonClick;
 
-  FThemeBox := TComboBox.Create(Self);
+  FThemeBox := TcxComboBox.Create(Self);
   FThemeBox.Parent := FToolbar;
   FThemeBox.SetBounds(646, 9, 90, 24);
-  FThemeBox.Style := csDropDownList;
-  FThemeBox.Items.Add(ThemeName(atLight));
-  FThemeBox.Items.Add(ThemeName(atDark));
+  FThemeBox.Properties.DropDownListStyle := lsFixedList;
+  FThemeBox.Properties.Items.Add(ThemeName(atLight));
+  FThemeBox.Properties.Items.Add(ThemeName(atDark));
   FThemeBox.ItemIndex := 0;
-  FThemeBox.OnChange := ThemeChanged;
+  FThemeBox.Properties.OnChange := ThemeChanged;
 
-  FUnits := TComboBox.Create(Self);
+  FUnits := TcxComboBox.Create(Self);
   FUnits.Parent := FToolbar;
   FUnits.SetBounds(744, 9, 120, 24);
-  FUnits.Style := csDropDownList;
-  FUnits.Items.Add(TimeUnitName(tuAuto));
-  FUnits.Items.Add(TimeUnitName(tuSeconds));
-  FUnits.Items.Add(TimeUnitName(tuMilliseconds));
-  FUnits.Items.Add(TimeUnitName(tuMicroseconds));
-  FUnits.Items.Add(TimeUnitName(tuNanoseconds));
+  FUnits.Properties.DropDownListStyle := lsFixedList;
+  FUnits.Properties.Items.Add(TimeUnitName(tuAuto));
+  FUnits.Properties.Items.Add(TimeUnitName(tuSeconds));
+  FUnits.Properties.Items.Add(TimeUnitName(tuMilliseconds));
+  FUnits.Properties.Items.Add(TimeUnitName(tuMicroseconds));
+  FUnits.Properties.Items.Add(TimeUnitName(tuNanoseconds));
   FUnits.ItemIndex := 0;
-  FUnits.OnChange := UnitsChanged;
+  FUnits.Properties.OnChange := UnitsChanged;
 
-  FInfoLabel := TLabel.Create(Self);
+  FInfoLabel := TcxLabel.Create(Self);
   FInfoLabel.Parent := FToolbar;
   FInfoLabel.Left := 876;
   FInfoLabel.Top := 12;
@@ -618,7 +619,7 @@ function TMainForm.BuildNeighbourGrid(AParent: TWinControl; AAlign: TAlign; cons
   out AView: TcxGridTableView): TcxGrid;
 var
   LPanel: TPanel;
-  LLabel: TLabel;
+  LLabel: TcxLabel;
   LGrid: TcxGrid;
   LLevel: TcxGridLevel;
   LPie: TPaintBox;
@@ -628,11 +629,11 @@ begin
   LPanel.Align := AAlign;
   LPanel.BevelOuter := bvNone;
 
-  LLabel := TLabel.Create(Self);
+  LLabel := TcxLabel.Create(Self);
   LLabel.Parent := LPanel;
   LLabel.Align := alTop;
   LLabel.Caption := '  ' + ACaption;
-  LLabel.Font.Style := [fsBold];
+  LLabel.Style.Font.Style := [fsBold];
 
   LPie := TPaintBox.Create(Self);
   LPie.Parent := LPanel;
@@ -864,7 +865,7 @@ end;
 
 procedure TMainForm.BuildEditorTab;
 begin
-  FEditorHeader := TLabel.Create(Self);
+  FEditorHeader := TcxLabel.Create(Self);
   FEditorHeader.Parent := FSourcePanel;
   FEditorHeader.Align := alTop;
   FEditorHeader.Caption := ' Pick a method in the Report to see its source.';
@@ -960,25 +961,25 @@ end;
 /// allocated it, and what is still alive (with the growth between two snapshots).
 procedure TMainForm.BuildMemoryTab;
 var
-  LByType, LBySite, LHeap: TTabSheet;
+  LByType, LBySite, LHeap: TcxTabSheet;
   LHeapTop: TPanel;
-  LLabel: TLabel;
+  LLabel: TcxLabel;
 begin
-  FMemoryPages := TPageControl.Create(Self);
+  FMemoryPages := TcxPageControl.Create(Self);
   FMemoryPages.Parent := FMemoryPanel;
   FMemoryPages.Align := alClient;
 
-  LByType := TTabSheet.Create(Self);
+  LByType := TcxTabSheet.Create(Self);
   LByType.PageControl := FMemoryPages;
   LByType.Caption := 'Allocations by type';
   FAllocTypeGrid := BuildBoundGrid(LByType, FAllocTypeView, FAllocTypeSource);
 
-  LBySite := TTabSheet.Create(Self);
+  LBySite := TcxTabSheet.Create(Self);
   LBySite.PageControl := FMemoryPages;
   LBySite.Caption := 'Allocations by method';
   FAllocSiteGrid := BuildBoundGrid(LBySite, FAllocSiteView, FAllocSiteSource);
 
-  LHeap := TTabSheet.Create(Self);
+  LHeap := TcxTabSheet.Create(Self);
   LHeap.PageControl := FMemoryPages;
   LHeap.Caption := 'Live heap';
 
@@ -988,28 +989,28 @@ begin
   LHeapTop.Height := 36;
   LHeapTop.BevelOuter := bvNone;
 
-  LLabel := TLabel.Create(Self);
+  LLabel := TcxLabel.Create(Self);
   LLabel.Parent := LHeapTop;
   LLabel.SetBounds(8, 10, 60, 16);
   LLabel.Caption := 'Snapshot';
 
-  FHeapFrom := TComboBox.Create(Self);
+  FHeapFrom := TcxComboBox.Create(Self);
   FHeapFrom.Parent := LHeapTop;
   FHeapFrom.SetBounds(70, 6, 80, 24);
-  FHeapFrom.Style := csDropDownList;
-  FHeapFrom.OnChange := HeapSelectionChanged;
+  FHeapFrom.Properties.DropDownListStyle := lsFixedList;
+  FHeapFrom.Properties.OnChange := HeapSelectionChanged;
 
-  FHeapGrowth := TCheckBox.Create(Self);
+  FHeapGrowth := TcxCheckBox.Create(Self);
   FHeapGrowth.Parent := LHeapTop;
   FHeapGrowth.SetBounds(160, 8, 140, 20);
   FHeapGrowth.Caption := 'growth against';
-  FHeapGrowth.OnClick := HeapSelectionChanged;
+  FHeapGrowth.Properties.OnChange := HeapSelectionChanged;
 
-  FHeapTo := TComboBox.Create(Self);
+  FHeapTo := TcxComboBox.Create(Self);
   FHeapTo.Parent := LHeapTop;
   FHeapTo.SetBounds(304, 6, 80, 24);
-  FHeapTo.Style := csDropDownList;
-  FHeapTo.OnChange := HeapSelectionChanged;
+  FHeapTo.Properties.DropDownListStyle := lsFixedList;
+  FHeapTo.Properties.OnChange := HeapSelectionChanged;
 
   FHeapGrid := BuildBoundGrid(LHeap, FHeapView, FHeapSource);
 end;
@@ -1028,8 +1029,8 @@ begin
   FHeapSource.DataSet := nil;
   FreeAndNil(FHeapQuery);
   FHeapView.ClearItems;
-  FHeapFrom.Items.Clear;
-  FHeapTo.Items.Clear;
+  FHeapFrom.Properties.Items.Clear;
+  FHeapTo.Properties.Items.Clear;
   if not FStore.IsOpen then
     Exit;
 
@@ -1051,13 +1052,13 @@ begin
   LIds := FStore.HeapSnapshotIds;
   for I := 0 to High(LIds) do
   begin
-    FHeapFrom.Items.Add(IntToStr(LIds[I]));
-    FHeapTo.Items.Add(IntToStr(LIds[I]));
+    FHeapFrom.Properties.Items.Add(IntToStr(LIds[I]));
+    FHeapTo.Properties.Items.Add(IntToStr(LIds[I]));
   end;
-  if FHeapFrom.Items.Count > 0 then
+  if FHeapFrom.Properties.Items.Count > 0 then
   begin
     FHeapFrom.ItemIndex := 0;
-    FHeapTo.ItemIndex := FHeapTo.Items.Count - 1;
+    FHeapTo.ItemIndex := FHeapTo.Properties.Items.Count - 1;
     HeapSelectionChanged(nil);
   end;
 end;
@@ -1087,7 +1088,7 @@ end;
 /// weaver - which is the number that tells you whether a session is worth waiting for.
 procedure TMainForm.BuildMonitorTab;
 begin
-  FMonitorLabel := TLabel.Create(Self);
+  FMonitorLabel := TcxLabel.Create(Self);
   FMonitorLabel.Parent := FMonitorPanel;
   FMonitorLabel.Align := alTop;
   FMonitorLabel.Caption := ' No session running.';
@@ -1183,13 +1184,13 @@ end;
 
 procedure TMainForm.BuildSummaryTab;
 begin
-  FSummary := TMemo.Create(Self);
+  FSummary := TcxMemo.Create(Self);
   FSummary.Parent := FSummaryPanel;
   FSummary.Align := alClient;
-  FSummary.ReadOnly := True;
-  FSummary.ScrollBars := ssBoth;
-  FSummary.WordWrap := False;
-  FSummary.Font.Name := 'Consolas';
+  FSummary.Properties.ReadOnly := True;
+  FSummary.Properties.ScrollBars := ssBoth;
+  FSummary.Properties.WordWrap := False;
+  FSummary.Style.Font.Name := 'Consolas';
 end;
 
 /// AQTime's Summary is a set of answers, not a table: what this run was, what it warns
@@ -1298,29 +1299,8 @@ begin
   Color := LColors.Window;
   FToolbar.ParentBackground := False;
   FToolbar.Color := LColors.Window;
-  FInfoLabel.ParentFont := False;
-  FInfoLabel.Font.Color := LColors.Text;
-  if FLog <> nil then
-  begin
-    FLog.Color := LColors.EditorBack;
-    FLog.Font.Color := LColors.EditorText;
-  end;
-  if FSummary <> nil then
-  begin
-    FSummary.Color := LColors.EditorBack;
-    FSummary.Font.Color := LColors.EditorText;
-  end;
-  // ParentFont has to go first, or the skin's font colour wins straight back.
-  if FEditorHeader <> nil then
-  begin
-    FEditorHeader.ParentFont := False;
-    FEditorHeader.Font.Color := LColors.Text;
-  end;
-  if FMonitorLabel <> nil then
-  begin
-    FMonitorLabel.ParentFont := False;
-    FMonitorLabel.Font.Color := LColors.Text;
-  end;
+  // The cx controls follow the skin, so nothing to colour here: only the plain
+  // canvases and the editor below still need telling.
   ApplyThemeToEditor(FEditor);
   if FParentsPie <> nil then FParentsPie.Invalidate;
   if FChildrenPie <> nil then FChildrenPie.Invalidate;

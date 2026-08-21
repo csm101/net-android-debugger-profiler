@@ -177,8 +177,14 @@ notes written for agents; `Demos/VCL/<component>` is the first place to look).
   (Office2019Colorful / Office2019Black), SynEdit and the plain VCL controls take
   explicit colours, and the panels we paint ourselves (pies, call graph, monitor,
   the Source wash) read the palette from `uTheme`. The palette follows the one used
-  by CVSTreeGraph, so the tools on this desk look related. Labels need
-  `ParentFont := False` before their colour is set, or the skin's font wins it back.
+  by CVSTreeGraph, so the tools on this desk look related.
+
+  Use the DevExpress editors (`TcxLabel`, `TcxButton`, `TcxComboBox`, `TcxMemo`,
+  `TcxTextEdit`, `TcxCheckBox`, `TcxPageControl`), not their VCL equivalents: they
+  follow the skin, so the theme code only has to colour the canvases it paints
+  itself and the editor. With plain VCL controls every label has to be recoloured by
+  hand - and a `TLabel` needs `ParentFont := False` first, or the skin hands its own
+  font colour back.
 - **ExpressBars** ribbon or toolbar for the run controls.
 - **ExpressQuantumGrid** for Report, Details, allocations. Grouping, sorting,
   filtering and layout persistence come for free - that is our "result views".

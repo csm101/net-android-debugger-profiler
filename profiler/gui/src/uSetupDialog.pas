@@ -12,6 +12,7 @@ interface
 uses
   System.SysUtils, System.Classes,
   Vcl.Controls, Vcl.Forms, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Dialogs,
+  cxLabel, cxButtons, cxDropDownEdit, cxTextEdit, cxMaskEdit,
   uControlClient;
 
 type
@@ -28,15 +29,15 @@ type
   TSetupDialog = class(TForm)
   private
     FClient: TControlClient;
-    FDevices: TComboBox;
-    FPackage: TEdit;
-    FMode: TComboBox;
-    FEngine: TComboBox;
-    FCallspec: TEdit;
-    FDuration: TEdit;
-    FSymbols: TEdit;
-    FCheckLabel: TLabel;
-    FOk: TButton;
+    FDevices: TcxComboBox;
+    FPackage: TcxTextEdit;
+    FMode: TcxComboBox;
+    FEngine: TcxComboBox;
+    FCallspec: TcxTextEdit;
+    FDuration: TcxTextEdit;
+    FSymbols: TcxTextEdit;
+    FCheckLabel: TcxLabel;
+    FOk: TcxButton;
     procedure Build;
     procedure ModeChanged(Sender: TObject);
     procedure CheckClick(Sender: TObject);
@@ -59,9 +60,9 @@ end;
 
 procedure TSetupDialog.Build;
 
-  function Label_(const AText: string; ATop: Integer): TLabel;
+  function Label_(const AText: string; ATop: Integer): TcxLabel;
   begin
-    Result := TLabel.Create(Self);
+    Result := TcxLabel.Create(Self);
     Result.Parent := Self;
     Result.Left := 16;
     Result.Top := ATop + 4;
@@ -69,7 +70,7 @@ procedure TSetupDialog.Build;
   end;
 
 var
-  LCheck, LCancel: TButton;
+  LCheck, LCancel: TcxButton;
 begin
   Caption := 'New profiling session';
   BorderStyle := bsDialog;
@@ -78,45 +79,45 @@ begin
   ClientHeight := 330;
 
   Label_('Device', 16);
-  FDevices := TComboBox.Create(Self);
+  FDevices := TcxComboBox.Create(Self);
   FDevices.Parent := Self;
   FDevices.SetBounds(140, 16, 400, 24);
-  FDevices.Style := csDropDownList;
+  FDevices.Properties.DropDownListStyle := lsFixedList;
 
   Label_('Package', 48);
-  FPackage := TEdit.Create(Self);
+  FPackage := TcxTextEdit.Create(Self);
   FPackage.Parent := Self;
   FPackage.SetBounds(140, 48, 400, 24);
   FPackage.TextHint := 'com.example.app';
 
   Label_('Mode', 80);
-  FMode := TComboBox.Create(Self);
+  FMode := TcxComboBox.Create(Self);
   FMode.Parent := Self;
   FMode.SetBounds(140, 80, 200, 24);
-  FMode.Style := csDropDownList;
-  FMode.Items.Add('sampling');
-  FMode.Items.Add('instrumenting');
-  FMode.Items.Add('heap');
+  FMode.Properties.DropDownListStyle := lsFixedList;
+  FMode.Properties.Items.Add('sampling');
+  FMode.Properties.Items.Add('instrumenting');
+  FMode.Properties.Items.Add('heap');
   FMode.ItemIndex := 0;
-  FMode.OnChange := ModeChanged;
+  FMode.Properties.OnChange := ModeChanged;
 
   Label_('Engine', 112);
-  FEngine := TComboBox.Create(Self);
+  FEngine := TcxComboBox.Create(Self);
   FEngine.Parent := Self;
   FEngine.SetBounds(140, 112, 200, 24);
-  FEngine.Style := csDropDownList;
-  FEngine.Items.Add('weaver');      // the engine that supports live control
-  FEngine.Items.Add('provider');
+  FEngine.Properties.DropDownListStyle := lsFixedList;
+  FEngine.Properties.Items.Add('weaver');      // the engine that supports live control
+  FEngine.Properties.Items.Add('provider');
   FEngine.ItemIndex := 0;
 
   Label_('Callspec', 144);
-  FCallspec := TEdit.Create(Self);
+  FCallspec := TcxTextEdit.Create(Self);
   FCallspec.Parent := Self;
   FCallspec.SetBounds(140, 144, 400, 24);
   FCallspec.TextHint := 'N:My.App.Namespace or T:My.App.Type';
 
   Label_('Duration (s)', 176);
-  FDuration := TEdit.Create(Self);
+  FDuration := TcxTextEdit.Create(Self);
   FDuration.Parent := Self;
   FDuration.SetBounds(140, 176, 80, 24);
   FDuration.Text := '0';
@@ -124,31 +125,31 @@ begin
     Left := 232;
 
   Label_('Build output', 208);
-  FSymbols := TEdit.Create(Self);
+  FSymbols := TcxTextEdit.Create(Self);
   FSymbols.Parent := Self;
   FSymbols.SetBounds(140, 208, 400, 24);
   FSymbols.TextHint := 'bin\Debug\net9.0-android35.0 - the pdbs, so results carry source locations';
 
-  FCheckLabel := TLabel.Create(Self);
+  FCheckLabel := TcxLabel.Create(Self);
   FCheckLabel.Parent := Self;
   FCheckLabel.SetBounds(16, 240, 528, 32);
-  FCheckLabel.WordWrap := True;
+  FCheckLabel.Properties.WordWrap := True;
   FCheckLabel.Caption := '';
 
-  LCheck := TButton.Create(Self);
+  LCheck := TcxButton.Create(Self);
   LCheck.Parent := Self;
   LCheck.SetBounds(16, 288, 120, 28);
   LCheck.Caption := 'Check app';
   LCheck.OnClick := CheckClick;
 
-  FOk := TButton.Create(Self);
+  FOk := TcxButton.Create(Self);
   FOk.Parent := Self;
   FOk.SetBounds(360, 288, 90, 28);
   FOk.Caption := 'Start';
   FOk.ModalResult := mrOk;
   FOk.Default := True;
 
-  LCancel := TButton.Create(Self);
+  LCancel := TcxButton.Create(Self);
   LCancel.Parent := Self;
   LCancel.SetBounds(456, 288, 90, 28);
   LCancel.Caption := 'Cancel';
@@ -206,8 +207,8 @@ begin
     end;
   end;
   for I := 0 to High(LDevices) do
-    FDevices.Items.Add(LDevices[I].Serial);
-  if FDevices.Items.Count > 0 then
+    FDevices.Properties.Items.Add(LDevices[I].Serial);
+  if FDevices.Properties.Items.Count > 0 then
     FDevices.ItemIndex := 0;
 
   Result := ShowModal = mrOk;
