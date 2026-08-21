@@ -426,12 +426,15 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   callback; confirmed by env bisection - enable and enable+alloc boot fine,
   callspec dies). net10 (TestTarget) is unaffected. See KNOWN_UNKNOWNS U20;
   instrumenting on the reference application goes through the Cecil weaver (P3). **[verified]**
-- **Launching**: `monkey -p <pkg> -c LAUNCHER 1` sometimes issues the START
-  intent but never spawns the process after force-stop cycles (observed
-  repeatedly with App.Droid; TestTarget unaffected). Resolve the activity
-  (`cmd package resolve-activity --brief -c android.intent.category.LAUNCHER
-  <pkg>`) and use explicit `am start -W -n <component>`; AdbClient.LaunchAsync
-  does this with monkey as fallback. **[verified]**
+- **Launching**: a force-stop leaves the package in `stopped=true`, and an
+  explicit `am start -n <component>` is then accepted without ever forking the
+  process - nothing is logged, the session just waits (observed repeatedly with
+  App.Droid; TestTarget unaffected). A launcher-style intent clears that state,
+  so `AdbClient.LaunchAsync` sends `monkey -p <pkg> -c LAUNCHER 1` first and
+  falls back to resolving the activity (`cmd package resolve-activity --brief
+  -c android.intent.category.LAUNCHER <pkg>`) plus `am start -n <component>`
+  when the package has no launcher activity. Do not add `-W`: waiting for the
+  activity to go idle can take minutes on an instrumented app. **[verified]**
 - A restart session that launched the app leaves the injected
   DOTNET_DiagnosticPorts in the app's process environment, so the app keeps
   reconnecting to any later dsrouter on the same port and would be profiled

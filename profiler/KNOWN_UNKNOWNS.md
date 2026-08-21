@@ -80,15 +80,6 @@ enter/leave frame of that thread (works for instrumented methods only);
 or Microsoft-Windows-DotNETRuntime GCSampledObjectAllocation events with
 stacks (does MonoVM emit them with stacks?). Decide in P2.
 
-## U16 - First the reference application session
-Build verified 2026-08-20: `dotnet build App.Droid.csproj -c Debug
--p:EnableDiagnostics=true` succeeds on this machine (4.5 min, Android SDK
-pack 35.0.105 resolved automatically, 0 errors); the APK (24.7 MB) carries
-libmono-component-diagnostics_tracing.so, no libaot-*, 21 portable pdbs in
-bin/Debug/net9.0-android35.0. Still to do: install on emulator-5556, first
-sampling session (attach), instrumenting session with callspec N:V7,
-annotate_source with symbolsDir = that bin folder.
-
 ## U17 - Instrumenting Release builds without rebuilding
 Resolved for Debug builds (override environment file, see
 ANDROID_PROFILING_NOTES "Injecting environment variables without
@@ -105,13 +96,14 @@ libxamarin-app.so for MONO_DIAGNOSTICS, `run-as` for debuggable. Open: cost
 on the reference application-size APKs (pull of 50+ MB per session) - cache by package
 version / `pm dump` signature, or read only the needed entries remotely.
 
-## U19 - the reference application existing profiling assets
-the reference application already has a Metalama-based method timing aspect
-(C:\Work\ReferenceApp\Metalama.Profiling, ProfileMethodAttribute /
-ProfileFabric, "Profiling" build configuration) and Desymbolicate (pdb ->
-line numbers, symbol server per build). Evaluate reuse: Metalama weaving as
-P3 plan B instead of Cecil; Desymbolicate's symbol-server lookup for
-annotate_source on Jenkins builds.
+## U19 - Reuse Desymbolicate's symbol-server lookup
+Decided: weaving uses Mono.Cecil, not the reference application's existing Metalama aspect
+(C:\Work\ReferenceApp\Metalama.Profiling) - the profiler must not depend on
+Metalama. What is still open is the other half: annotate_source needs a local
+symbolsDir, while Desymbolicate (C:\Work\ReferenceApp\ExternalTools\Desymbolicate)
+fetches the pdbs of a given build from the company symbol server. Adopt that
+lookup so a session against a Jenkins-built app can be annotated without having
+the build output at hand.
 
 ## U20 - Runtime instrumenting unusable on net9 apps (root cause found)
 Root cause isolated 2026-08-20 by env bisection on App.Droid
