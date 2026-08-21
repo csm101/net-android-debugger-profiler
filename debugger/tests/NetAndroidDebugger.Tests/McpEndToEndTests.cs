@@ -226,4 +226,216 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
 
         Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
     }
+
+    /// <summary>
+    /// Walks the read-only and inspection tools in one stopped session. Their engine calls are
+    /// covered by the Core tests; what this covers is the translation layer — parameter names,
+    /// defaults, and the rendering — which is where a tool breaks without anything else noticing.
+    /// </summary>
+    [Fact]
+    public async Task EveryInspectionTool_AnswersInAStoppedSession()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var tickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = tickLine,
+        }, ct);
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+        var stop = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 60 }, ct);
+        Assert.StartsWith("Stopped:", stop);
+
+        var threads = await CallAsync(client, "get_threads", null, ct);
+        Assert.Contains("Main", threads, StringComparison.Ordinal);
+
+        var where = await CallAsync(client, "get_current_source_location", null, ct);
+        Assert.Contains($"MainActivity.cs:{tickLine}", where);
+
+        var one = await CallAsync(client, "get_variable", new Dictionary<string, object?> { ["name"] = "message" }, ct);
+        Assert.Contains("message : string = \"tick ", one);
+
+        var assemblies = await CallAsync(client, "get_loaded_assemblies", null, ct);
+        Assert.Contains("TestTarget", assemblies, StringComparison.Ordinal);
+
+        var sources = await CallAsync(client, "get_source_files", new Dictionary<string, object?> { ["file"] = "MainActivity.cs" }, ct);
+        Assert.Contains(TestEnvironment.MainActivitySource, sources, StringComparison.OrdinalIgnoreCase);
+
+        var breakpoints = await CallAsync(client, "list_breakpoints", null, ct);
+        Assert.Contains($"MainActivity.cs:{tickLine}", breakpoints);
+
+        var output = await CallAsync(client, "get_app_output", new Dictionary<string, object?>
+        {
+            ["maxLines"] = 50,
+            ["contains"] = "tick",
+        }, ct);
+        Assert.Contains("tick", output, StringComparison.Ordinal);
+
+        // Stepping, each shape of it, through the server rather than the engine.
+        var into = await CallAsync(client, "step_into", new Dictionary<string, object?> { ["timeoutSeconds"] = 20 }, ct);
+        Assert.StartsWith("Stopped:", into);
+        var outOf = await CallAsync(client, "step_out", new Dictionary<string, object?> { ["timeoutSeconds"] = 20 }, ct);
+        Assert.StartsWith("Stopped:", outOf);
+
+        await CallAsync(client, "terminate_app", null, ct);
+    }
+
+    /// <summary>
+    /// The tools that change how the session behaves rather than reporting on it. Each is called
+    /// through the server and its effect is read back through the server.
+    /// </summary>
+    [Fact]
+    public async Task SetupTools_TakeEffect_AndAreVisibleThroughTheServer()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var tickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        var nowLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "long now = Environment.TickCount64;");
+
+        // set_breakpoints replaces every breakpoint of the file.
+        await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = nowLine,
+        }, ct);
+        await CallAsync(client, "set_breakpoints", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["lines"] = new[] { tickLine },
+        }, ct);
+        var listed = await CallAsync(client, "list_breakpoints", null, ct);
+        Assert.Contains($"MainActivity.cs:{tickLine}", listed);
+        Assert.DoesNotContain($"MainActivity.cs:{nowLine}", listed);
+
+        var options = await CallAsync(client, "set_evaluation_options", new Dictionary<string, object?>
+        {
+            ["allowTargetInvoke"] = false,
+            ["allowToStringCalls"] = false,
+        }, ct);
+        Assert.Contains("allowTargetInvoke=false", options);
+
+        var filters = await CallAsync(client, "set_exception_filters", new Dictionary<string, object?>
+        {
+            ["firstChanceTypes"] = new[] { "System.InvalidOperationException" },
+        }, ct);
+        Assert.Contains("InvalidOperationException", filters, StringComparison.Ordinal);
+
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+        var stop = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 60 }, ct);
+        Assert.StartsWith("Stopped:", stop);
+
+        // TestTarget throws a caught InvalidOperationException every fifth tick, so the stop may be
+        // that exception or the breakpoint; the details tool only answers for the exception.
+        if (stop.Contains("reason=Exception", StringComparison.Ordinal))
+        {
+            var details = await CallAsync(client, "get_exception_details", null, ct);
+            Assert.Contains("InvalidOperationException", details, StringComparison.Ordinal);
+        }
+
+        var removed = await CallAsync(client, "remove_all_breakpoints", null, ct);
+        Assert.Contains("removed", removed, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No breakpoints", await CallAsync(client, "list_breakpoints", null, ct));
+
+        await CallAsync(client, "terminate_app", null, ct);
+    }
+
+    /// <summary>
+    /// remove_breakpoint takes the id set_breakpoint handed out, and pause_execution suspends a
+    /// running app. Both are ordinary parts of a session that nothing else here exercises.
+    /// </summary>
+    [Fact]
+    public async Task RemoveBreakpointById_AndPause_WorkThroughTheServer()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var nowLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "long now = Environment.TickCount64;");
+        var bp = await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = nowLine,
+        }, ct);
+        var id = int.Parse(bp.Split(' ')[1]);
+
+        var gone = await CallAsync(client, "remove_breakpoint", new Dictionary<string, object?> { ["id"] = id }, ct);
+        Assert.Contains("Removed", gone, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No breakpoints", await CallAsync(client, "list_breakpoints", null, ct));
+
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+
+        // Nothing is armed, so the app is running: pause is the only way to stop it.
+        var paused = await CallAsync(client, "pause_execution", new Dictionary<string, object?> { ["timeoutSeconds"] = 20 }, ct);
+        Assert.Contains("Stopped", paused, StringComparison.Ordinal);
+        Assert.Contains("state=Stopped", await CallAsync(client, "get_debug_session_status", null, ct));
+
+        await CallAsync(client, "terminate_app", null, ct);
+    }
+
+    /// <summary>
+    /// The ways a session ends, each through the server. Detach and stop_debugging both terminate
+    /// the app on Mono Android; what matters is that they answer and leave no session behind.
+    /// </summary>
+    [Fact]
+    public async Task LifecycleTools_EndTheSession_HoweverItIsAskedFor()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        // attach_to_app is launch_app without a deploy: on Mono Android attaching is a restart.
+        var attached = await CallAsync(client, "attach_to_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+        Assert.Contains("state=Running", attached);
+
+        await CallAsync(client, "detach_debugger", null, ct);
+        Assert.Contains("No session", await CallAsync(client, "get_debug_session_status", null, ct));
+
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+        await CallAsync(client, "stop_debugging", null, ct);
+        Assert.Contains("No session", await CallAsync(client, "get_debug_session_status", null, ct));
+    }
+
+    /// <summary>
+    /// Fails when a tool is added without end-to-end coverage. The engine behind a tool can be
+    /// thoroughly covered while the tool itself is not: a wrong parameter name, or a rendering
+    /// that throws, only shows up when the tool is called through the server.
+    /// </summary>
+    [Fact]
+    public async Task EveryTool_IsExercisedSomewhereInThisSuite()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var client = await ConnectAsync(cts.Token);
+        var exposed = (await client.ListToolsAsync(cancellationToken: cts.Token)).Select(t => t.Name).ToHashSet();
+
+        var source = File.ReadAllText(Path.Combine(TestEnvironment.RepoRoot, "tests", "NetAndroidDebugger.Tests", "McpEndToEndTests.cs"));
+        var uncovered = exposed.Where(name => !source.Contains($"\"{name}\"", StringComparison.Ordinal)).OrderBy(n => n).ToList();
+
+        Assert.True(uncovered.Count == 0,
+            "these tools are never called through the server: " + string.Join(", ", uncovered));
+    }
 }

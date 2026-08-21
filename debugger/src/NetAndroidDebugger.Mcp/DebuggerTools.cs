@@ -205,7 +205,10 @@ public sealed class DebuggerTools(SessionHost host)
         var s = host.RequireForSetup();
         s.SetEvaluationOptions(evaluationTimeoutMs, memberEvaluationTimeoutMs, allowToStringCalls, allowTargetInvoke);
         var o = s.GetEvaluationOptions();
-        return $"evaluationTimeoutMs={o.EvaluationTimeoutMs} memberEvaluationTimeoutMs={o.MemberEvaluationTimeoutMs} allowToStringCalls={o.AllowToStringCalls} allowTargetInvoke={o.AllowTargetInvoke}";
+        // Lower case on purpose: these read back the values the caller passes as JSON booleans,
+        // and .NET's "True"/"False" would be the only place in the surface spelling them differently.
+        return $"evaluationTimeoutMs={o.EvaluationTimeoutMs} memberEvaluationTimeoutMs={o.MemberEvaluationTimeoutMs} "
+             + $"allowToStringCalls={(o.AllowToStringCalls ? "true" : "false")} allowTargetInvoke={(o.AllowTargetInvoke ? "true" : "false")}";
     }
 
     // ------------------------------------------------------------------ inspection

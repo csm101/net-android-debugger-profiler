@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 62 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- 67 tests in five files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -288,3 +288,18 @@ Conventions (mirroring the Delphi project's discipline):
       `LaunchWithDeploy_BuildsInstallsAndAttaches`
 - [x] A second launch_app replaces the previous session (new pid, old one gone
       from the status) — `SecondLaunch_ReplacesTheFirstSession`
+- [x] Every inspection tool answers in a stopped session (threads, current
+      location, one variable, loaded assemblies, source files, breakpoint list,
+      app output, step into/out) — `EveryInspectionTool_AnswersInAStoppedSession`
+- [x] The setup tools take effect and are visible through the server
+      (`set_breakpoints` replacing a file's breakpoints, evaluation options,
+      exception filters, remove-all) —
+      `SetupTools_TakeEffect_AndAreVisibleThroughTheServer`
+- [x] `remove_breakpoint` by id, and `pause_execution` on a running app —
+      `RemoveBreakpointById_AndPause_WorkThroughTheServer`
+- [x] Every way a session ends: attach_to_app, detach_debugger, stop_debugging —
+      `LifecycleTools_EndTheSession_HoweverItIsAskedFor`
+- [x] **No tool ships uncovered**: the suite lists the server's tools and fails
+      if one is never called through it — a wrong parameter name or a rendering
+      that throws is invisible to the Core tests —
+      `EveryTool_IsExercisedSomewhereInThisSuite`
