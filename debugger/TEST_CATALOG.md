@@ -31,6 +31,11 @@ Conventions (mirroring the Delphi project's discipline):
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
 - 62 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
+  (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
+  day's race fixes were aimed at. Getting those three took four attempts: one
+  was lost when the emulator dropped mid-run, which is the environment, not the
+  suite. Budget for roughly one lost run in four.
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.

@@ -7,7 +7,8 @@ committed; the suite is green. Pick the next item from "Next steps".
 
 ## State (2026-08-21, end of day)
 
-- Suite: **62 tests, 62/62 green** (~8-10 min on the headless emulator).
+- Suite: **62 tests, 62/62 green**, three consecutive runs (~7-8 min each).
+  One run in four is lost to the emulator dropping; that is the environment.
 - Frontends: MCP server (registered in Claude Code) and DAP adapter, both over
   the same `DebugSession`. `register-mcp.cmd` publishes both.
 - the reference application: driven live through MCP and through the DAP adapter, including the
@@ -59,8 +60,8 @@ Every item below came out of driving the real app or re-reading the new code.
 4. Open questions worth a look if they ever bite: U13 (hit counts — six exact
    runs, diagnostic in place), U15 (why `GetException()` returns nothing for a
    throw in a symbol-less assembly), U11, U12.
-5. The emulator is the dominant cost: nine crashes today, roughly one full run in
-   three lost. A fresh AVD or a different API level would be worth trying.
+5. The emulator is the dominant cost: ten crashes today, about one full run in
+   four lost (measured). A fresh AVD or a different API level is worth trying.
 
 ## Environment rules
 
