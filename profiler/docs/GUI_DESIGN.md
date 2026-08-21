@@ -218,7 +218,16 @@ writing to files that had been deleted under it.
   Source panel: SynEdit with C# highlighting, the method's line range washed, fed
   by the source locations the analysis recorded in the database.
 
-Still to build: Summary, Monitor, memory views, Call Graph.
+- The visual layer AQTime is known for: percentage columns drawn as bars in the
+  Report, a pie beside each of the Details tables (the share each caller and callee
+  has), a Call Graph panel (callers above, the focused method in the middle,
+  callees below, with the share on each arrow, and clicking a box walks the graph),
+  an Explorer listing the sessions in the root, a Summary page of answers rather
+  than a table, and a unit selector (Automatic / s / ms / us / ns) that every panel
+  formats with.
+
+Still to build: Monitor (live counters), the memory views, the Details "Lines"
+page, and making the Explorer's categories switch the Report's grouping.
 
 ## Screens
 

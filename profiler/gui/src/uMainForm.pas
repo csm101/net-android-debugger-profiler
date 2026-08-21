@@ -15,13 +15,14 @@ unit uMainForm;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.UITypes,
+  System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types,
   Winapi.Windows, Winapi.Messages,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
   System.Variants, System.IOUtils, System.StrUtils, Data.DB, FireDAC.Comp.Client,
   cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
+  cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
   uSessionStore, uControlClient, uSetupDialog;
@@ -34,9 +35,26 @@ type
     FOpenButton: TButton;
     FRefreshButton: TButton;
     FInfoLabel: TLabel;
+    FUnits: TComboBox;
+    FSummaryTab: TTabSheet;
+    FSummary: TMemo;
+    FExplorer: TcxTreeList;
+    FExplorerColumn: TcxTreeListColumn;
+    FExplorerSplitter: TSplitter;
+    FSessionsRoot: string;
     FPages: TPageControl;
     FReportTab: TTabSheet;
     FTreeTab: TTabSheet;
+    FGraphTab: TTabSheet;
+    FGraph: TPaintBox;
+    FGraphScroll: TScrollBox;
+    FGraphMethodId: Integer;
+    FGraphCentre: string;
+    FGraphCentreValue: Int64;
+    FGraphParents: TNeighbours;
+    FGraphChildren: TNeighbours;
+    FGraphBoxes: TArray<TRect>;
+    FGraphBoxIds: TArray<Integer>;
     FEditorTab: TTabSheet;
     FEditor: TSynEdit;
     FEditorHeader: TLabel;
@@ -51,6 +69,10 @@ type
     FReportQuery: TFDQuery;
     FReportSource: TDataSource;
     FDetailsPanel: TPanel;
+    FParentsPie: TPaintBox;
+    FChildrenPie: TPaintBox;
+    FParentsShares: TArray<Int64>;
+    FChildrenShares: TArray<Int64>;
     FParentsGrid: TcxGrid;
     FParentsView: TcxGridTableView;
     FChildrenGrid: TcxGrid;
@@ -71,8 +93,20 @@ type
     FPaused: Boolean;
     FLog: TMemo;
     procedure BuildToolbar;
+    procedure BuildExplorer;
+    procedure BuildSummaryTab;
+    procedure UpdateSummary;
+    procedure UnitsChanged(Sender: TObject);
+    procedure ReloadExplorer;
+    procedure ExplorerDblClick(Sender: TObject);
     procedure BuildReportTab;
     procedure BuildTreeTab;
+    procedure BuildGraphTab;
+    procedure PaintGraph(Sender: TObject);
+    procedure GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure ShowGraphOf(AMethodId: Integer);
+    function DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
+      AValue: Int64; AIsCentre: Boolean): TRect;
     procedure BuildEditorTab;
     procedure ShowSourceOf(AMethodId: Integer);
     procedure EditorSpecialLineColors(Sender: TObject; Line: TSynNativeInt;
@@ -103,6 +137,9 @@ type
     procedure NanosecondDisplayText(Sender: TcxCustomGridTableItem;
       ARecord: TcxCustomGridRecord; var AText: string);
     procedure FillNeighbours(AView: TcxGridTableView; const AItems: TNeighbours);
+    procedure PaintParentsPie(Sender: TObject);
+    procedure PaintChildrenPie(Sender: TObject);
+    procedure PaintShares(ACanvas: TCanvas; const ARect: TRect; const AShares: TArray<Int64>);
     function FocusedMethodId: Integer;
     procedure UpdateInfo;
     function ValueCaption: string;
@@ -136,6 +173,7 @@ begin
   FCriticalStyle.Font.Style := [fsBold];
 
   BuildToolbar;
+  BuildExplorer;
   FPages := TPageControl.Create(Self);
   FPages.Parent := Self;
   FPages.Align := alClient;
@@ -145,12 +183,20 @@ begin
   FTreeTab := TTabSheet.Create(Self);
   FTreeTab.PageControl := FPages;
   FTreeTab.Caption := 'Call tree';
+  FGraphTab := TTabSheet.Create(Self);
+  FGraphTab.PageControl := FPages;
+  FGraphTab.Caption := 'Call graph';
   FEditorTab := TTabSheet.Create(Self);
   FEditorTab.PageControl := FPages;
   FEditorTab.Caption := 'Source';
+  FSummaryTab := TTabSheet.Create(Self);
+  FSummaryTab.PageControl := FPages;
+  FSummaryTab.Caption := 'Summary';
   BuildReportTab;
   BuildTreeTab;
+  BuildGraphTab;
   BuildEditorTab;
+  BuildSummaryTab;
 
   FLog := TMemo.Create(Self);
   FLog.Parent := Self;
@@ -175,7 +221,9 @@ begin
     begin
       LTab := ParamStr(LIndex).Substring(6);
       if SameText(LTab, 'tree') then FPages.ActivePage := FTreeTab
+      else if SameText(LTab, 'graph') then FPages.ActivePage := FGraphTab
       else if SameText(LTab, 'source') then FPages.ActivePage := FEditorTab
+      else if SameText(LTab, 'summary') then FPages.ActivePage := FSummaryTab
       else FPages.ActivePage := FReportTab;
     end;
   UpdateInfo;
@@ -242,12 +290,100 @@ begin
   FStopButton.Caption := 'Stop';
   FStopButton.OnClick := StopButtonClick;
 
+  FUnits := TComboBox.Create(Self);
+  FUnits.Parent := FToolbar;
+  FUnits.SetBounds(646, 9, 120, 24);
+  FUnits.Style := csDropDownList;
+  FUnits.Items.Add(TimeUnitName(tuAuto));
+  FUnits.Items.Add(TimeUnitName(tuSeconds));
+  FUnits.Items.Add(TimeUnitName(tuMilliseconds));
+  FUnits.Items.Add(TimeUnitName(tuMicroseconds));
+  FUnits.Items.Add(TimeUnitName(tuNanoseconds));
+  FUnits.ItemIndex := 0;
+  FUnits.OnChange := UnitsChanged;
+
   FInfoLabel := TLabel.Create(Self);
   FInfoLabel.Parent := FToolbar;
-  FInfoLabel.Left := 650;
+  FInfoLabel.Left := 780;
   FInfoLabel.Top := 12;
   FInfoLabel.Caption := 'No session open.';
   UpdateButtons('');
+end;
+
+/// AQTime's Explorer: the results you can open, and the categories inside the one that
+/// is open. Double-clicking a session loads it.
+procedure TMainForm.BuildExplorer;
+begin
+  FExplorer := TcxTreeList.Create(Self);
+  FExplorer.Parent := Self;
+  FExplorer.Align := alLeft;
+  FExplorer.Width := 280;
+  FExplorer.OptionsData.Editing := False;
+  FExplorer.OptionsSelection.CellSelect := False;
+  FExplorer.OptionsView.Headers := False;
+  FExplorer.OptionsView.ShowRoot := True;
+  FExplorer.OnDblClick := ExplorerDblClick;
+  FExplorerColumn := FExplorer.CreateColumn;
+  FExplorerColumn.Caption.Text := 'Results';
+  FExplorerColumn.Width := 260;
+
+  FExplorerSplitter := TSplitter.Create(Self);
+  FExplorerSplitter.Parent := Self;
+  FExplorerSplitter.Align := alLeft;
+  FExplorerSplitter.Width := 4;
+end;
+
+procedure TMainForm.ReloadExplorer;
+var
+  LSessions: TSessionEntries;
+  LRoot, LNode, LChild: TcxTreeListNode;
+  I: Integer;
+begin
+  FExplorer.BeginUpdate;
+  try
+    FExplorer.Clear;
+    LRoot := FExplorer.Add;
+    LRoot.Values[0] := 'Sessions';
+    LRoot.Data := nil;
+    if FSessionsRoot = '' then
+      Exit;
+    LSessions := ListSessions(FSessionsRoot);
+    for I := 0 to High(LSessions) do
+    begin
+      LNode := LRoot.AddChild;
+      LNode.Values[0] := Format('%s  (%s)', [LSessions[I].Id, LSessions[I].Mode]);
+      // The path travels with the node so a double-click knows what to open.
+      LNode.Texts[0] := LNode.Texts[0];
+      LNode.Data := Pointer(NativeInt(I));
+      if SameText(LSessions[I].DatabasePath, FStore.Path) then
+      begin
+        // The open session shows the categories, like AQTime's Routines / Modules tree.
+        LChild := LNode.AddChild;
+        LChild.Values[0] := 'Routines';
+        LChild := LNode.AddChild;
+        LChild.Values[0] := 'Modules';
+        LChild := LNode.AddChild;
+        LChild.Values[0] := 'Threads';
+        LNode.Expand(True);
+      end;
+    end;
+    LRoot.Expand(False);
+  finally
+    FExplorer.EndUpdate;
+  end;
+end;
+
+procedure TMainForm.ExplorerDblClick(Sender: TObject);
+var
+  LSessions: TSessionEntries;
+  LIndex: Integer;
+begin
+  if (FExplorer.FocusedNode = nil) or (FExplorer.FocusedNode.Level <> 1) then
+    Exit;
+  LSessions := ListSessions(FSessionsRoot);
+  LIndex := Integer(NativeInt(FExplorer.FocusedNode.Data));
+  if (LIndex >= 0) and (LIndex <= High(LSessions)) then
+    LoadSession(LSessions[LIndex].DatabasePath);
 end;
 
 procedure TMainForm.BuildReportTab;
@@ -259,7 +395,7 @@ begin
   FDetailsPanel.BevelOuter := bvNone;
 
   FParentsGrid := BuildNeighbourGrid(FDetailsPanel, alLeft, 'Parents', FParentsView);
-  FParentsGrid.Width := 560;
+  FParentsGrid.Parent.Width := 560;
   FChildrenGrid := BuildNeighbourGrid(FDetailsPanel, alClient, 'Children', FChildrenView);
 
   FReportSplitter := TSplitter.Create(Self);
@@ -292,6 +428,7 @@ var
   LLabel: TLabel;
   LGrid: TcxGrid;
   LLevel: TcxGridLevel;
+  LPie: TPaintBox;
 begin
   LPanel := TPanel.Create(Self);
   LPanel.Parent := AParent;
@@ -303,6 +440,21 @@ begin
   LLabel.Align := alTop;
   LLabel.Caption := '  ' + ACaption;
   LLabel.Font.Style := [fsBold];
+
+  LPie := TPaintBox.Create(Self);
+  LPie.Parent := LPanel;
+  LPie.Align := alLeft;
+  LPie.Width := 110;
+  if AAlign = alLeft then
+  begin
+    FParentsPie := LPie;
+    LPie.OnPaint := PaintParentsPie;
+  end
+  else
+  begin
+    FChildrenPie := LPie;
+    LPie.OnPaint := PaintChildrenPie;
+  end;
 
   LGrid := TcxGrid.Create(Self);
   LGrid.Parent := LPanel;
@@ -342,6 +494,177 @@ begin
   FTreeCalls := FTree.CreateColumn;
   FTreeCalls.Caption.Text := 'Calls';
   FTreeCalls.Width := 100;
+end;
+
+procedure TMainForm.BuildGraphTab;
+begin
+  FGraphScroll := TScrollBox.Create(Self);
+  FGraphScroll.Parent := FGraphTab;
+  FGraphScroll.Align := alClient;
+  FGraphScroll.Color := clWindow;
+  FGraphScroll.ParentColor := False;
+
+  FGraph := TPaintBox.Create(Self);
+  FGraph.Parent := FGraphScroll;
+  FGraph.SetBounds(0, 0, 1200, 700);
+  FGraph.OnPaint := PaintGraph;
+  FGraph.OnMouseDown := GraphMouseDown;
+  FGraphMethodId := -1;
+end;
+
+/// One box per method: the name on top, the metric underneath, exactly the shape AQTime
+/// draws. Callers sit above the focused method, callees below, arrows follow the calls.
+function TMainForm.DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
+  AValue: Int64; AIsCentre: Boolean): TRect;
+var
+  LText: string;
+  LTextRect: TRect;
+begin
+  Result := ARect;
+  if AIsCentre then
+  begin
+    ACanvas.Brush.Color := $00F0E0C0;
+    ACanvas.Pen.Width := 2;
+  end
+  else
+  begin
+    ACanvas.Brush.Color := $00F8F8F8;
+    ACanvas.Pen.Width := 1;
+  end;
+  ACanvas.Pen.Color := $00808080;
+  ACanvas.Rectangle(Result);
+  ACanvas.Pen.Width := 1;
+
+  ACanvas.Brush.Style := bsClear;
+  LTextRect := Rect(Result.Left + 6, Result.Top + 4, Result.Right - 6, Result.Top + 22);
+  ACanvas.Font.Style := [fsBold];
+  // The full name never fits: keep the tail, which is the type and the method.
+  LText := AName;
+  if Length(LText) > 46 then
+    LText := '...' + Copy(LText, Length(LText) - 43, 44);
+  ACanvas.TextRect(LTextRect, LText, [tfEndEllipsis]);
+
+  ACanvas.Font.Style := [];
+  LTextRect := Rect(Result.Left + 6, Result.Top + 24, Result.Right - 6, Result.Bottom - 4);
+  if FStore.Mode = smInstrumenting then
+    LText := 'Time with children: ' + FormatNs(AValue)
+  else
+    LText := Format('%d samples', [AValue]);
+  ACanvas.TextRect(LTextRect, LText, [tfEndEllipsis]);
+  ACanvas.Brush.Style := bsSolid;
+end;
+
+procedure TMainForm.PaintGraph(Sender: TObject);
+const
+  BoxWidth = 330;
+  BoxHeight = 48;
+  Gap = 26;
+var
+  LCanvas: TCanvas;
+  LCentreRect, LRect: TRect;
+  I, LRow, LLeft, LCentreY: Integer;
+  LTotal: Int64;
+begin
+  LCanvas := FGraph.Canvas;
+  LCanvas.Brush.Color := clWindow;
+  LCanvas.FillRect(FGraph.ClientRect);
+  SetLength(FGraphBoxes, 0);
+  SetLength(FGraphBoxIds, 0);
+  if FGraphMethodId < 0 then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(16, 16, 'Pick a method in the Report to see who calls it and what it calls.');
+    LCanvas.Brush.Style := bsSolid;
+    Exit;
+  end;
+
+  LCentreY := 40 + BoxHeight + 60;
+  LCentreRect := Rect(40, LCentreY, 40 + BoxWidth, LCentreY + BoxHeight);
+
+  // Callers, in a row above.
+  LRow := 40;
+  for I := 0 to High(FGraphParents) do
+  begin
+    LLeft := 40 + I * (BoxWidth + Gap);
+    LRect := Rect(LLeft, LRow, LLeft + BoxWidth, LRow + BoxHeight);
+    DrawGraphBox(LCanvas, LRect, FGraphParents[I].FullName, FGraphParents[I].Value, False);
+    SetLength(FGraphBoxes, Length(FGraphBoxes) + 1);
+    SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
+    FGraphBoxes[High(FGraphBoxes)] := LRect;
+    FGraphBoxIds[High(FGraphBoxIds)] := FGraphParents[I].MethodId;
+    LCanvas.Pen.Color := $00A0A0A0;
+    LCanvas.MoveTo(LRect.CenterPoint.X, LRect.Bottom);
+    LCanvas.LineTo(LCentreRect.CenterPoint.X, LCentreRect.Top);
+  end;
+
+  DrawGraphBox(LCanvas, LCentreRect, FGraphCentre, FGraphCentreValue, True);
+
+  // Callees, in a row below, with the share of the focused method's time on the arrow.
+  LTotal := 0;
+  for I := 0 to High(FGraphChildren) do
+    Inc(LTotal, FGraphChildren[I].Value);
+  LRow := LCentreY + BoxHeight + 60;
+  for I := 0 to High(FGraphChildren) do
+  begin
+    LLeft := 40 + I * (BoxWidth + Gap);
+    LRect := Rect(LLeft, LRow, LLeft + BoxWidth, LRow + BoxHeight);
+    DrawGraphBox(LCanvas, LRect, FGraphChildren[I].FullName, FGraphChildren[I].Value, False);
+    SetLength(FGraphBoxes, Length(FGraphBoxes) + 1);
+    SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
+    FGraphBoxes[High(FGraphBoxes)] := LRect;
+    FGraphBoxIds[High(FGraphBoxIds)] := FGraphChildren[I].MethodId;
+    LCanvas.Pen.Color := $00A0A0A0;
+    LCanvas.MoveTo(LCentreRect.CenterPoint.X, LCentreRect.Bottom);
+    LCanvas.LineTo(LRect.CenterPoint.X, LRect.Top);
+    if LTotal > 0 then
+    begin
+      LCanvas.Brush.Style := bsClear;
+      LCanvas.TextOut(LRect.CenterPoint.X - 12, LRect.Top - 18,
+        Format('%.0f%%', [100.0 * FGraphChildren[I].Value / LTotal]));
+      LCanvas.Brush.Style := bsSolid;
+    end;
+  end;
+
+  FGraph.Width := Max(FGraphScroll.ClientWidth,
+    40 + (Max(Length(FGraphParents), Length(FGraphChildren)) + 1) * (BoxWidth + Gap));
+  FGraph.Height := Max(FGraphScroll.ClientHeight, LRow + BoxHeight + 40);
+end;
+
+/// Clicking a box walks the graph, which is the whole point of having one.
+procedure TMainForm.GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+var
+  I: Integer;
+begin
+  for I := 0 to High(FGraphBoxes) do
+    if FGraphBoxes[I].Contains(Point(X, Y)) then
+    begin
+      ShowGraphOf(FGraphBoxIds[I]);
+      Exit;
+    end;
+end;
+
+procedure TMainForm.ShowGraphOf(AMethodId: Integer);
+begin
+  FGraphMethodId := AMethodId;
+  if (AMethodId < 0) or not FStore.IsOpen then
+  begin
+    FGraphCentre := '';
+    FGraphCentreValue := 0;
+    FGraphParents := nil;
+    FGraphChildren := nil;
+  end
+  else
+  begin
+    FGraphCentre := FStore.MethodName(AMethodId);
+    FGraphCentreValue := FStore.MethodInclusive(AMethodId);
+    FGraphParents := FStore.Parents(AMethodId);
+    FGraphChildren := FStore.Children(AMethodId);
+    // A wide fan is unreadable and slow to draw: the tail is in the Details table.
+    if Length(FGraphParents) > 6 then SetLength(FGraphParents, 6);
+    if Length(FGraphChildren) > 6 then SetLength(FGraphChildren, 6);
+  end;
+  if FGraph <> nil then
+    FGraph.Invalidate;
 end;
 
 procedure TMainForm.BuildEditorTab;
@@ -417,6 +740,117 @@ begin
   FEditor.Invalidate;
 end;
 
+procedure TMainForm.BuildSummaryTab;
+begin
+  FSummary := TMemo.Create(Self);
+  FSummary.Parent := FSummaryTab;
+  FSummary.Align := alClient;
+  FSummary.ReadOnly := True;
+  FSummary.ScrollBars := ssBoth;
+  FSummary.WordWrap := False;
+  FSummary.Font.Name := 'Consolas';
+end;
+
+/// AQTime's Summary is a set of answers, not a table: what this run was, what it warns
+/// about, and the handful of methods and types worth looking at first.
+procedure TMainForm.UpdateSummary;
+var
+  LQuery: TFDQuery;
+  LLines: TStringList;
+  LSegments: TArray<TSegment>;
+  I, LCount: Integer;
+begin
+  if FSummary = nil then
+    Exit;
+  LLines := TStringList.Create;
+  try
+    if not FStore.IsOpen then
+    begin
+      LLines.Add('No session open.');
+      FSummary.Lines.Assign(LLines);
+      Exit;
+    end;
+    LLines.Add(Format('%s session of %s on %s', [ModeToString(FStore.Mode), FStore.Package, FStore.Device]));
+    LLines.Add(Format('state %s, started %s', [FStore.State, FStore.StartedUtc]));
+    LLines.Add(Format('database %s (schema v%d)', [FStore.Path, FStore.SchemaVersion]));
+    if FStore.Mode = smSampling then
+      LLines.Add(Format('%d samples', [FStore.TotalSamples]));
+    LSegments := FStore.Segments;
+    if Length(LSegments) > 0 then
+      LLines.Add(Format('%d result refreshes, last one "%s"', [Length(LSegments), LSegments[High(LSegments)].Kind]));
+    LLines.Add('');
+
+    LLines.Add(IfThen(FStore.Mode = smInstrumenting, 'Heaviest methods (self time)', 'Heaviest methods (self samples, CPU)'));
+    LQuery := FStore.OpenReport;
+    try
+      LCount := 0;
+      while not LQuery.Eof and (LCount < 10) do
+      begin
+        if FStore.Mode = smInstrumenting then
+          LLines.Add(Format('  %-58s %12s  %8d calls',
+            [LQuery.FieldByName('full_name').AsString,
+             FormatNs(LQuery.FieldByName('self_ns').AsLargeInt),
+             LQuery.FieldByName('calls').AsInteger]))
+        else if FStore.Mode = smSampling then
+          LLines.Add(Format('  %-58s %8d self  %8d incl',
+            [LQuery.FieldByName('full_name').AsString,
+             LQuery.FieldByName('self_samples').AsInteger,
+             LQuery.FieldByName('total_samples').AsInteger]))
+        else
+          LLines.Add(Format('  %-58s %10d objects %12d bytes',
+            [LQuery.FieldByName('full_name').AsString,
+             LQuery.FieldByName('count').AsLargeInt,
+             LQuery.FieldByName('bytes').AsLargeInt]));
+        Inc(LCount);
+        LQuery.Next;
+      end;
+    finally
+      LQuery.Free;
+    end;
+
+    if FStore.CountOf('alloc_by_type') > 0 then
+    begin
+      LLines.Add('');
+      LLines.Add('Most allocated types');
+      LQuery := FStore.OpenAllocationsByType;
+      try
+        LCount := 0;
+        while not LQuery.Eof and (LCount < 10) do
+        begin
+          LLines.Add(Format('  %-58s %10d objects', [LQuery.FieldByName('type_name').AsString,
+            LQuery.FieldByName('count').AsLargeInt]));
+          Inc(LCount);
+          LQuery.Next;
+        end;
+      finally
+        LQuery.Free;
+      end;
+    end;
+
+    LLines.Add('');
+    LLines.Add(Format('methods %d, threads %d, tree nodes %d',
+      [FStore.CountOf('method'), FStore.CountOf('thread'),
+       FStore.CountOf(IfThen(FStore.Mode = smInstrumenting, 'timing_tree', 'sample_tree'))]));
+    for I := 0 to High(LSegments) do
+      LLines.Add(Format('  segment %d: %s at %s (%d events)',
+        [LSegments[I].Id, LSegments[I].Kind, LSegments[I].TakenUtc, LSegments[I].Events]));
+    FSummary.Lines.Assign(LLines);
+  finally
+    LLines.Free;
+  end;
+end;
+
+procedure TMainForm.UnitsChanged(Sender: TObject);
+begin
+  GTimeUnit := TTimeUnit(FUnits.ItemIndex);
+  // Everything shows times: repaint the lot rather than guess which panel is visible.
+  FGridView.LayoutChanged;
+  FTree.Invalidate;
+  FGraph.Invalidate;
+  LoadTreeRoots;
+  UpdateSummary;
+end;
+
 procedure TMainForm.OpenButtonClick(Sender: TObject);
 var
   LDialog: TOpenDialog;
@@ -447,6 +881,9 @@ end;
 procedure TMainForm.LoadSession(const APath: string);
 begin
   FStore.Open(APath);
+  FSessionsRoot := TDirectory.GetParent(TDirectory.GetParent(APath));
+  ReloadExplorer;
+  UpdateSummary;
   LoadReport;
   LoadTreeRoots;
   UpdateInfo;
@@ -485,6 +922,22 @@ begin
     end;
     if LField.EndsWith('_ns') then
       LColumn.OnGetDisplayText := NanosecondDisplayText;
+    if LField.StartsWith('pct_') then
+    begin
+      // A number tells you how much; a bar tells you which rows matter. AQTime shows
+      // both, and so do we: the bar is the column, the value is its text.
+      LColumn.PropertiesClass := TcxProgressBarProperties;
+      with TcxProgressBarProperties(LColumn.Properties) do
+      begin
+        Min := 0;
+        Max := 100;
+        ShowText := True;
+        BeginColor := $00E0A860;
+        EndColor := $004AA3FF;
+        SolidTextColor := True;
+      end;
+      LColumn.Width := 120;
+    end;
     if LField = 'full_name' then
     begin
       LColumn.Caption := 'Method';
@@ -504,6 +957,10 @@ begin
       LColumn.Caption := 'Max'
     else if LField = 'avg_ns' then
       LColumn.Caption := 'Average'
+    else if LField = 'pct_self' then
+      LColumn.Caption := '% self'
+    else if LField = 'pct_total' then
+      LColumn.Caption := '% with children'
     else if LField = 'exception_leaves' then
       LColumn.Caption := 'Exception exits'
     else if LField = 'self_samples' then
@@ -642,17 +1099,97 @@ begin
     FillNeighbours(FParentsView, nil);
     FillNeighbours(FChildrenView, nil);
     ShowSourceOf(-1);
+    ShowGraphOf(-1);
     Exit;
   end;
   FillNeighbours(FParentsView, FStore.Parents(AMethodId));
   FillNeighbours(FChildrenView, FStore.Children(AMethodId));
   ShowSourceOf(AMethodId);
+  ShowGraphOf(AMethodId);
+end;
+
+/// The share each caller (or callee) has of the focused method's time: the pie is the
+/// same numbers as the table beside it, read at a glance.
+procedure TMainForm.PaintShares(ACanvas: TCanvas; const ARect: TRect; const AShares: TArray<Int64>);
+const
+  Palette: array[0..5] of TColor = ($004040FF, $0040C040, $0000D0FF, $00FF8040, $00C040C0, $00909090);
+var
+  LTotal, LRunning: Int64;
+  LSize, LLeft, LTop: Integer;
+  LStartAngle, LSweep: Double;
+  I: Integer;
+  LSquare: TRect;
+
+  function PointOnCircle(AAngleDegrees: Double): TPoint;
+  begin
+    Result.X := LSquare.CenterPoint.X + Round(LSize / 2 * Cos(AAngleDegrees * Pi / 180));
+    Result.Y := LSquare.CenterPoint.Y - Round(LSize / 2 * Sin(AAngleDegrees * Pi / 180));
+  end;
+
+begin
+  ACanvas.Brush.Color := clWindow;
+  ACanvas.FillRect(ARect);
+  LTotal := 0;
+  for I := 0 to High(AShares) do
+    Inc(LTotal, AShares[I]);
+  if LTotal <= 0 then
+    Exit;
+
+  LSize := Min(ARect.Width, ARect.Height) - 16;
+  if LSize < 20 then
+    Exit;
+  LLeft := ARect.Left + (ARect.Width - LSize) div 2;
+  LTop := ARect.Top + (ARect.Height - LSize) div 2;
+  LSquare := Rect(LLeft, LTop, LLeft + LSize, LTop + LSize);
+
+  LRunning := 0;
+  for I := 0 to High(AShares) do
+  begin
+    if AShares[I] <= 0 then
+      Continue;
+    LStartAngle := 90 - 360 * (LRunning / LTotal);
+    LSweep := 360 * (AShares[I] / LTotal);
+    Inc(LRunning, AShares[I]);
+    ACanvas.Brush.Color := Palette[I mod Length(Palette)];
+    ACanvas.Pen.Color := clWhite;
+    // A single slice covering everything must still be drawn: Pie with equal start and
+    // end points draws nothing, so fill the whole circle instead.
+    if LSweep >= 359.9 then
+      ACanvas.Ellipse(LSquare)
+    else
+      ACanvas.Pie(LSquare.Left, LSquare.Top, LSquare.Right, LSquare.Bottom,
+        PointOnCircle(LStartAngle).X, PointOnCircle(LStartAngle).Y,
+        PointOnCircle(LStartAngle - LSweep).X, PointOnCircle(LStartAngle - LSweep).Y);
+  end;
+end;
+
+procedure TMainForm.PaintParentsPie(Sender: TObject);
+begin
+  PaintShares(FParentsPie.Canvas, FParentsPie.ClientRect, FParentsShares);
+end;
+
+procedure TMainForm.PaintChildrenPie(Sender: TObject);
+begin
+  PaintShares(FChildrenPie.Canvas, FChildrenPie.ClientRect, FChildrenShares);
 end;
 
 procedure TMainForm.FillNeighbours(AView: TcxGridTableView; const AItems: TNeighbours);
 var
   I: Integer;
 begin
+  // Feed the pie beside this table with the same values.
+  if AView = FParentsView then
+    SetLength(FParentsShares, Length(AItems))
+  else
+    SetLength(FChildrenShares, Length(AItems));
+  for I := 0 to High(AItems) do
+    if AView = FParentsView then
+      FParentsShares[I] := AItems[I].Value
+    else
+      FChildrenShares[I] := AItems[I].Value;
+  if FParentsPie <> nil then FParentsPie.Invalidate;
+  if FChildrenPie <> nil then FChildrenPie.Invalidate;
+
   AView.BeginUpdate;
   try
     AView.DataController.RecordCount := Length(AItems);

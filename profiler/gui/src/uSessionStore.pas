@@ -18,7 +18,7 @@ uses
   FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Stan.Async,
   FireDAC.Phys, FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef, FireDAC.Stan.ExprFuncs,
   FireDAC.Comp.Client, FireDAC.Comp.DataSet, FireDAC.DApt,
-  Data.DB;
+  System.IOUtils, System.Generics.Defaults, Data.DB;
 
 type
   ESessionStore = class(Exception);
@@ -100,6 +100,8 @@ type
     function MethodName(AMethodId: Integer): string;
     /// Source location of a method, when the session was told where the build output is.
     function MethodSource(AMethodId: Integer): TMethodSource;
+    /// The method's headline figure: time with children, or inclusive samples.
+    function MethodInclusive(AMethodId: Integer): Int64;
     function CountOf(const ATable: string): Int64;
 
     property Path: string read FPath;
@@ -113,11 +115,79 @@ type
     property SchemaVersion: Integer read FSchemaVersion;
   end;
 
+/// One session on disk, as listed in the Explorer panel.
+type
+  TSessionEntry = record
+    Id: string;
+    DatabasePath: string;
+    Mode: string;
+    Package: string;
+    StartedUtc: string;
+  end;
+
+  TSessionEntries = TArray<TSessionEntry>;
+
+/// Sessions under a sessions root, newest first (a session directory holds session.db).
+function ListSessions(const ARoot: string): TSessionEntries;
+
 function ModeToString(AMode: TSessionMode): string;
+
+type
+  /// How times are shown; Auto picks the readable unit per value.
+  TTimeUnit = (tuAuto, tuSeconds, tuMilliseconds, tuMicroseconds, tuNanoseconds);
+
+var
+  /// The unit every panel formats with. One setting, so the numbers can be compared.
+  GTimeUnit: TTimeUnit = tuAuto;
+
 /// Nanoseconds as a human-readable duration; the grids show this instead of raw ns.
 function FormatNs(ANs: Int64): string;
+function TimeUnitName(AUnit: TTimeUnit): string;
 
 implementation
+
+function ListSessions(const ARoot: string): TSessionEntries;
+var
+  LDirectories: TArray<string>;
+  LList: TList<TSessionEntry>;
+  LEntry: TSessionEntry;
+  LStore: TSessionStore;
+  I: Integer;
+begin
+  LList := TList<TSessionEntry>.Create;
+  try
+    if not TDirectory.Exists(ARoot) then
+      Exit(nil);
+    LDirectories := TDirectory.GetDirectories(ARoot);
+    TArray.Sort<string>(LDirectories);
+    for I := High(LDirectories) downto Low(LDirectories) do    // newest first
+    begin
+      LEntry := Default(TSessionEntry);
+      LEntry.DatabasePath := TPath.Combine(LDirectories[I], 'session.db');
+      if not TFile.Exists(LEntry.DatabasePath) then
+        Continue;
+      LEntry.Id := TPath.GetFileName(LDirectories[I]);
+      // Reading the identity costs one small query and is what makes the list useful.
+      LStore := TSessionStore.Create;
+      try
+        try
+          LStore.Open(LEntry.DatabasePath);
+          LEntry.Mode := ModeToString(LStore.Mode);
+          LEntry.Package := LStore.Package;
+          LEntry.StartedUtc := LStore.StartedUtc;
+        except
+          LEntry.Mode := '(unreadable)';
+        end;
+      finally
+        LStore.Free;
+      end;
+      LList.Add(LEntry);
+    end;
+    Result := LList.ToArray;
+  finally
+    LList.Free;
+  end;
+end;
 
 function ModeToString(AMode: TSessionMode): string;
 begin
@@ -130,8 +200,26 @@ begin
   end;
 end;
 
+function TimeUnitName(AUnit: TTimeUnit): string;
+begin
+  case AUnit of
+    tuSeconds: Result := 'Seconds';
+    tuMilliseconds: Result := 'Milliseconds';
+    tuMicroseconds: Result := 'Microseconds';
+    tuNanoseconds: Result := 'Nanoseconds';
+  else
+    Result := 'Automatic';
+  end;
+end;
+
 function FormatNs(ANs: Int64): string;
 begin
+  case GTimeUnit of
+    tuSeconds: Exit(FormatFloat('0.000 s', ANs / 1000000000));
+    tuMilliseconds: Exit(FormatFloat('0.000 ms', ANs / 1000000));
+    tuMicroseconds: Exit(FormatFloat('0.0 us', ANs / 1000));
+    tuNanoseconds: Exit(IntToStr(ANs) + ' ns');
+  end;
   if ANs >= 1000000000 then
     Result := FormatFloat('0.000 s', ANs / 1000000000)
   else if ANs >= 1000000 then
@@ -279,12 +367,17 @@ const
   SSampling =
     'SELECT m.id AS method_id, m.full_name, m.module, ' +
     '       s.exclusive_cpu AS self_samples, s.inclusive_cpu AS total_samples, ' +
+    '       100.0 * s.exclusive_cpu / NULLIF((SELECT SUM(exclusive_cpu) FROM sample_stat), 0) AS pct_self, ' +
+    '       100.0 * s.inclusive_cpu / NULLIF((SELECT MAX(inclusive_cpu) FROM sample_stat), 0) AS pct_total, ' +
     '       s.exclusive AS self_wall, s.inclusive AS total_wall ' +
     'FROM sample_stat s JOIN method m ON m.id = s.method_id ' +
     'ORDER BY s.exclusive_cpu DESC, s.inclusive_cpu DESC';
   SInstrumenting =
     'SELECT m.id AS method_id, m.full_name, m.module, t.calls, ' +
-    '       t.self_ns, t.total_ns, t.min_ns, t.max_ns, ' +
+    '       t.self_ns, t.total_ns, ' +
+    '       100.0 * t.self_ns / NULLIF((SELECT SUM(self_ns) FROM timing_stat), 0) AS pct_self, ' +
+    '       100.0 * t.total_ns / NULLIF((SELECT MAX(total_ns) FROM timing_stat), 0) AS pct_total, ' +
+    '       t.min_ns, t.max_ns, ' +
     '       CASE WHEN t.calls > 0 THEN t.total_ns / t.calls ELSE 0 END AS avg_ns, ' +
     '       t.exception_leaves ' +
     'FROM timing_stat t JOIN method m ON m.id = t.method_id ' +
@@ -476,6 +569,27 @@ begin
       Result := ''
     else
       Result := LQuery.Fields[0].AsString;
+  finally
+    LQuery.Free;
+  end;
+end;
+
+function TSessionStore.MethodInclusive(AMethodId: Integer): Int64;
+var
+  LQuery: TFDQuery;
+begin
+  Result := 0;
+  if FMode = smInstrumenting then
+    LQuery := CreateQuery('SELECT total_ns FROM timing_stat WHERE method_id = :m')
+  else if FMode = smSampling then
+    LQuery := CreateQuery('SELECT inclusive_cpu FROM sample_stat WHERE method_id = :m')
+  else
+    Exit;
+  try
+    LQuery.ParamByName('m').AsInteger := AMethodId;
+    LQuery.Open;
+    if not LQuery.Eof then
+      Result := LQuery.Fields[0].AsLargeInt;
   finally
     LQuery.Free;
   end;
