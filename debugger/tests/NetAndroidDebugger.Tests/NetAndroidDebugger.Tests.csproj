@@ -25,6 +25,8 @@
     <ProjectReference Include="..\..\src\NetAndroidDebugger.Core\NetAndroidDebugger.Core.csproj" />
     <!-- Build dependency only: McpEndToEndTests spawns the server dll from its own output folder. -->
     <ProjectReference Include="..\..\src\NetAndroidDebugger.Mcp\NetAndroidDebugger.Mcp.csproj" ReferenceOutputAssembly="false" />
+    <!-- Same for the DAP adapter: DapEndToEndTests starts it as a process. -->
+    <ProjectReference Include="..\..\src\NetAndroidDebugger.Dap\NetAndroidDebugger.Dap.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

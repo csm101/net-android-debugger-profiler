@@ -320,15 +320,21 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     something refuses to die. Found 2026-08-21 by full-suite runs where the
     victim changed every time; single tests never showed it, because the
     leftovers come from the *previous* test.
-  - **Port rotation is not race-free.** The property is rotated when the agent
-    of a process is *detected* in logcat, so two processes that start within the
-    same instant both read the same value and take the same port. The second
-    agent cannot listen (`debugger-agent: Unable to listen on ...`) and that
-    process dies. Observed 2026-08-21 on the emulator when a broadcast spawned a
-    process while `:helper` was still starting: the loser died, and in that run
-    the app's other processes went down with it. Rare in practice (processes
-    normally start seconds apart), but real for apps that fan out several
-    processes at init. See KNOWN_UNKNOWNS U14.
+  - **Port rotation happens at process start, not at agent init (2026-08-21).**
+    ActivityManager's `Start proc <pid>:<name>/<uid>` line comes at fork, long
+    before the runtime reads `debug.mono.extra`; rotating there shrinks the
+    window in which two processes read the same port to almost nothing. Before
+    this, a process starting while another was between fork and agent init took
+    the same port, could not listen, and died — the visible symptom being
+    `no SDB handshake on port N within 20s`. Rotation is idempotent, so the
+    second call (at agent init, which reports the port actually taken) costs
+    nothing. See KNOWN_UNKNOWNS U14.
+  - **Shutdown order (2026-08-21):** the logcat reader is what rotates the
+    property, so it must be stopped *before* the property is cleared. Clearing
+    first leaves the device carrying a stale `debug.mono.extra` whenever Android
+    is still restarting one of the app's processes, because the reader publishes
+    a fresh port after the clear. A flag also makes rotation a no-op once
+    shutdown starts, for a line already being handled.
   - `the background service` (referenced by App.Droid):
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.

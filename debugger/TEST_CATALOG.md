@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 56 tests in four files, ~7-10 min on the headless emulator after deploy. Each
+- 60 tests in five files, ~7-10 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -43,6 +43,9 @@ Conventions (mirroring the Delphi project's discipline):
 - A live MCP debug session on the same device breaks the suite: it owns
   `debug.mono.extra` (and rewrites it when `keepPropertyFresh` is on), so the
   tests' own launches lose the port. Terminate it first.
+- Tests that watch a process die must watch the **pid**, not the name: Android
+  restarts the app, and rotating the port at fork means those restarts are
+  attached too, so a process with the same name reappears within seconds.
 - The engine logs from background threads that can outlive a test; the fixture
   ignores the `InvalidOperationException` xUnit's output helper throws once its
   test is over, because an unhandled throw there kills the whole test host.
@@ -201,9 +204,12 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Only the first unhandled exception per process is reported; the ones the
       runtime raises while the process dies are resumed automatically, so one
       continue is enough — `UnhandledException_IsReported_ThenAppExits` (U12)
-      Details are captured at stop time from the backtrace (the process dies
-      right after); the message is best-effort and the stop backtrace is the
-      dispatch frame, not the original throw site.
+      The process is *not* guaranteed to die afterwards (measured: still alive
+      past 90 s in 2 of 8 runs), so the test accepts both outcomes and asserts
+      the session stays coherent instead.
+      Details are captured at stop time from the backtrace; the message is
+      best-effort and the stop backtrace is the dispatch frame, not the
+      original throw site.
 - [x] Exception type filtering: several types at once, and clearing the filters
       stops the exception stops — `ExceptionFilters_CanBeNarrowedAndCleared`
 
@@ -226,6 +232,22 @@ Conventions (mirroring the Delphi project's discipline):
       empty rather than guessed, and a blank query is rejected. This is how a
       pending breakpoint is diagnosed (wrong path vs type not loaded yet) —
       `GetSourceFiles_ReportsThePathTheRuntimeWasBuiltWith`
+
+## K. DAP frontend (`DapEndToEndTests`, real adapter process over stdio)
+- [x] `initialize` reports the capabilities a client needs and is followed by
+      the `initialized` event — `Initialize_ReportsTheCapabilitiesAClientNeeds`
+- [x] Editor-shaped round trip: setBreakpoints before launch → launch →
+      configurationDone → stopped event → threads (each named with its pid) →
+      stackTrace → scopes → variables → nested variables → evaluate → continue →
+      disconnect —
+      `Roundtrip_Launch_Breakpoint_Stack_Scopes_Variables_Evaluate_Continue_Disconnect`
+- [x] `next` steps one line and the stop is reported with reason `step` —
+      `Stepping_MovesToTheNextLine_AndReportsAStepStop`
+- [x] Every failure is answered rather than leaving the client waiting: unknown
+      request, missing `packageName`, stale frame id, stale variablesReference,
+      evaluate with nothing stopped — and the adapter still serves requests —
+      `ErrorPaths_AreAnswered_NeverLeaveTheClientWaiting`
+- [ ] Driven by a real editor (VS Code launch configuration) — not automated
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →

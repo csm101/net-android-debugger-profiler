@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/NetAndroidDebugger.Core/NetAndroidDebugger.Core.csproj" />
     <Project Path="src/NetAndroidDebugger.Mcp/NetAndroidDebugger.Mcp.csproj" />
+    <Project Path="src/NetAndroidDebugger.Dap/NetAndroidDebugger.Dap.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NetAndroidDebugger.Tests/NetAndroidDebugger.Tests.csproj" />

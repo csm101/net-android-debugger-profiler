@@ -101,6 +101,12 @@ public sealed class DebugSession : IAsyncDisposable
     /// <summary>Raised for every stop of any debuggee process.</summary>
     public event EventHandler<StopEvent>? Stopped;
 
+    /// <summary>
+    /// Raised for every line of debuggee output as it arrives (logcat lines of the app's processes
+    /// and anything it wrote to stdout/stderr). Raised on the thread that produced the line.
+    /// </summary>
+    public event EventHandler<AppLogLine>? AppOutput;
+
     public SessionState State { get { lock (_lock) return _state; } }
     public long StopGeneration { get { lock (_lock) return _generation; } }
     public StopEvent? LastStop { get { lock (_lock) return _lastStop; } }
@@ -1143,6 +1149,9 @@ public sealed class DebugSession : IAsyncDisposable
             _appOutput.Add(line);
             if (_appOutput.Count > MaxOutputLines) _appOutput.RemoveRange(0, _appOutput.Count - MaxOutputLines);
         }
+        // Outside the lock: a frontend handler must never be able to deadlock the engine.
+        try { AppOutput?.Invoke(this, line); }
+        catch (Exception ex) { _log($"an app-output subscriber threw: {ex.Message}"); }
     }
 
     private void SetState(SessionState s)

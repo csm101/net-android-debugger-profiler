@@ -164,6 +164,31 @@ Two engine defects, both found on the first two stops:
   `$exception` value's own type name. **The TestTarget reproduction failed** —
   see U15 for what was tried, why it proved nothing, and why the scaffolding was
   reverted. The fix rests on the V7 observation alone.
+
+## DAP frontend and the port race (2026-08-21)
+- **`NetAndroidDebugger.Dap`**: stdio Debug Adapter Protocol frontend over the
+  same `DebugSession`. Hand-rolled wire format (no debug-protocol dependency to
+  licence-clear). Four end-to-end tests start the real adapter process.
+  Contract notes are in ARCHITECTURE (DAP frontend section); the ones that bite:
+  `disconnect` answers *before* tearing down, one thread list spans every
+  process so names carry their pid, and frame/variable ids die with each stop.
+- **U14 resolved**: the port is rotated when ActivityManager announces a process
+  of ours (fork time), not only at agent init. That was the top cause of suite
+  flakiness — `no SDB handshake on port N`, a different victim each run.
+  The worry that rotating early would steal the port was unfounded; see U14.
+- Two follow-on defects that fix exposed, both fixed:
+  - shutdown cleared the property *before* stopping the logcat reader, which is
+    what rotates it, so a restarting process could leave a stale value on the
+    device;
+  - the DAP `disconnect` did the whole teardown before answering, and a client
+    cannot tell slow from hung.
+- **U12 corrected**: an unhandled exception does *not* reliably kill the process
+  (alive past 90 s in 2 of 8 runs). The test now accepts both outcomes and
+  asserts the session stays coherent.
+- Suite: **60 tests, 60/60 green** on a clean device, with none of the three
+  failure signatures anywhere in the output.
+- The emulator crashed nine times today; roughly one full run in three is lost
+  to it. `ensure-emulator.sh` recovers it, but the run has to be repeated.
 ## Next steps (in order)
 1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The
    published server is older than everything landed today — including the uid

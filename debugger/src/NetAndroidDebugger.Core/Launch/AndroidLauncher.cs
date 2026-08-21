@@ -42,6 +42,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     private long _deadline;
     private int _nextPort;
     private bool _propertyOwned;
+    private volatile bool _shuttingDown;
     private int? _packageUid;
     private readonly SemaphoreSlim _propertyGate = new(1, 1);
     private CancellationTokenSource? _renewCts;
@@ -158,7 +159,15 @@ public sealed class AndroidLauncher : IAsyncDisposable
     public async Task ShutdownAsync(CancellationToken ct)
     {
         var serial = _options.DeviceSerial;
+        // Order matters. The logcat reader rotates the property whenever a process of ours starts,
+        // so it has to be stopped *before* the property is cleared - otherwise a process Android is
+        // still restarting makes the reader publish a fresh port after the clear, and the device is
+        // left carrying a stale `debug.mono.extra`. The flag closes the same window for a line that
+        // is already being handled.
+        _shuttingDown = true;
         await StopRenewalAsync().ConfigureAwait(false);
+        await StopLogcatAsync().ConfigureAwait(false);
+
         try
         {
             if (_propertyOwned)
@@ -179,8 +188,6 @@ public sealed class AndroidLauncher : IAsyncDisposable
             try { await _adb.RemoveForwardAsync(serial, p, ct).ConfigureAwait(false); }
             catch (Exception ex) { _log($"shutdown: remove forward {p} failed: {ex.Message}"); }
         }
-
-        await StopLogcatAsync().ConfigureAwait(false);
     }
 
 
@@ -290,6 +297,14 @@ public sealed class AndroidLauncher : IAsyncDisposable
                 {
                     var npid = int.Parse(sp.Groups["pid"].Value);
                     lock (_gate) { _processNames[npid] = name; _appPids.Add(npid); }
+                    // Rotate as soon as a process of ours starts, not only when its agent
+                    // announces itself: the property is device-global, and everything between
+                    // those two moments is a window in which the next process reads the same
+                    // port and loses its agent. ActivityManager logs this line at fork, long
+                    // before the runtime reads the property. Rotating early cannot steal the
+                    // port from this process - it reads whatever is current, and its agent tells
+                    // us which port it actually took.
+                    RotateOnly(_nextPort, ct);
                 }
                 return;
             }
@@ -474,12 +489,17 @@ public sealed class AndroidLauncher : IAsyncDisposable
         catch (Exception ex) { _log($"ps lookup for pid {pid} failed: {ex.Message}"); }
         return (null, null);
     }
+    /// <summary>
+    /// Publishes the next port. <paramref name="takenPort"/> is the one that must not be handed
+    /// out again; when it is already behind us the property is left alone, so the common case of
+    /// being called twice for the same process costs nothing.
+    /// </summary>
     private void RotateOnly(int takenPort, CancellationToken ct)
     {
         try
         {
-            if (takenPort >= _nextPort)
-                _nextPort = takenPort + 1;
+            if (_shuttingDown || takenPort < _nextPort) return;
+            _nextPort = takenPort + 1;
             WritePropertyAsync(_nextPort, ct).GetAwaiter().GetResult();
             ForwardAsync(_nextPort, ct).GetAwaiter().GetResult();
         }

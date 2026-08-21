@@ -62,17 +62,25 @@ on the abort. Open only if it ever matters: can the engine tell an
 interruptible invocation from a doomed one before starting it? Covered by
 `AbortedSlowInvoke_LeavesTheThreadUsable`.
 
-## U12 - DECIDED (delete once the entry stops being useful context)
-An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw,
-and while the process dies the runtime raises further unhandled exceptions on
-other threads, each of which suspended it again - so "Continue once and the
-app exits" did not hold. Decision (implemented in DebugSession, 2026-08-20):
-only the FIRST unhandled exception per process is reported; later ones are
-resumed automatically and logged, and the reported details keep describing the
-first one. One Continue is therefore enough. Note the session still reports
-Exited only when every process is gone, and the sticky `:helper` service can
-outlive the crashing main process.
-
+## U12 - Unhandled exceptions: reported once, death not guaranteed
+An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw, and
+while the process dies the runtime raises further unhandled exceptions on other
+threads, each of which suspended it again - so "Continue once and the app exits"
+did not hold. Decision (implemented in DebugSession, 2026-08-20): only the FIRST
+unhandled exception per process is reported; later ones are resumed
+automatically and logged, and the reported details keep describing the first
+one. One Continue is therefore enough.
+**Corrected 2026-08-21:** the process does *not* reliably die afterwards.
+Measured over eight runs on the emulator: usually gone within seconds, but twice
+still alive past 90 s - with the crash hook armed (a tick throwing on every
+iteration) and with it disarmed alike. `UnhandledException_IsReported_ThenAppExits`
+therefore accepts both outcomes and asserts what does hold: the exception is
+reported once with its details, one Continue is enough, the crashed process is
+never left held stopped, and the session never claims to be Stopped with nothing
+suspended. Whether Mono's own teardown is being interfered with by the automatic
+resume of later unhandled exceptions is not established.
+Note the session still reports Exited only when every process is gone, and the
+sticky `:helper` service can outlive the crashing main process.
 ## U13 - Hit-count breakpoints count from an unstable baseline
 `HitCountBreakpoint_StopsAtNthHit` asks for the 3rd hit and usually gets it,
 but once in several runs the stop arrived on the 9th (suite run 28b). The
@@ -94,26 +102,26 @@ limitation is documented for users (hit counts are approximate in
 multi-process apps). Settle it with data, not more reading, if it ever
 matters — log `CurrentHitCount` per stop across many runs.
 
-## U14 - Can port rotation be made race-free?
-`debug.mono.extra` is device-global and read at process start; the launcher
-rotates it to the next port when it *sees* an agent-init line in logcat. Two
-processes starting within the same instant therefore read the same value, take
-the same port, and the second one's agent cannot listen - it dies (observed
-2026-08-21, details in ANDROID_ATTACH_NOTES).
-Options, none obviously right:
-- rotate on ActivityManager's `Start proc` line instead of on agent init. That
-  line comes earlier, but the runtime reads the property after it, so rotating
-  then risks stealing the port from the process that is about to read it.
-- rotate on a timer while any process of the app is starting.
-- accept the collision and recover: two pids announcing the same port is
-  detectable, but by then the loser's agent has already failed.
-Related, and measured: the decision "is this pid ours?" happens on that same
-thread before the rotation, so it must stay fast. A 400 ms retry added there on
-2026-08-21 was enough to make `:helper` lose its port and fail the handshake in
-three different tests.
-Not worth solving until an app is actually hurt by it: processes normally start
-seconds apart, and the tests that used to trip it now sequence themselves.
-
+## U14 - RESOLVED 2026-08-21 (delete once it stops being useful context)
+`debug.mono.extra` is device-global and read at process start; the launcher used
+to rotate it only when it *saw* an agent-init line in logcat. Two processes
+starting between those two moments read the same value, took the same port, and
+the loser's agent could not listen - it died, sometimes taking the app with it
+(`no SDB handshake on port N within 20s`). It stopped being theoretical: it was
+the top cause of suite flakiness, hitting a different test each run.
+Fixed by rotating at **process start** as well: ActivityManager logs
+`Start proc <pid>:<name>/<uid>` at fork, long before the runtime reads the
+property, so the window shrinks from hundreds of milliseconds to almost nothing.
+The worry recorded here earlier - that rotating early would steal the port from
+the process about to read it - was unfounded: that process reads whatever is
+current, and its agent-init line tells us which port it actually took. Rotation
+is also idempotent now (a port already behind us leaves the property alone), so
+being called at both moments costs one write, not two.
+Related and still true: the decision "is this pid ours?" happens on the logcat
+thread before the rotation, so it must stay fast. A 400 ms retry added there was
+enough to break three tests.
+Not fully closed: two processes that fork in the very same instant can still
+collide. Nothing observed since the fix.
 ## U15 - Exception type is empty when the throw site has no debug info
 Seen live on the reference application (2026-08-21): a first-chance stop on
 `MQTTnet.Client.MqttClient.ConnectAsync` reported an empty exception type - the

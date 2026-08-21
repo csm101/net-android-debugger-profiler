@@ -58,7 +58,8 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 56 integration tests; TEST_CATALOG has 2 open gaps left, both waiting
+  mode). 60 integration tests; TEST_CATALOG has 3 open gaps left: two need a
+  WiFi device (U9), one is driving the DAP adapter from a real editor.
   on a WiFi device (U9).
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints
@@ -72,8 +73,15 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   periodic sync threads plus deep expansion held up (details in
   ANDROID_ATTACH_NOTES.md); helper process restart is re-attached on a new
   port live.
-- M4 - Optional DAP frontend + packaging/registration (mirror the Delphi
-  project's installer / register-mcp.ps1 approach).
+- M4 - DAP frontend: DONE (2026-08-21). `NetAndroidDebugger.Dap`, a stdio
+  adapter over the same DebugSession, hand-rolled wire protocol: initialize,
+  launch/attach, setBreakpoints (conditions and hit counts), exception filters,
+  threads, stackTrace, scopes, variables, evaluate, continue, next/stepIn/
+  stepOut, pause, exceptionInfo, disconnect/terminate, and the stopped /
+  continued / output / terminated events. Four end-to-end tests drive the real
+  adapter process. Remaining for M4: packaging/registration (mirror the Delphi
+  project's installer / register-mcp.ps1 approach), and a VS Code launch
+  configuration so a human can drive it.
 
 ## Target MCP tool surface (mirror of delphi-win64-debugger, adapted)
 

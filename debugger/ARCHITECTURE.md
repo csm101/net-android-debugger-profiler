@@ -53,7 +53,10 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `Core/Engine/ProcessDebugger.cs` (internal) | One `SoftDebuggerSession` per debuggee pid; connect with retries; event → `Stopped/Resumed/Exited` callbacks; step/continue/pause per process |
 | `Core/Engine/DebugSession.cs` | Facade: aggregates N `ProcessDebugger`s, one shared Mono `BreakpointStore`, state machine, monotonic stop generation + `WaitForStopAsync`, inspection (threads, frames, locals, evaluate, expansion handles), app/debugger output buffers |
 | `Mcp/` | `ModelContextProtocol` 2.2.0 stdio server; `DebuggerTools` (one tool = one or two facade calls), `SessionHost` (single active session, pid/thread defaults from the last stop), `TextFormat` (plain-text rendering) |
-| `Dap/` (future) | stdio DAP adapter over `DebugSession` |
+
+| `src/NetAndroidDebugger.Dap/DapConnection.cs` | DAP wire format: `Content-Length` framing over stdin/stdout, one writer at a time |
+| `src/NetAndroidDebugger.Dap/DapIds.cs` | DAP's integer thread/frame/variable ids ↔ the engine's (pid, thread, frame) and expansion handles; frame and variable ids are dropped when a process resumes |
+| `src/NetAndroidDebugger.Dap/DapAdapter.cs` | Request dispatch and event forwarding over one `DebugSession`; translation only |
 
 Not yet implemented: `ValueFormatter` (Mono.Debugging's `DisplayValue` is used
 as-is), `SourceResolver` (breakpoint paths must match the PDB paths), logcat
@@ -69,6 +72,32 @@ ANDROID_ATTACH_NOTES.md) happens inside `AndroidLauncher` on the logcat reader
 thread *before* `AgentDetected` is raised, so the next process always reads a
 free port. Detach == terminate (runtime behavior), hence a single shutdown path.
 
+
+## DAP frontend
+
+`NetAndroidDebugger.Dap` is a second frontend over the same `DebugSession`, with
+no debugging logic of its own. Notes that matter to a client:
+
+- The wire protocol is hand-rolled (framing is a dozen lines). That keeps the
+  adapter free of a debug-protocol package whose licence would have to be
+  cleared, and there is nothing to keep in sync with upstream.
+- `launch` and `attach` take the same arguments (`deviceSerial`, `packageName`,
+  and optionally `activityName`, `projectPath`, `deploy`, `basePort`,
+  `configuration`, `propertyLifetimeSeconds`, `keepPropertyFresh`). They differ
+  only in that `attach` never deploys: on Mono Android attaching *is* a restart
+  with the agent enabled.
+- `disconnect` always terminates the app. `terminateDebuggee: false` cannot be
+  honoured, because the Mono runtime exits when the debugger disconnects.
+  The response goes out *before* the teardown runs: stopping the logcat reader,
+  clearing the property, force-stopping and removing the forwards take seconds
+  on a healthy device and can hang on a sick one, and a client waiting for the
+  response cannot tell slow from hung.
+- One DAP thread list spans every process of the app, so thread names carry
+  their pid.
+- Frame and variable ids are invalidated on every stop; a stale id is refused
+  with a message rather than silently addressing something else.
+- Step requests are acknowledged before the step runs, so the client sees the
+  response before the `stopped` event that follows it.
 ## Threading model
 
 - Mono.Debugging raises events on its own event thread, one per
@@ -77,7 +106,10 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   a replaced `TaskCompletionSource` (`Signal()`); public events
   (`Stopped`, `StateChanged`) are raised outside the lock on that thread.
 - `AndroidLauncher` runs the logcat reader on a thread-pool task; property
-  rotation is synchronous on that thread (blocking adb calls, ~100 ms).
+  rotation is synchronous on that thread (blocking adb calls, ~100 ms) and runs
+  at two moments: when ActivityManager announces a process of ours (fork time)
+  and when that process announces its agent. Rotating at the first shrinks the
+  window in which two processes read the same port; the second is idempotent.
 - A launch waits for the package to have no live process before it publishes the
   port: `am force-stop` is asynchronous, and a leftover (or a sticky service on
   its way back up) would read the property and take the port.
