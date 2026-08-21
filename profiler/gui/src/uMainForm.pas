@@ -25,25 +25,28 @@ uses
   cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
+  dxBar, dxBarExtItems, dxStatusBar, Vcl.ImgList,
   dxDockControl, dxDockPanel,
   dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
   uSessionStore, uControlClient, uSetupDialog, uTheme, uSettings, uSettingsDialog,
-  uLayouts, uLayoutDialog;
+  uLayouts, uLayoutDialog, uGlyphs;
 
 type
   TMainForm = class(TForm)
   private
     FStore: TSessionStore;
-    FToolbar: TPanel;
-    FOpenButton: TcxButton;
-    FRefreshButton: TcxButton;
-    FInfoLabel: TcxLabel;
-    FUnits: TcxComboBox;
-    FThemeBox: TcxComboBox;
-    FSettingsButton: TcxButton;
-    FLayoutButton: TcxButton;
+    FBarManager: TdxBarManager;
+    FGlyphs: TImageList;
+    FSuppressCombo: Boolean;
+    FOpenButton: TdxBarButton;
+    FRefreshButton: TdxBarButton;
+    FStatus: TdxStatusBar;
+    FUnits: TdxBarCombo;
+    FThemeBox: TdxBarCombo;
+    FSettingsButton: TdxBarButton;
+    FLayoutButton: TdxBarButton;
     FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
     FSummary: TcxMemo;
@@ -69,6 +72,8 @@ type
     FHeapFrom: TcxComboBox;
     FHeapTo: TcxComboBox;
     FHeapGrowth: TcxCheckBox;
+    FHeapChart: TPaintBox;
+    FHeapPoints: TArray<THeapTotal>;
     FExplorer: TcxTreeList;
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
@@ -128,10 +133,10 @@ type
     FClient: TControlClient;
     FSessionId: string;
     FPoll: TTimer;
-    FStartButton: TcxButton;
-    FSnapshotButton: TcxButton;
-    FPauseButton: TcxButton;
-    FStopButton: TcxButton;
+    FStartButton: TdxBarButton;
+    FSnapshotButton: TdxBarButton;
+    FPauseButton: TdxBarButton;
+    FStopButton: TdxBarButton;
     FPaused: Boolean;
     FPendingDialog: string;
     FLog: TcxMemo;
@@ -152,10 +157,14 @@ type
       out ASource: TDataSource): TcxGrid;
     procedure LoadMemory;
     procedure HeapSelectionChanged(Sender: TObject);
+    procedure PaintHeapChart(Sender: TObject);
     procedure UpdateSummary;
     procedure UnitsChanged(Sender: TObject);
     procedure ThemeChanged(Sender: TObject);
+    procedure ShowPreferencesInToolbar;
+    procedure SetStatus(const AText: string);
     procedure ApplyTheme;
+    procedure RecolourGlyphs;
     procedure SettingsClick(Sender: TObject);
     procedure LayoutsClick(Sender: TObject);
     procedure ApplyCodeFont;
@@ -300,8 +309,7 @@ begin
     FSessionsRoot := GSettings.SessionsRoot;
     ReloadExplorer;
   end;
-  FThemeBox.ItemIndex := Ord(GTheme);
-  FUnits.ItemIndex := Ord(GTimeUnit);
+  ShowPreferencesInToolbar;
   LoadLayout;
   ApplyTheme;
   ApplyCodeFont;
@@ -366,98 +374,118 @@ begin
   inherited Destroy;
 end;
 
+/// AQTime's toolbar, on a bar manager rather than a panel of buttons: it is skinned with
+/// the rest, the user can rearrange or hide it, and the items lay themselves out instead
+/// of sitting at hardcoded pixels that break on a different DPI.
 procedure TMainForm.BuildToolbar;
+
+  function NewBar(const ACaption: string): TdxBar;
+  begin
+    Result := FBarManager.Bars.Add;
+    Result.Caption := ACaption;
+    Result.DockingStyle := dsTop;
+    Result.Visible := True;
+  end;
+
+  function NewButton(ABar: TdxBar; const ACaption, AHint: string; AGlyph: TGlyphKind;
+    AClick: TNotifyEvent; ABeginGroup: Boolean = False): TdxBarButton;
+  begin
+    Result := FBarManager.AddButton;
+    Result.Caption := ACaption;
+    Result.Hint := AHint;
+    Result.ImageIndex := Ord(AGlyph);
+    Result.PaintStyle := psCaptionGlyph;
+    Result.OnClick := AClick;
+    ABar.ItemLinks.Add.Item := Result;
+    ABar.ItemLinks[ABar.ItemLinks.Count - 1].BeginGroup := ABeginGroup;
+  end;
+
+  function NewCombo(ABar: TdxBar; const ACaption: string; AWidth: Integer;
+    AChange: TNotifyEvent): TdxBarCombo;
+  begin
+    Result := TdxBarCombo(FBarManager.AddItem(TdxBarCombo));
+    Result.Caption := ACaption;
+    Result.Width := AWidth;
+    Result.ShowCaption := True;
+    Result.ShowEditor := False;
+    Result.OnChange := AChange;
+    ABar.ItemLinks.Add.Item := Result;
+  end;
+
+var
+  LSession, LView: TdxBar;
 begin
-  FToolbar := TPanel.Create(Self);
-  FToolbar.Parent := Self;
-  FToolbar.Align := alTop;
-  FToolbar.Height := 40;
-  FToolbar.BevelOuter := bvNone;
+  // Filling a combo raises the same change event a click does, and at this point half
+  // the window does not exist yet: the handlers stay out of the way until it does.
+  FSuppressCombo := True;
+  FBarManager := TdxBarManager.Create(Self);
+  FBarManager.AllowReset := False;
+  FGlyphs := BuildGlyphs(Self, ThemeColors.Text);
+  FBarManager.ImageOptions.Images := FGlyphs;
 
-  FOpenButton := TcxButton.Create(Self);
-  FOpenButton.Parent := FToolbar;
-  FOpenButton.Left := 8;
-  FOpenButton.Top := 8;
-  FOpenButton.Width := 110;
-  FOpenButton.Caption := 'Open session...';
-  FOpenButton.OnClick := OpenButtonClick;
+  LSession := NewBar('Session');
+  FOpenButton := NewButton(LSession, 'Open session...',
+    'Open the results of a session already collected', gkOpen, OpenButtonClick);
+  FRefreshButton := NewButton(LSession, 'Refresh',
+    'Re-read the open session from disk', gkRefresh, RefreshButtonClick);
+  FStartButton := NewButton(LSession, 'New session...',
+    'Profile an app: pick the device, the mode and what to instrument', gkRun,
+    StartButtonClick, True);
+  FSnapshotButton := NewButton(LSession, 'Snapshot',
+    'Refresh the results from what has been collected so far, without stopping the app',
+    gkSnapshot, SnapshotButtonClick);
+  FPauseButton := NewButton(LSession, 'Pause',
+    'Stop recording without stopping the app: the methods stay instrumented, so their overhead remains',
+    gkPause, PauseButtonClick);
+  FStopButton := NewButton(LSession, 'Stop', 'End the session and analyse what it collected',
+    gkStop, StopButtonClick);
 
-  FRefreshButton := TcxButton.Create(Self);
-  FRefreshButton.Parent := FToolbar;
-  FRefreshButton.Left := 126;
-  FRefreshButton.Top := 8;
-  FRefreshButton.Width := 90;
-  FRefreshButton.Caption := 'Refresh';
-  FRefreshButton.OnClick := RefreshButtonClick;
+  LView := NewBar('View');
+  FSettingsButton := NewButton(LView, 'Settings...',
+    'Theme, units, the font code is read in, and where sessions are kept', gkSettings,
+    SettingsClick);
+  FLayoutButton := NewButton(LView, 'Layouts...',
+    'Save, load and manage panel arrangements', gkLayouts, LayoutsClick);
 
-  FStartButton := TcxButton.Create(Self);
-  FStartButton.Parent := FToolbar;
-  FStartButton.SetBounds(232, 8, 110, 25);
-  FStartButton.Caption := 'New session...';
-  FStartButton.OnClick := StartButtonClick;
-
-  FSnapshotButton := TcxButton.Create(Self);
-  FSnapshotButton.Parent := FToolbar;
-  FSnapshotButton.SetBounds(350, 8, 90, 25);
-  FSnapshotButton.Caption := 'Snapshot';
-  FSnapshotButton.Hint := 'Refresh the results from what has been collected so far, without stopping the app';
-  FSnapshotButton.ShowHint := True;
-  FSnapshotButton.OnClick := SnapshotButtonClick;
-
-  FPauseButton := TcxButton.Create(Self);
-  FPauseButton.Parent := FToolbar;
-  FPauseButton.SetBounds(448, 8, 90, 25);
-  FPauseButton.Caption := 'Pause';
-  FPauseButton.Hint := 'Stop recording without stopping the app: the methods stay instrumented, so their overhead remains';
-  FPauseButton.ShowHint := True;
-  FPauseButton.OnClick := PauseButtonClick;
-
-  FStopButton := TcxButton.Create(Self);
-  FStopButton.Parent := FToolbar;
-  FStopButton.SetBounds(546, 8, 90, 25);
-  FStopButton.Caption := 'Stop';
-  FStopButton.OnClick := StopButtonClick;
-
-  FSettingsButton := TcxButton.Create(Self);
-  FSettingsButton.Parent := FToolbar;
-  FSettingsButton.SetBounds(646, 8, 90, 25);
-  FSettingsButton.Caption := 'Settings...';
-  FSettingsButton.OnClick := SettingsClick;
-
-  FLayoutButton := TcxButton.Create(Self);
-  FLayoutButton.Parent := FToolbar;
-  FLayoutButton.SetBounds(744, 8, 90, 25);
-  FLayoutButton.Caption := 'Layouts...';
-  FLayoutButton.OnClick := LayoutsClick;
-
-  FThemeBox := TcxComboBox.Create(Self);
-  FThemeBox.Parent := FToolbar;
-  FThemeBox.SetBounds(842, 9, 90, 24);
-  FThemeBox.Properties.DropDownListStyle := lsFixedList;
-  FThemeBox.Properties.Items.Add(ThemeName(atLight));
-  FThemeBox.Properties.Items.Add(ThemeName(atDark));
+  FThemeBox := NewCombo(LView, 'Theme', 70, ThemeChanged);
+  FThemeBox.Items.Add(ThemeName(atLight));
+  FThemeBox.Items.Add(ThemeName(atDark));
   FThemeBox.ItemIndex := 0;
-  FThemeBox.Properties.OnChange := ThemeChanged;
 
-  FUnits := TcxComboBox.Create(Self);
-  FUnits.Parent := FToolbar;
-  FUnits.SetBounds(940, 9, 120, 24);
-  FUnits.Properties.DropDownListStyle := lsFixedList;
-  FUnits.Properties.Items.Add(TimeUnitName(tuAuto));
-  FUnits.Properties.Items.Add(TimeUnitName(tuSeconds));
-  FUnits.Properties.Items.Add(TimeUnitName(tuMilliseconds));
-  FUnits.Properties.Items.Add(TimeUnitName(tuMicroseconds));
-  FUnits.Properties.Items.Add(TimeUnitName(tuNanoseconds));
+  FUnits := NewCombo(LView, 'Times in', 95, UnitsChanged);
+  FUnits.Items.Add(TimeUnitName(tuAuto));
+  FUnits.Items.Add(TimeUnitName(tuSeconds));
+  FUnits.Items.Add(TimeUnitName(tuMilliseconds));
+  FUnits.Items.Add(TimeUnitName(tuMicroseconds));
+  FUnits.Items.Add(TimeUnitName(tuNanoseconds));
   FUnits.ItemIndex := 0;
-  FUnits.Properties.OnChange := UnitsChanged;
 
-  FInfoLabel := TcxLabel.Create(Self);
-  FInfoLabel.Transparent := True;
-  FInfoLabel.Parent := FToolbar;
-  FInfoLabel.Left := 1072;
-  FInfoLabel.Top := 12;
-  FInfoLabel.Caption := 'No session open.';
+  // Session first, then View: bars are laid out in docking order, not creation order,
+  // and the run controls are what the eye should land on.
+  LView.Move(LSession, True);
+
+  FStatus := TdxStatusBar.Create(Self);
+  FStatus.Parent := Self;
+  FStatus.Align := alBottom;
+  FStatus.Panels.Add.Fixed := False;
+  SetStatus('No session open.');
+
+  FSuppressCombo := False;
   UpdateButtons('');
+end;
+
+/// The glyphs are drawn in the theme's text colour, so a theme change means drawing them
+/// again. The old list goes only after the bars point at the new one.
+procedure TMainForm.RecolourGlyphs;
+var
+  LPrevious: TImageList;
+begin
+  if FBarManager = nil then
+    Exit;
+  LPrevious := FGlyphs;
+  FGlyphs := BuildGlyphs(Self, ThemeColors.Text);
+  FBarManager.ImageOptions.Images := FGlyphs;
+  LPrevious.Free;
 end;
 
 /// AQTime's Explorer: the results you can open, and the categories inside the one that
@@ -1061,6 +1089,14 @@ begin
   FHeapTo.Properties.DropDownListStyle := lsFixedList;
   FHeapTo.Properties.OnChange := HeapSelectionChanged;
 
+  // The chart above the grid: how the live set moved from snapshot to snapshot, which
+  // is the shape a leak has before any single type looks suspicious.
+  FHeapChart := TPaintBox.Create(Self);
+  FHeapChart.Parent := LHeap;
+  FHeapChart.Align := alTop;
+  FHeapChart.Height := 112;
+  FHeapChart.OnPaint := PaintHeapChart;
+
   FHeapGrid := BuildBoundGrid(LHeap, FHeapView, FHeapSource);
 end;
 
@@ -1098,6 +1134,15 @@ begin
     DressColumns(FAllocSiteView);
   end;
 
+  FHeapPoints := FStore.HeapTotals;
+  if FHeapChart <> nil then
+    FHeapChart.Invalidate;
+  // Open the page that has something to show: a heap session has no allocation sites,
+  // and the first page of an empty tab set reads as a broken panel.
+  if (Length(FHeapPoints) > 0) and (FStore.CountOf('alloc_by_type') = 0) then
+    FMemoryPages.ActivePageIndex := 2
+  else
+    FMemoryPages.ActivePageIndex := 0;
   LIds := FStore.HeapSnapshotIds;
   for I := 0 to High(LIds) do
   begin
@@ -1109,6 +1154,60 @@ begin
     FHeapFrom.ItemIndex := 0;
     FHeapTo.ItemIndex := FHeapTo.Properties.Items.Count - 1;
     HeapSelectionChanged(nil);
+  end;
+end;
+
+/// Bars per snapshot: bytes alive, with the object count written above each bar. Two
+/// snapshots that look alike in bytes but differ in count say something different from
+/// two that grow together, so both are on the chart.
+procedure TMainForm.PaintHeapChart(Sender: TObject);
+var
+  LCanvas: TCanvas;
+  LRect, LBar: TRect;
+  LColors: TThemeColors;
+  LMax: Int64;
+  LWidth, I: Integer;
+begin
+  LCanvas := FHeapChart.Canvas;
+  LColors := ThemeColors;
+  LCanvas.Brush.Color := LColors.Window;
+  LCanvas.Font.Color := LColors.Text;
+  LCanvas.FillRect(FHeapChart.ClientRect);
+  LRect := FHeapChart.ClientRect;
+  LRect.Inflate(-32, -20);
+  if (Length(FHeapPoints) = 0) or (LRect.Width < 40) then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(12, 8, 'No heap snapshots in this session.');
+    LCanvas.Brush.Style := bsSolid;
+    Exit;
+  end;
+
+  LMax := 1;
+  for I := 0 to High(FHeapPoints) do
+    if FHeapPoints[I].Bytes > LMax then
+      LMax := FHeapPoints[I].Bytes;
+
+  LCanvas.Pen.Color := LColors.Line;
+  LCanvas.MoveTo(LRect.Left, LRect.Bottom);
+  LCanvas.LineTo(LRect.Right, LRect.Bottom);
+
+  LWidth := Max(12, Min(80, LRect.Width div (Length(FHeapPoints) * 2)));
+  for I := 0 to High(FHeapPoints) do
+  begin
+    LBar.Left := LRect.Left + 8 + I * (LWidth + 24);
+    LBar.Right := LBar.Left + LWidth;
+    LBar.Bottom := LRect.Bottom;
+    LBar.Top := LRect.Bottom - Round(LRect.Height * (FHeapPoints[I].Bytes / LMax));
+    if LBar.Top >= LBar.Bottom then
+      LBar.Top := LBar.Bottom - 1;
+    LCanvas.Brush.Color := LColors.Accent;
+    LCanvas.FillRect(LBar);
+
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(LBar.Left, LBar.Top - 16, Format('%.1f MB', [FHeapPoints[I].Bytes / 1048576]));
+    LCanvas.TextOut(LBar.Left, LRect.Bottom + 4, Format('#%d  %d obj', [FHeapPoints[I].Id, FHeapPoints[I].Objects]));
+    LCanvas.Brush.Style := bsSolid;
   end;
 end;
 
@@ -1332,9 +1431,31 @@ begin
   end;
 end;
 
+/// The toolbar combos say what the settings say. Assigning to them raises the same
+/// change event a click does, so the handlers step aside while we do it.
+procedure TMainForm.ShowPreferencesInToolbar;
+begin
+  FSuppressCombo := True;
+  try
+    FThemeBox.ItemIndex := Ord(GTheme);
+    FUnits.ItemIndex := Ord(GTimeUnit);
+  finally
+    FSuppressCombo := False;
+  end;
+end;
+
+procedure TMainForm.SetStatus(const AText: string);
+begin
+  if FStatus <> nil then
+    FStatus.Panels[0].Text := AText;
+end;
+
 procedure TMainForm.ThemeChanged(Sender: TObject);
 begin
+  if FSuppressCombo then
+    Exit;
   GTheme := TAppTheme(FThemeBox.ItemIndex);
+  GSettings.Theme := GTheme;
   ApplyTheme;
 end;
 
@@ -1347,11 +1468,11 @@ begin
   LColors := ThemeColors;
   FSkinController.SkinName := SkinNameFor(GTheme);
   Color := LColors.Window;
-  FToolbar.ParentBackground := False;
-  FToolbar.Color := LColors.Window;
+  RecolourGlyphs;
   // The cx controls follow the skin, so nothing to colour here: only the plain
   // canvases and the editor below still need telling.
   ApplyThemeToEditor(FEditor);
+  if FHeapChart <> nil then FHeapChart.Invalidate;
   if FParentsPie <> nil then FParentsPie.Invalidate;
   if FChildrenPie <> nil then FChildrenPie.Invalidate;
   if FGraph <> nil then FGraph.Invalidate;
@@ -1362,6 +1483,8 @@ end;
 /// The font from the settings, applied where code and logs are read.
 procedure TMainForm.ApplyCodeFont;
 begin
+  if (Trim(GSettings.CodeFontName) = '') or (GSettings.CodeFontSize <= 0) then
+    Exit;
   if FEditor <> nil then
   begin
     FEditor.Font.Name := GSettings.CodeFontName;
@@ -1404,8 +1527,7 @@ begin
   finally
     LDialog.Free;
   end;
-  FThemeBox.ItemIndex := Ord(GTheme);
-  FUnits.ItemIndex := Ord(GTimeUnit);
+  ShowPreferencesInToolbar;
   ApplyTheme;
   ApplyCodeFont;
   UnitsChanged(nil);
@@ -1434,7 +1556,10 @@ end;
 
 procedure TMainForm.UnitsChanged(Sender: TObject);
 begin
+  if FSuppressCombo then
+    Exit;
   GTimeUnit := TTimeUnit(FUnits.ItemIndex);
+  GSettings.TimeUnit := GTimeUnit;
   // Everything shows times: repaint the lot rather than guess which panel is visible.
   FGridView.LayoutChanged;
   FTree.Invalidate;
@@ -1843,7 +1968,7 @@ var
 begin
   if not FStore.IsOpen then
   begin
-    FInfoLabel.Caption := 'No session open. Use "Open session..." and pick a session.db.';
+    SetStatus('No session open. Use "Open session..." and pick a session.db.');
     Exit;
   end;
   LText := Format('%s  |  %s on %s  |  state %s', [ModeToString(FStore.Mode), FStore.Package, FStore.Device, FStore.State]);
@@ -1852,7 +1977,7 @@ begin
   LSegments := FStore.Segments;
   if Length(LSegments) > 0 then
     LText := LText + Format('  |  %d refreshes, last %s', [Length(LSegments), LSegments[High(LSegments)].Kind]);
-  FInfoLabel.Caption := LText;
+  SetStatus(LText);
 end;
 
 
@@ -1948,7 +2073,7 @@ begin
   ShowLog(LStatus.Log);
   PollCounters;
   UpdateButtons(LStatus.State);
-  FInfoLabel.Caption := Format('session %s: %s', [FSessionId, LStatus.State]);
+  SetStatus(Format('session %s: %s', [FSessionId, LStatus.State]));
   if (LStatus.State = 'Ready') or (LStatus.State = 'Failed') then
   begin
     FPoll.Enabled := False;

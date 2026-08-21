@@ -12,3 +12,5 @@ NapGui.layout.ini
 NapGui.trace.log
 NapGui.settings.ini
 layouts/
+*.drc
+*.map.idx

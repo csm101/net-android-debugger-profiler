@@ -23,6 +23,7 @@ uses
   uControlClient in 'src\uControlClient.pas',
   uSetupDialog in 'src\uSetupDialog.pas',
   uTheme in 'src\uTheme.pas',
+  uGlyphs in 'src\uGlyphs.pas',
   uSettings in 'src\uSettings.pas',
   uSettingsDialog in 'src\uSettingsDialog.pas',
   uLayouts in 'src\uLayouts.pas',

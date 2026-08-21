@@ -35,6 +35,7 @@ var
   LRoots, LChildren: TTreeNodes;
   LMethodId, LRows: Integer;
   LNeighbours: TNeighbours;
+  LTotals: TArray<THeapTotal>;
 begin
   Writeln('session: ', APath);
   LStore := TSessionStore.Create;
@@ -86,6 +87,14 @@ begin
     end;
 
     Check(LStore.CountOf('segment') >= 0, Format('segment history readable (%d rows)', [LStore.CountOf('segment')]));
+
+    // The heap chart reads these directly: a session with snapshots must produce a
+    // point per snapshot, and one without must produce none rather than fail.
+    LTotals := LStore.HeapTotals;
+    Check(Length(LTotals) = LStore.CountOf('heap_snapshot'),
+      Format('heap chart has a point per snapshot (%d)', [Length(LTotals)]));
+    if Length(LTotals) > 0 then
+      Check((LTotals[0].Bytes > 0) and (LTotals[0].Objects > 0), 'the first snapshot carries totals');
   finally
     LStore.Free;
   end;

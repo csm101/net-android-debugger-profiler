@@ -39,9 +39,24 @@ procedure SaveSettings;
 
 implementation
 
+const
+  CDefaultFontName = 'Consolas';
+  CDefaultFontSize = 10;
+
 function SettingsFileName: string;
 begin
   Result := TPath.ChangeExtension(ParamStr(0), '.settings.ini');
+end;
+
+/// A font has to be nameable and have a size. An empty name or a size of zero reaches
+/// the editor as an unusable font, so it is corrected here rather than defended against
+/// at every place the font is applied.
+procedure FixUpFont(var ASettings: TAppSettings);
+begin
+  if Trim(ASettings.CodeFontName) = '' then
+    ASettings.CodeFontName := CDefaultFontName;
+  if ASettings.CodeFontSize <= 0 then
+    ASettings.CodeFontSize := CDefaultFontSize;
 end;
 
 function LayoutsDirectory: string;
@@ -56,8 +71,8 @@ begin
   // Defaults first, so a missing or partial file still leaves a usable configuration.
   GSettings.Theme := atLight;
   GSettings.TimeUnit := tuAuto;
-  GSettings.CodeFontName := 'Consolas';
-  GSettings.CodeFontSize := 10;
+  GSettings.CodeFontName := CDefaultFontName;
+  GSettings.CodeFontSize := CDefaultFontSize;
   GSettings.SessionsRoot := '';
   GSettings.NapExePath := '';
   GSettings.DefaultLayout := '';
@@ -76,6 +91,9 @@ begin
   finally
     LIni.Free;
   end;
+  // A file written by a run that died before it read its own settings holds empty
+  // values, and reading them back would kill the next run the same way.
+  FixUpFont(GSettings);
   GTheme := GSettings.Theme;
   GTimeUnit := GSettings.TimeUnit;
 end;
@@ -86,6 +104,7 @@ var
 begin
   GSettings.Theme := GTheme;
   GSettings.TimeUnit := GTimeUnit;
+  FixUpFont(GSettings);
   try
     LIni := TIniFile.Create(SettingsFileName);
     try

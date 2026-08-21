@@ -185,14 +185,24 @@ notes written for agents; `Demos/VCL/<component>` is the first place to look).
   itself and the editor. With plain VCL controls every label has to be recoloured by
   hand - and a `TLabel` needs `ParentFont := False` first, or the skin hands its own
   font colour back.
-- **ExpressBars** ribbon or toolbar for the run controls.
+- **ExpressBars** for the run controls: `TdxBarManager` with two bars, Session and
+  View. Bars beat a panel of `TcxButton`s - they are skinned, the user can move,
+  hide or customise them, and the items lay themselves out instead of sitting at
+  hardcoded pixels that break at another DPI. A ribbon is the wrong shape here: it
+  costs a third of the vertical space in a window whose whole point is dense
+  panels, and AQTime itself is a toolbar application.
+  The glyphs are drawn in code (`uGlyphs.pas`): eight monochrome shapes, drawn
+  four times oversized and averaged down for the antialiasing GDI does not give,
+  tinted with the theme's text colour so the toolbar follows light and dark.
 - **ExpressQuantumGrid** for Report, Details, allocations. Grouping, sorting,
   filtering and layout persistence come for free - that is our "result views".
 - **ExpressQuantumTreeList** for the call tree: it must expand lazily, the tree
   can hold hundreds of thousands of nodes (the store is designed for it, see the
   scale test).
 - **ExpressPivotGrid** for allocations by type x allocating method.
-- **ExpressCharts** for the Monitor panel and for the heap growth diff.
+- **ExpressCharts** for the Monitor panel and for the heap growth diff. Both are
+  currently `TPaintBox`es: a handful of bars and a scrolling line do not need a
+  chart engine, and painting them ourselves keeps the theme in one place.
 - **ExpressFlowChart** is the candidate for the Call Graph panel (later: the
   tree views answer most questions first).
 - Source view: DevExpress has no code editor - SynEdit fills that role, see the
@@ -304,6 +314,6 @@ dialogs get exercised without a hand on the mouse (the same reason `--tab=` exis
   audience is the developer working on that code, not someone profiling an app
   pulled from a store, so asking is legitimate and guessing is not. The pdb paths
   are the fallback when nothing was configured.
-- Critical path on a sampling tree: "longest" by inclusive samples is the obvious
-  reading, but a path through a blocked thread is not a bottleneck. Compute it on
-  the CPU-only columns by default.
+- (decided) Critical path on a sampling tree: computed on `inclusive_cpu` /
+  `exclusive_cpu`, not on wall samples. A path through a thread parked in a wait is
+  not a bottleneck, and the bold path is read as "this is where the time goes".

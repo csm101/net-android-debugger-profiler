@@ -57,6 +57,13 @@ type
     Found: Boolean;
   end;
 
+  /// One point of the heap chart: how much was alive when a snapshot was taken.
+  THeapTotal = record
+    Id: Integer;
+    Objects: Int64;
+    Bytes: Int64;
+  end;
+
   TSegment = record
     Id: Integer;
     TakenUtc: string;
@@ -100,6 +107,8 @@ type
     function OpenHeapGrowth(AFromId, AToId: Integer): TFDQuery;
     /// Ids of the heap snapshots, for the pickers.
     function HeapSnapshotIds: TArray<Integer>;
+    /// Totals of every snapshot, oldest first: what the chart draws.
+    function HeapTotals: TArray<THeapTotal>;
     /// Children of a call-tree node; pass -1 for the roots.
     function TreeChildren(AParentId: Integer): TTreeNodes;
     /// Immediate callers and callees of a method (Details panel).
@@ -484,6 +493,31 @@ begin
   end;
 end;
 
+function TSessionStore.HeapTotals: TArray<THeapTotal>;
+var
+  LQuery: TFDQuery;
+  LList: TList<THeapTotal>;
+  LItem: THeapTotal;
+begin
+  LList := TList<THeapTotal>.Create;
+  LQuery := CreateQuery('SELECT id, total_objects, total_bytes FROM heap_snapshot ORDER BY id');
+  try
+    LQuery.Open;
+    while not LQuery.Eof do
+    begin
+      LItem.Id := LQuery.Fields[0].AsInteger;
+      LItem.Objects := LQuery.Fields[1].AsLargeInt;
+      LItem.Bytes := LQuery.Fields[2].AsLargeInt;
+      LList.Add(LItem);
+      LQuery.Next;
+    end;
+    Result := LList.ToArray;
+  finally
+    LQuery.Free;
+    LList.Free;
+  end;
+end;
+
 function TSessionStore.TreeChildren(AParentId: Integer): TTreeNodes;
 var
   LQuery: TFDQuery;
@@ -498,9 +532,11 @@ begin
       '       EXISTS(SELECT 1 FROM timing_tree c WHERE c.parent_id = n.id) AS has_children ' +
       'FROM timing_tree n LEFT JOIN method m ON m.id = n.method_id '
   else
+    // CPU samples, not wall: the "longest" path through a thread parked in a wait is
+    // not a bottleneck, and the critical path is drawn from these numbers.
     LSql :=
       'SELECT n.id, n.method_id, COALESCE(m.full_name, ''(thread)'') AS full_name, ' +
-      '       n.inclusive, n.exclusive, 0 AS calls, ' +
+      '       n.inclusive_cpu AS inclusive, n.exclusive_cpu AS exclusive, 0 AS calls, ' +
       '       EXISTS(SELECT 1 FROM sample_tree c WHERE c.parent_id = n.id) AS has_children ' +
       'FROM sample_tree n LEFT JOIN method m ON m.id = n.method_id ';
 
