@@ -89,8 +89,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
 - Tests: 23 fast (recorded traces + pdb) + 1 TODO-RED (U13) + 6 device
   (Category=Device).
 - Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
-- Not yet: Release-build weaving, iterator (`yield return`) bodies, physical
-  devices, Delphi GUI.
+- Not yet: Release-build weaving, physical devices, Delphi GUI.
 
 ## Milestones
 
@@ -116,7 +115,8 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   the reference application in its shipped configuration). The weaver also records allocations
   by type and allocating method, and instruments async state machines by
   default ("<method> (async body)": calls are resumptions, time excludes the
-  awaits) - verified on the reference application (net9). Open: iterator bodies (U8).
+  awaits) and iterators ("<method> (iterator body)": one call per item produced) -
+  verified on the reference application (net9) and TestTarget (net10).
 - P4 - Delphi GUI (gui/): DevExpress VCL, call tree (cxTreeList), hot lists
   (cxGrid), allocations (PivotGrid), timeline (chart); reads SQLite, drives
   Core via local control service.

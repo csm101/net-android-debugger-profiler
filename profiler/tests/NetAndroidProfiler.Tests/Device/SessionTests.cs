@@ -222,6 +222,36 @@ public class SessionTests
         }
     }
 
+    /// <summary>
+    /// U8, iterator half: an iterator's stub only builds the enumerator, so without weaving
+    /// its MoveNext the method looks free. On the device the body must show one resumption
+    /// per item produced.
+    /// </summary>
+    [Fact]
+    public async Task Weaver_instruments_iterator_bodies_on_the_device()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(8),
+            Callspec: "T:TestTarget.Workloads.SequenceProducer",
+            Engine: InstrumentingEngine.Weaver,
+            WeaveAssemblies: ["TestTarget"]));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var timings = s.Results.Timings(20);
+        Console.WriteLine(string.Join(Environment.NewLine, timings.Select(t => $"{t.Calls,6} {t.TotalNs / 1e6,9:F2}ms {t.SelfNs / 1e6,9:F2} self  {t.FullName}")));
+        var body = timings.Single(t => t.FullName == "TestTarget.Workloads.SequenceProducer.Fibonacci (iterator body)");
+        var consume = timings.Single(t => t.FullName == "TestTarget.Workloads.SequenceProducer.Consume");
+
+        // The workload consumes the whole sequence, so each Consume drives ItemsPerIteration
+        // resumptions plus the one that ends it. Machine speed decides how many iterations
+        // fit in the window, so assert the ratio, not a count.
+        Assert.True(consume.Calls >= 1, $"Consume calls = {consume.Calls}");
+        Assert.True(body.Calls >= consume.Calls * 25, $"{body.Calls} resumptions for {consume.Calls} calls");
+        Assert.True(body.TotalNs > 0);
+        // The stub is a separate entry and does almost nothing itself.
+        Assert.Contains(timings, t => t.FullName == "TestTarget.Workloads.SequenceProducer.Fibonacci");
+    }
+
     [Fact]
     public async Task Weaver_instrumenting_session_times_woven_methods()
     {

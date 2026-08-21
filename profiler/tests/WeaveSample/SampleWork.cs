@@ -52,6 +52,13 @@ public class Shapes
         await Task.Yield();
         return a + b;
     }
+
+    /// <summary>An iterator: everything below lives in a compiler-generated MoveNext.</summary>
+    public IEnumerable<int> Squares(int count)
+    {
+        for (int i = 1; i <= count; i++)
+            yield return i * i;
+    }
 }
 
 /// <summary>Deterministic allocations for the weaver's allocation tracking.</summary>

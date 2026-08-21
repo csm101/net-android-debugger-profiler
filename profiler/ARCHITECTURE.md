@@ -62,7 +62,7 @@ Profiling modes:
 | Core/Analysis/SamplingAnalyzer, WaitFrameClassifier | TraceLog stacks -> method stats (incl/excl, *_cpu), aggregated call tree, caller/callee edges |
 | Core/Analysis/MonoProfilerAnalyzer | manual decoder of the MonoProfiler provider -> timings, timing tree, allocations by type / by innermost instrumented frame |
 | Core/Store/ResultStore, ResultSchema | SQLite writer/reader, schema v1 (below) |
-| Core/Weaving (P3, in progress) | CecilWeaver (Mono.Cecil): Enter/try/finally/Leave injection into filtered methods (WeaveFilter, callspec-like grammar), id-map sidecar; WeaveAnalyzer parses the collector's .napw event files into the same InstrumentingResult as the runtime provider. Async state machines skipped in v1 (U8) |
+| Core/Weaving (P3, in progress) | CecilWeaver (Mono.Cecil): Enter/try/finally/Leave injection into filtered methods (WeaveFilter, callspec-like grammar), id-map sidecar; WeaveAnalyzer parses the collector's .napw event files into the same InstrumentingResult as the runtime provider. Compiler-generated state machines (async methods, iterators) are woven too, reported as "<method> (async body)" / "(iterator body)" |
 | Collector (NetAndroidProfiler.Collector, netstandard2.0, zero deps) | runtime target of woven calls; disabled unless NAP_PROFILER_OUT is set; per-thread .napw event files, 1 s flush |
 | Mcp/ | stdio MCP server over ProfilerSession (P1, next) |
 | gui/ (P4) | Delphi + DevExpress VCL frontend (AQTime-style), reads SQLite, drives sessions via local control service |

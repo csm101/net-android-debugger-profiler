@@ -92,6 +92,8 @@ try
         Console.WriteLine($"nap-weave: map written to {mapPath} ({weaver.Map.Count} methods, {weaver.SkippedAccessorCount} property accessors skipped)");
         if (weaver.AsyncStubCount > 0)
             Console.WriteLine($"nap-weave: {weaver.AsyncStubCount} async methods woven; {weaver.AsyncBodyCount} of their state machines are instrumented as '<method> (async body)'");
+        if (weaver.IteratorBodyCount > 0)
+            Console.WriteLine($"nap-weave: {weaver.IteratorBodyCount} iterators are instrumented as '<method> (iterator body)' - one call per item produced");
     }
 
     if (collectorOut is not null)

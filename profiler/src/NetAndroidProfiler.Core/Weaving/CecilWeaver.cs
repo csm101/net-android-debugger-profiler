@@ -49,11 +49,13 @@ public sealed class CecilWeaver
     /// </param>
     /// <param name="weaveAsyncBodies">
     /// Also instrument the compiler-generated state machine of matching async methods,
-    /// reported as "Type.Method (async body)": its calls are the resumptions and its
-    /// time is what the method actually executed, excluding the awaits.
-    /// **On by default**: without it an async method reports only its synchronous
-    /// prologue up to the first await, which is misleading. Pass false to weave the
-    /// stubs only.
+    /// reported as "Type.Method (async body)" for async methods and
+    /// "Type.Method (iterator body)" for iterators: its calls are the resumptions - an
+    /// await completing, or an item produced - and its time excludes what the method was
+    /// suspended on.
+    /// **On by default**: without it an async method reports only its prologue up to the
+    /// first await and an iterator only the cost of building its enumerator, which is
+    /// misleading. Pass false to weave the stubs only.
     /// </param>
     public CecilWeaver(WeaveFilter filter, int firstMethodId = 1, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = true)
     {
@@ -66,6 +68,9 @@ public sealed class CecilWeaver
 
     /// <summary>Async state machines woven ("... (async body)" entries in the map).</summary>
     public int AsyncBodyCount { get; private set; }
+
+    /// <summary>Iterator state machines woven ("... (iterator body)" entries in the map).</summary>
+    public int IteratorBodyCount { get; private set; }
 
     /// <summary>Allocation sites instrumented by the last weave.</summary>
     public int AllocationSiteCount { get; private set; }
@@ -145,7 +150,7 @@ public sealed class CecilWeaver
         }
 
         if (_weaveAsyncBodies)
-            WeaveAsyncStateMachines(module, moduleName, woven, enterRef, leaveRef, allocRef);
+            WeaveStateMachines(module, moduleName, woven, enterRef, leaveRef, allocRef);
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputPath))!);
         assembly.Write(outputPath, new WriterParameters { WriteSymbols = false });
@@ -189,13 +194,24 @@ public sealed class CecilWeaver
         return method;
     }
 
+    /// <summary>The compiler-generated shapes whose real body lives in a separate MoveNext.</summary>
+    private static readonly (string Attribute, string Label)[] StateMachineKinds =
+    [
+        ("System.Runtime.CompilerServices.AsyncStateMachineAttribute", "async body"),
+        ("System.Runtime.CompilerServices.IteratorStateMachineAttribute", "iterator body"),
+        ("System.Runtime.CompilerServices.AsyncIteratorStateMachineAttribute", "async iterator body"),
+    ];
+
     /// <summary>
-    /// Weave the <c>MoveNext</c> of the state machines belonging to matching async
-    /// methods. Each resumption is one call, so the recorded time is what the method
-    /// actually spent executing, excluding the awaits it was suspended on - the
-    /// complement of the stub's "synchronous part up to the first await".
+    /// Weave the <c>MoveNext</c> of the state machines belonging to matching methods.
+    ///
+    /// An async method's stub only runs up to the first await, and an iterator's stub only
+    /// builds the enumerator: everything the author wrote is in MoveNext, so without this
+    /// the method appears to cost almost nothing. One call is one resumption - one await
+    /// completing, or one item produced - and its time excludes what the method was
+    /// suspended on and what the consumer did between items.
     /// </summary>
-    private void WeaveAsyncStateMachines(ModuleDefinition module, string moduleName, List<WovenMethod> woven, MethodReference enterRef, MethodReference leaveRef, MethodReference? allocRef)
+    private void WeaveStateMachines(ModuleDefinition module, string moduleName, List<WovenMethod> woven, MethodReference enterRef, MethodReference leaveRef, MethodReference? allocRef)
     {
         foreach (var type in module.GetTypes())
         {
@@ -204,8 +220,10 @@ public sealed class CecilWeaver
             string ns = type.Namespace ?? "";
             foreach (var method in type.Methods.ToList())
             {
-                var attribute = method.CustomAttributes.FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.AsyncStateMachineAttribute");
-                if (attribute is null || attribute.ConstructorArguments.Count == 0) continue;
+                var kind = StateMachineKinds.FirstOrDefault(k => method.CustomAttributes.Any(a => a.AttributeType.FullName == k.Attribute));
+                if (kind.Attribute is null) continue;
+                var attribute = method.CustomAttributes.First(a => a.AttributeType.FullName == kind.Attribute);
+                if (attribute.ConstructorArguments.Count == 0) continue;
                 if (!_filter.Matches(ns, type.FullName, method.Name)) continue;
                 if (!_weavePropertyAccessors && IsPropertyAccessor(method)) continue;
                 if (attribute.ConstructorArguments[0].Value is not TypeReference smRef) continue;
@@ -227,8 +245,8 @@ public sealed class CecilWeaver
                     continue;
                 }
                 _nextId++;
-                AsyncBodyCount++;
-                var entry = new WovenMethod(id, moduleName, moveNext.MetadataToken.ToInt32(), $"{type.FullName}.{method.Name} (async body)");
+                if (kind.Label == "iterator body") IteratorBodyCount++; else AsyncBodyCount++;
+                var entry = new WovenMethod(id, moduleName, moveNext.MetadataToken.ToInt32(), $"{type.FullName}.{method.Name} ({kind.Label})");
                 woven.Add(entry);
                 _map.Add(entry);
             }

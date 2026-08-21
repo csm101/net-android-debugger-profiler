@@ -71,9 +71,10 @@ Notes: property accessors are skipped by default (`weavePropertyAccessors=true`
 to include them). An async method produces two entries: the stub, whose time is
 only the synchronous part up to the first await, and `<method> (async body)`,
 the state machine, whose calls are resumptions and whose time excludes the
-awaits. Both are woven by default; `weaveAsyncBodies=false` (nap-weave:
-`--no-async-bodies`) keeps the stubs only. Iterators (`yield return`) are
-stub-only for now (KNOWN_UNKNOWNS U8).
+awaits. Iterators (`yield return`) work the same way: `<method> (iterator body)` is called
+once per item produced, plus the call that ends the sequence. All of these are woven
+by default; `weaveAsyncBodies=false` (nap-weave: `--no-async-bodies`) keeps the
+stubs only.
 
 ## 3. Memory
 

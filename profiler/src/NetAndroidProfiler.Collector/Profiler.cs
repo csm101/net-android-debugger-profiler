@@ -39,6 +39,9 @@ public static class Profiler
     private static readonly List<ThreadWriter> Writers = new List<ThreadWriter>();
     [ThreadStatic] private static ThreadWriter? t_writer;
 
+    /// <summary>Rooted so the periodic flush keeps running for the life of the process.</summary>
+    private static Timer? s_flushTimer;
+
     /// <summary>
     /// Name of the marker file written next to the app's private files as soon as
     /// this type is loaded (i.e. the first time a woven method runs), regardless of
@@ -62,8 +65,11 @@ public static class Profiler
             Directory.CreateDirectory(dir!);
             OutDir = dir;
             Enabled = true;
-            var timer = new Timer(_ => FlushAll(), null, 1000, 1000);
-            GC.KeepAlive(timer);
+            // The timer must be rooted in a static field: GC.KeepAlive only reaches the end
+            // of this constructor, so a local would be collected and every buffered event
+            // would then sit in its 64 KB stream until the buffer filled - which for a small
+            // weave scope never happens, and the session reads empty files.
+            s_flushTimer = new Timer(_ => FlushAll(), null, 1000, 1000);
             AppDomain.CurrentDomain.ProcessExit += (_, __) => FlushAll();
             AppDomain.CurrentDomain.DomainUnload += (_, __) => FlushAll();
         }

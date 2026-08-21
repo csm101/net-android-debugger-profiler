@@ -26,21 +26,6 @@ analysis; rotation strategy.
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
 
-## U8 - Iterator methods are not instrumented
-Async methods are done: the compiler-generated MoveNext of a matching async
-method is woven and reported as "<Type>.<Method> (async body)" - calls are the
-resumptions, time is what the method executed, awaits excluded. Verified on the
-real net9 app, so it is now **on by default** (`--no-async-bodies` /
-`WeaveAsyncBodies: false` weaves only the synchronous stub).
-Correction: this entry used to say that async bodies stopped the reference application from
-starting. That does not reproduce - see the async-body note in
-ANDROID_PROFILING_NOTES for the evidence and for what really caused it.
-Still open: iterator methods (`yield return`). Their stub is woven, their
-MoveNext is not: the shape differs from an async state machine (no builder, no
-awaits, the state field drives a switch), so it needs its own handling and its
-own notion of what a "call" is - one resumption per MoveNext, i.e. per item
-produced.
-
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships
 Microsoft.Android.Runtime.CoreCLR.36 and NativeAOT.36 runtime packs next to

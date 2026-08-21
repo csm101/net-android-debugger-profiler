@@ -340,13 +340,33 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   resumptions and 284.7 ms self - i.e. without the body the async method's own
   work is invisible. Five consecutive launches of the woven build, no crash.
   **[verified - Build_time_weaving_records_async_bodies_on_the reference application]**
+- **Iterators are instrumented the same way** (`<Type>.<Method> (iterator body)`):
+  one call per item produced, plus the MoveNext that ends the sequence. Measured on
+  TestTarget (net10, on-device weaving of a single type): 813 enter / 813 leave and
+  29 allocations from 4 woven methods in a 10 s window. Real-world density is low -
+  App.Core has 6 iterator methods against 10064 async ones, and one of the six is a
+  property getter, skipped with the other accessors.
+  **[verified - Weaver_instruments_iterator_bodies_on_the_device,
+  Iterator_state_machine_records_every_produced_item]**
+- **The collector's periodic flush must be rooted.** Its 1 s flush timer was a local
+  kept alive with `GC.KeepAlive` inside the static constructor, so it became garbage
+  as soon as the constructor returned. Events then only reached disk when a thread
+  filled its 64 KB stream buffer - invisible for a wide weave scope, total data loss
+  for a narrow one: a session on a single type pulled two 0-byte .napw files while
+  the app was demonstrably running the woven code. The timer now lives in a static
+  field. **[verified - the same session records 813 enter/leave after the fix]**
+- **Republish nap-weave after changing the weaver.** `build/NetAndroidProfiler.Weaving.targets`
+  runs the *published* copy in `build/tools`, so a rebuilt solution still weaves with
+  the old tool: a new feature looks like it silently does nothing (iterator support
+  appeared to find zero iterators in a 31k-method assembly). `dotnet publish
+  src/NetAndroidProfiler.Weave -c Release -o build/tools`.
 - **Correction**: an earlier note claimed a build with woven async bodies would
   not start at all (process never forked, nothing in logcat). It does start.
   That symptom is the signature of two defects fixed afterwards - a package left
   in `stopped=true` by force-stop, which swallows a plain `am start`, and an
   override environment file written into an app that embeds its assemblies - and
   the evidence for the async claim was collected before both fixes. Iterators
-  (`yield return`) are still stub-only (KNOWN_UNKNOWNS U8).
+  (`yield return`) are covered too, see the iterator note above.
 - Two prerequisites for weaving *on the device*, both discovered on the reference application:
   the app must not embed its assemblies (`EmbedAssembliesIntoApk=false`, or
   the woven copies are dead files), and the original `.pdb` next to a

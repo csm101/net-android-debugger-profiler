@@ -10,6 +10,7 @@ public sealed class WorkloadRunner
     private readonly Thread _thread;
     private readonly CpuBurner _cpu = new();
     private readonly AllocHog _alloc = new();
+    private readonly SequenceProducer _sequence = new();
 
     private WorkloadRunner()
     {
@@ -34,7 +35,8 @@ public sealed class WorkloadRunner
             iteration++;
             long cpuResult = _cpu.Busy(iteration);
             int allocCount = _alloc.Allocate(iteration);
-            Android.Util.Log.Info("TestTarget", $"iteration={iteration} cpu={cpuResult} alloc={allocCount}");
+            long sequenceSum = _sequence.Consume(SequenceProducer.ItemsPerIteration);
+            Android.Util.Log.Info("TestTarget", $"iteration={iteration} cpu={cpuResult} alloc={allocCount} seq={sequenceSum}");
             Thread.Sleep(200);
         }
     }

@@ -123,6 +123,32 @@ public class WeaverAllocationTests(WeaverCollectorFixture fixture)
     }
 
     [Fact]
+    public void Iterator_state_machine_records_every_produced_item()
+    {
+        string work = fixture.WorkDir("iterator");
+        Directory.CreateDirectory(work);
+        string woven = Path.Combine(work, "WeaveSample.dll");
+        var weaver = new CecilWeaver(WeaveFilter.Parse("T:WeaveSample.Shapes"), 1200);
+        weaver.Weave(Path.Combine(AppContext.BaseDirectory, "WeaveSample.dll"), woven);
+        Assert.Equal(1, weaver.IteratorBodyCount);
+
+        var asm = System.Reflection.Assembly.LoadFile(woven);
+        var type = asm.GetType("WeaveSample.Shapes")!;
+        object instance = Activator.CreateInstance(type)!;
+        var squares = ((System.Collections.IEnumerable)type.GetMethod("Squares")!.Invoke(instance, [4])!).Cast<int>().ToList();
+        Assert.Equal([1, 4, 9, 16], squares);
+        NetAndroidProfiler.Collector.Profiler.FlushAll();
+
+        var r = new WeaveAnalyzer().Analyze(fixture.EventsDir, weaver.Map);
+        var body = r.Timings.Single(t => r.Method(t.MethodId).FullName == "WeaveSample.Shapes.Squares (iterator body)");
+        // One MoveNext per item, plus the one that reports the end of the sequence.
+        Assert.Equal(5, body.Calls);
+        Assert.True(body.TotalNs > 0);
+        // The stub only builds the enumerator, so it stays a separate, near-empty entry.
+        Assert.Contains(r.Timings, x => r.Method(x.MethodId).FullName == "WeaveSample.Shapes.Squares");
+    }
+
+    [Fact]
     public void Woven_methods_report_their_allocations_by_type_and_site()
     {
         string work = fixture.WorkDir("alloc");

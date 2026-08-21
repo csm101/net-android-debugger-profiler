@@ -1,36 +1,28 @@
 # Task resume
 
 ## Current task
-U8. Outcome: the recorded blocker does not exist. A the reference application build with the 3
-async state machines of AppApplication woven starts normally (5 consecutive
-launches) and the bodies report their resumptions - `OnCreate (async body)`
-3 resumptions, 284.7 ms self, against 2.2 ms self for the stub. The old symptom
-(process never forked, nothing in logcat) is the signature of the launch
-(`stopped=true`) and override-environment defects fixed after that evidence was
-collected.
+U8 is closed, both halves. Async bodies (default on) were verified on the reference application
+earlier today; iterators are now woven too - "<Type>.<Method> (iterator body)",
+one call per item produced plus the one that ends the sequence. Verified in
+process (4 items -> 5 resumptions) and on the device (TestTarget: 813 enter /
+813 leave / 29 allocations from 4 woven methods in 10 s). The KNOWN_UNKNOWNS
+entry is gone; ARCHITECTURE, the notes, USAGE, PROJECT_STATE and TEST_CATALOG
+carry the facts.
+
+## Two defects found on the way
+1. The collector's 1 s flush timer was a local rooted only by GC.KeepAlive inside
+   the static constructor, so it was collected right after: events reached disk
+   only when a thread filled its 64 KB buffer. A wide weave scope hid it; a
+   narrow one lost everything (two 0-byte .napw files from a running app). The
+   timer now lives in a static field.
+2. build/NetAndroidProfiler.Weaving.targets runs the *published* nap-weave in
+   build/tools, so weaver changes do nothing until it is republished. This cost
+   an hour: iterator support looked like it found zero iterators in a 31k-method
+   assembly. Republish with
+   dotnet publish src/NetAndroidProfiler.Weave -c Release -o build/tools.
 
 ## Substep
-U8 itself is closed (async bodies on by default, verified on the reference application). Fixing the
-suite around it exposed four defects, all now fixed and green individually:
-1. Device test classes ran in parallel on one emulator and one dsrouter port -
-   both now in the xUnit collection "device" (DisableParallelization).
-2. AppEnvironment refused to work when the app was left with a 0-byte override
-   environment file; it now stages+renames the file, compares the read against
-   stat, and treats an empty file as "no variables".
-3. dotnet-dsrouter: a router dying of "port already in use" prints
-   "Stopping IPC server (...) <--> TCP server ..." and the old startup check
-   matched "<--> TCP server", so a dead router passed for healthy; a cancelled
-   start also leaked the process, which then held port 9000 for every later
-   session. Now: port pre-check, only "Starting IPC server" counts, the router's
-   own error is reported, dispose on every failure path.
-4. Launching is unreliable both ways: monkey and am start each silently accept
-   the intent without forking the process. LaunchAsync now verifies a pid
-   appeared and alternates the two methods. This is what U8 originally
-   misdiagnosed as woven async IL stopping the app.
-Also: attach device tests configured no diagnostics port and were passing on
-leftovers from earlier sessions; they now set it up and stop the app afterwards,
-and the engine fails fast in Attach mode when no port is configured anywhere.
-Full suite green: 59 tests, 55 passed, 4 skipped, 0 failed (5.2 min, fast + Device + the reference application with NAP_REFAPP=1). No orphan dsrouter, no app left running.
+Docs updated. Full suite pending, then commit and push.
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

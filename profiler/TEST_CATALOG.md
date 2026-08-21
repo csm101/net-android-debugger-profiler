@@ -37,6 +37,7 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Stop() on a session without Duration ends collection
 
 - [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
+- [x] Iterator bodies are instrumented on the device (one call per item produced) - `Weaver_instruments_iterator_bodies_on_the_device`
 - [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
 - [x] A port already in use is detected before spawning dsrouter - `Fast/DsRouterTests`
 
@@ -81,6 +82,8 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Async state machine records every resumption (opt-in; CoreCLR only so far) - `Async_state_machine_records_every_resumption`
 - [ ] TODO-RED U8: async-body weaving prevents a real net9 app from starting (device)
 - [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the reference application`
+
+- [x] Iterator state machine: one resumption per item plus the terminating one - `Iterator_state_machine_records_every_produced_item`
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)
 - [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`
