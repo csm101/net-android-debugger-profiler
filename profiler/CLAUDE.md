@@ -201,10 +201,16 @@ executed, result, next step.
   Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights
   reserved. The repository is private and must stay private: never publish
   sources, never add an open-source license.
-- Dependency policy: MIT / BSD / Apache-2.0 only. GPL is forbidden (viral
-  copyleft); LGPL only with explicit user approval and dynamic linking.
+- Dependency policy: MIT / BSD / Apache-2.0 only, plus MPL-1.1/2.0 used
+  **unmodified** (its copyleft is per file, so linking it into a closed product
+  is fine as long as we do not change its own sources - keep customization in our
+  units). GPL is forbidden (viral copyleft); LGPL only with explicit user
+  approval and dynamic linking. Approved under the MPL clause: SynEdit
+  (C:\Athens\SynEdit, MPL-1.1/LGPL-2.1 dual) as the GUI's source editor.
 - The GUI uses DevExpress VCL under its commercial license: never
   redistribute DevExpress sources or components.
-- The first distributed release must ship a THIRD-PARTY-NOTICES.txt with the
-  license texts of all embedded MIT/BSD/Apache components (TraceEvent,
-  Mono.Cecil, ...).
+- Every distributed release ships THIRD-PARTY-NOTICES.txt with the license texts
+  of all embedded MIT/BSD/Apache/MPL components (TraceEvent, Mono.Cecil,
+  SQLitePCLRaw, ModelContextProtocol, and SynEdit once the GUI ships). The file
+  exists and Fast/ThirdPartyNoticesTests fails when a distributed package is
+  missing from it.

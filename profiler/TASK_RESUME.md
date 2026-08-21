@@ -64,6 +64,8 @@ Read the test-runner report on the fast suite; if green, commit and push the
 notices file, its test and the doc wiring. Then pick from the queue.
 
 ## Queue (highest value first)
+- When the GUI starts: add SynEdit (MPL-1.1, used unmodified) to
+  THIRD-PARTY-NOTICES.txt; the dependency policy in CLAUDE.md now allows it.
 - U8 diagnosis: why does a woven async state machine stop a net9 app from
   starting? (single-method weave, IL dump, verifier).
 - Iterator methods (yield return) instrumented like async bodies.
