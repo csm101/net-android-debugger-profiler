@@ -21,3 +21,23 @@ Rules:
   — bash drivers for the multi-process experiments (same port → helper dies in
   a loop; port rotation → main and helper debugged concurrently). Usage in the
   script header. Results: ANDROID_ATTACH_NOTES.md "Multi-process apps".
+
+## DapSmoke
+
+Drives the DAP adapter against any installed app, the way an editor would, and prints what came
+back: capabilities, breakpoint binding, the stop, threads, stack, locals, one expansion, an
+evaluation, continue, disconnect. It exists to try the adapter against a real app without
+republishing anything — the end-to-end tests only ever point it at TestTarget.
+
+```
+dotnet run --project DevTools/DapSmoke -- <serial> <package> <sourceFile> <line> [--keep-fresh]
+```
+
+For example, against the reference application:
+
+```
+dotnet run --project DevTools/DapSmoke -- emulator-5554 App.Droid \
+  "C:\Work\ReferenceApp\App.Sync\Threads\BaseSyncPalmThread.cs" 112 --keep-fresh
+```
+
+Exit code 0 when every step answered.

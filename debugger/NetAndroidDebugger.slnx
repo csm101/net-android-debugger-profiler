@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/DevTools/">
     <Project Path="DevTools/SdbProbe/SdbProbe.csproj" />
+    <Project Path="DevTools/DapSmoke/DapSmoke.csproj" />
   </Folder>
   <Folder Name="/ThirdParty/">
     <Project Path="ThirdParty/debugger-libs/Mono.Debugger.Soft/Mono.Debugger.Soft.csproj" />

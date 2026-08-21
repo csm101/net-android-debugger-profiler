@@ -81,27 +81,25 @@ suspended. Whether Mono's own teardown is being interfered with by the automatic
 resume of later unhandled exceptions is not established.
 Note the session still reports Exited only when every process is gone, and the
 sticky `:helper` service can outlive the crashing main process.
-## U13 - Hit-count breakpoints count from an unstable baseline
-`HitCountBreakpoint_StopsAtNthHit` asks for the 3rd hit and usually gets it,
-but once in several runs the stop arrived on the 9th (suite run 28b). The
-breakpoint was already resolved before the first hit, so it is not a late
-arming.
-Narrowed by reading upstream (2026-08-21): `CurrentHitCount` lives on the
-shared `BreakEvent`, and there is exactly **one** code path that zeroes it —
-`DebuggerSession.Breakpoints`'s setter, which calls `ResetBreakpoints()` on
-the store the session had *before*. `ProcessDebugger` assigns the store once
-per session, on a session that has none yet, so the "second process attaching
-resets the counter" hypothesis is not confirmed: the reset would land on the
-empty store the getter auto-creates, not on ours. Toggling `Enabled` (what the
-evaluation disarm does) does not reset anything either.
-What remains plausible is that hits are **missed** rather than reset: a hit
-that lands while a break event is being registered, re-registered or disabled
-in one of the sessions is never counted.
-Deliberately not chased further: the test asserts "at least N hits" and the
-limitation is documented for users (hit counts are approximate in
-multi-process apps). Settle it with data, not more reading, if it ever
-matters — log `CurrentHitCount` per stop across many runs.
-
+## U13 - Hit-count breakpoints: measured, no longer reproducing
+`HitCountBreakpoint_StopsAtNthHit` asks for the 3rd hit and once in several runs
+stopped on the 9th (suite run 28b, 2026-08-20). `CurrentHitCount` lives on the
+shared `BreakEvent`, and the only upstream path that zeroes it is
+`DebuggerSession.Breakpoints`'s setter, which `ProcessDebugger` takes once per
+session on a session that has no store yet - so the "second process attaching
+resets the counter" hypothesis was never confirmed. What remained plausible was
+that hits are *missed* while a break event is being registered in one of the
+sessions.
+Measured 2026-08-21, after the port-rotation work: `ProcessDebugger` now logs
+`hit count now N (stops at M)` at every hit-count stop, and six consecutive runs
+were exact - count 3, tick 3, every time. The anomaly has not reappeared since
+processes stopped colliding on ports (U14) and since a launch waits for the old
+processes to be gone: both of those used to make a second process attach at an
+unpredictable moment, which is exactly the window suspected here.
+Not closed, because the original was rare and six runs cannot prove its absence.
+The test still asserts "at least N hits" and the diagnostic stays: if it ever
+comes back, the log line says immediately whether the count was reset or the
+hits were never counted.
 ## U14 - RESOLVED 2026-08-21 (delete once it stops being useful context)
 `debug.mono.extra` is device-global and read at process start; the launcher used
 to rotate it only when it *saw* an agent-init line in logcat. Two processes

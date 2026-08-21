@@ -111,7 +111,10 @@ Conventions (mirroring the Delphi project's discipline):
       implicitly by all breakpoint tests; `Verified` asserted)
 - [x] Conditional breakpoint — `ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue`
 - [~] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit` asserts "at
-      least N hits": the count can restart when another process attaches (U13)
+      least N hits". Six consecutive runs were exact after the port-rotation
+      work; the engine logs `hit count now N (stops at M)` at every such stop, so
+      a recurrence says immediately whether the count reset or hits were missed
+      (U13)
 - [x] Breakpoint set while running is bound and hit — `SetBreakpoint_WhileRunning_IsBoundAndHit`
 - [x] Setting a breakpoint waits for the runtime to bind it before reporting
       (binding is asynchronous: the immediate answer says "not bound" with a

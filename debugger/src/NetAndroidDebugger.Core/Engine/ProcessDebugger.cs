@@ -136,9 +136,12 @@ internal sealed class ProcessDebugger : IDisposable
         StopBacktrace = e.Backtrace;
         LastStopArgs = e;
         LastStopReason = reason;
+        // Hit counts live on the BreakEvent, which every process of the app shares. Recording the
+        // count at each stop is what makes an off-by-N answerable instead of a suspicion.
+        if (reason == StopReason.Breakpoint && e.BreakEvent is Breakpoint hit && hit.HitCountMode != HitCountMode.None)
+            _log($"[pid {Pid}] breakpoint {hit.FileName}:{hit.Line} hit count now {hit.CurrentHitCount} (stops at {hit.HitCount})");
         Stopped?.Invoke(this);
     }
-
     private void MarkResumed()
     {
         IsStopped = false;
