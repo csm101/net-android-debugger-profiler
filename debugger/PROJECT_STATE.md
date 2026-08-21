@@ -39,8 +39,11 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
 
 ## Architecture status
 
-Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified)
-+ TestTarget app + DevTools/SdbProbe. No engine code yet. See ARCHITECTURE.md.
+Engine (`NetAndroidDebugger.Core`) plus two frontends over it: the MCP stdio
+server and the DAP adapter. debugger-libs is vendored as a submodule and builds
+on net10.0 against a fork carrying one patch (see ARCHITECTURE.md). TestTarget
+is the debuggee for the suite; DevTools holds the probes and the editor
+integration.
 
 ## Milestones
 
@@ -48,42 +51,31 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   end-to-end attach on emulator pixel_7_-_api_33_0 proven by SdbProbe
   (connect, breakpoint resolved + hit, threads/backtrace/locals, continue,
   detach). Resolved U1-U3; facts in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md.
-- M1 - Engine + minimal MCP: IN PROGRESS (2026-08-20). Core implemented
-  (DebugSession facade over N per-process SoftDebuggerSessions, AndroidLauncher
-  with port rotation, breakpoints, stepping, stack, locals, evaluate,
-  expansion); MCP stdio server on the official ModelContextProtocol SDK 2.2.0
-  with the full tool list below; integration suite (8 Core tests green, 2 MCP
-  end-to-end tests added). Remaining for M1: registration/packaging of the MCP
-  server for Claude Code, then run against the reference application (M3 start).
-- M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
-  expansion, exception filters, threads, structured logcat capture with
-  filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 62 integration tests; TEST_CATALOG has 3 open gaps left: two need a
-  WiFi device (U9), one is driving the DAP adapter from a real editor.
-  on a WiFi device (U9).
-- M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
-  the registered MCP server: attach, helper process auto-attach, breakpoints
-  on startup code (main) and in App.Core (multi-assembly), locals/expansion,
-  stepping, clean terminate. A process with a global `android:process` name
-  (the App.Background service, `the app's own android:process`) is recognised by uid and
-  attached: verified live, breakpoint hit in `OnStartCommand`.
-  Remaining: physical device over adb connect (U9), the reference application build specifics
-  (U6).
-  Re-driven 2026-08-21 after the breakpoint-disarm fix: breakpoints on the
-  periodic sync threads plus deep expansion held up (details in
-  ANDROID_ATTACH_NOTES.md); helper process restart is re-attached on a new
-  port live.
-- M4 - DAP frontend: DONE (2026-08-21). `NetAndroidDebugger.Dap`, a stdio
-  adapter over the same DebugSession, hand-rolled wire protocol: initialize,
-  launch/attach, setBreakpoints (conditions and hit counts), exception filters,
-  threads, stackTrace, scopes, variables, evaluate, continue, next/stepIn/
-  stepOut, pause, exceptionInfo, disconnect/terminate, and the stopped /
-  continued / output / terminated events. Four end-to-end tests drive the real
-  adapter process.
-  Packaging done: register-mcp.cmd publishes both frontends, DAP_CLIENTS.md
-  documents the client contract, and DevTools/vscode/net-android-debugger is a
+- M1 - Engine + MCP: DONE 2026-08-21. DebugSession facade over N per-process
+  SoftDebuggerSessions, AndroidLauncher with port rotation, breakpoints,
+  stepping, stack, locals, evaluate, expansion; MCP stdio server on the official
+  ModelContextProtocol SDK 2.2.0; `register-mcp.cmd` publishes and registers it.
+- M2 - Inspection depth: DONE 2026-08-21. Evaluate, object/array/dictionary
+  expansion, IEnumerable elements, exception filters, threads, structured logcat
+  capture with filters, compact snapshot, evaluation options (timeouts,
+  invoke-free safe mode), source-path discovery (`get_source_files`).
+- M3 - the reference application hardening: DONE for the emulator, 2026-08-21. Attach, automatic
+  attach of every process of the app - including `the app's own android:process`, whose
+  `android:process` name has nothing to do with the package and which Visual
+  Studio cannot debug at all - breakpoints on startup code and in App.Core,
+  breakpoints on the periodic sync threads with deep expansion, stepping through
+  async frames, exception filters on third-party assemblies, clean terminate.
+  Remaining: a physical device over `adb connect` (U9).
+- M4 - DAP frontend and packaging: DONE 2026-08-21. `NetAndroidDebugger.Dap`, a
+  stdio adapter over the same DebugSession with a hand-rolled wire protocol;
+  `register-mcp.cmd` publishes both frontends; `DevTools/vscode/DAP_CLIENTS.md`
+  documents the client contract; `DevTools/vscode/net-android-debugger` is a
   VS Code extension contributing the `net-android` debug type (offline checks
-  only - it has never been run inside a real VS Code).
+  only - never yet run inside a real VS Code). `DevTools/DapSmoke` drives the
+  adapter against any installed app.
+
+Open, both needing hardware: attach over `adb connect` and a mid-run debugger
+disconnect (U9). See KNOWN_UNKNOWNS.md for the rest.
 
 ## Target MCP tool surface (mirror of delphi-win64-debugger, adapted)
 
