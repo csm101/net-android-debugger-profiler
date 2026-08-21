@@ -15,7 +15,7 @@ unit uMainForm;
 interface
 
 uses
-  System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types,
+  System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types, System.RegularExpressions,
   Winapi.Windows, Winapi.Messages,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
   System.Variants, System.IOUtils, System.StrUtils, Data.DB, FireDAC.Comp.Client,
@@ -24,6 +24,7 @@ uses
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
+  dxDockControl, dxDockPanel,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
   uSessionStore, uControlClient, uSetupDialog;
 
@@ -64,7 +65,18 @@ type
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
     FSessionsRoot: string;
-    FPages: TPageControl;
+    FDockManager: TdxDockingManager;
+    FDockSite: TdxDockSite;
+    FExplorerPanel: TdxDockPanel;
+    FReportPanel: TdxDockPanel;
+    FDetailsDock: TdxDockPanel;
+    FTreePanel: TdxDockPanel;
+    FGraphPanel: TdxDockPanel;
+    FSourcePanel: TdxDockPanel;
+    FMemoryPanel: TdxDockPanel;
+    FMonitorPanel: TdxDockPanel;
+    FSummaryPanel: TdxDockPanel;
+    FLogPanel: TdxDockPanel;
     FReportTab: TTabSheet;
     FTreeTab: TTabSheet;
     FGraphTab: TTabSheet;
@@ -116,6 +128,12 @@ type
     FLog: TMemo;
     procedure BuildToolbar;
     procedure BuildExplorer;
+    function AddDockPanel(const ACaption: string; ATarget: TdxCustomDockControl;
+      AType: TdxDockingType): TdxDockPanel;
+    procedure SaveLayout;
+    procedure LoadLayout;
+    procedure ResetLayoutClick(Sender: TObject);
+    function LayoutFile: string;
     procedure BuildSummaryTab;
     procedure BuildMemoryTab;
     procedure BuildMonitorTab;
@@ -204,31 +222,41 @@ begin
   FCriticalStyle.Font.Style := [fsBold];
 
   BuildToolbar;
+
+  // Docking, like AQTime: every panel can be moved, tabbed with another, floated or
+  // closed, and the arrangement is remembered between runs.
+  FDockManager := TdxDockingManager.Create(Self);
+  FDockSite := TdxDockSite.Create(Self);
+  FDockSite.Name := 'MainDockSite';
+  FDockSite.Parent := Self;
+  FDockSite.Align := alClient;
+  // Docking needs real windows: the form is built before it is shown, so ask for the
+  // handles now rather than letting the first DockTo walk a half-built control.
+  HandleNeeded;
+  FDockSite.HandleNeeded;
+
+  // Order matters: the client panel first, then everything hangs off it. Docking a
+  // side panel to an empty site first leaves the later ones with nowhere to go.
+  FReportPanel := AddDockPanel('Report', FDockSite, dtClient);
+  FExplorerPanel := AddDockPanel('Explorer', FDockSite, dtLeft);
+
+  // The bottom strip is a tab container, which is where AQTime keeps Details, the
+  // call views and the rest.
+  FDetailsDock := AddDockPanel('Details', FDockSite, dtBottom);
+  FTreePanel := AddDockPanel('Call tree', FDetailsDock, dtClient);
+  FGraphPanel := AddDockPanel('Call graph', FDetailsDock, dtClient);
+  FSourcePanel := AddDockPanel('Source', FDetailsDock, dtClient);
+  FMemoryPanel := AddDockPanel('Memory', FDetailsDock, dtClient);
+  FMonitorPanel := AddDockPanel('Monitor', FDetailsDock, dtClient);
+  FSummaryPanel := AddDockPanel('Summary', FDetailsDock, dtClient);
+  FLogPanel := AddDockPanel('Session log', FDetailsDock, dtClient);
+
+  // Sizes last: a panel resized before its neighbours exist gets squeezed back by the
+  // containers created afterwards.
+  FExplorerPanel.Width := 280;
+  FDetailsDock.Height := 260;
+
   BuildExplorer;
-  FPages := TPageControl.Create(Self);
-  FPages.Parent := Self;
-  FPages.Align := alClient;
-  FReportTab := TTabSheet.Create(Self);
-  FReportTab.PageControl := FPages;
-  FReportTab.Caption := 'Report';
-  FTreeTab := TTabSheet.Create(Self);
-  FTreeTab.PageControl := FPages;
-  FTreeTab.Caption := 'Call tree';
-  FGraphTab := TTabSheet.Create(Self);
-  FGraphTab.PageControl := FPages;
-  FGraphTab.Caption := 'Call graph';
-  FEditorTab := TTabSheet.Create(Self);
-  FEditorTab.PageControl := FPages;
-  FEditorTab.Caption := 'Source';
-  FMemoryTab := TTabSheet.Create(Self);
-  FMemoryTab.PageControl := FPages;
-  FMemoryTab.Caption := 'Memory';
-  FMonitorTab := TTabSheet.Create(Self);
-  FMonitorTab.PageControl := FPages;
-  FMonitorTab.Caption := 'Monitor';
-  FSummaryTab := TTabSheet.Create(Self);
-  FSummaryTab.PageControl := FPages;
-  FSummaryTab.Caption := 'Summary';
   BuildReportTab;
   BuildTreeTab;
   BuildGraphTab;
@@ -238,12 +266,14 @@ begin
   BuildSummaryTab;
 
   FLog := TMemo.Create(Self);
-  FLog.Parent := Self;
-  FLog.Align := alBottom;
-  FLog.Height := 110;
+  FLog.Parent := FLogPanel;
+  FLog.Align := alClient;
   FLog.ScrollBars := ssVertical;
   FLog.ReadOnly := True;
   FLog.Font.Name := 'Consolas';
+
+  // After the panels have their content: the saved layout moves them around.
+  LoadLayout;
 
   FClient := TControlClient.Create;
   FPoll := TTimer.Create(Self);
@@ -259,19 +289,35 @@ begin
     if ParamStr(LIndex).StartsWith('--tab=', True) then
     begin
       LTab := ParamStr(LIndex).Substring(6);
-      if SameText(LTab, 'tree') then FPages.ActivePage := FTreeTab
-      else if SameText(LTab, 'graph') then FPages.ActivePage := FGraphTab
-      else if SameText(LTab, 'source') then FPages.ActivePage := FEditorTab
-      else if SameText(LTab, 'summary') then FPages.ActivePage := FSummaryTab
-      else if SameText(LTab, 'memory') then FPages.ActivePage := FMemoryTab
-      else if SameText(LTab, 'monitor') then FPages.ActivePage := FMonitorTab
-      else FPages.ActivePage := FReportTab;
+      if SameText(LTab, 'tree') then FTreePanel.Activate
+      else if SameText(LTab, 'graph') then FGraphPanel.Activate
+      else if SameText(LTab, 'source') then FSourcePanel.Activate
+      else if SameText(LTab, 'summary') then FSummaryPanel.Activate
+      else if SameText(LTab, 'memory') then FMemoryPanel.Activate
+      else if SameText(LTab, 'monitor') then FMonitorPanel.Activate
+      else FReportPanel.Activate;
     end;
   UpdateInfo;
 end;
 
 destructor TMainForm.Destroy;
+var
+  I: Integer;
 begin
+  SaveLayout;
+  // Dock panels created at runtime must go before the form takes its own children down,
+  // otherwise one of them is destroyed after the window it lives in and VCL complains
+  // that it "has no parent window". This is what the DevExpress sample does too.
+  I := dxDockingController.DockControlCount - 1;
+  while I >= 0 do
+  begin
+    if dxDockingController.DockControls[I] is TdxDockPanel then
+      dxDockingController.DockControls[I].Free;
+    if dxDockingController.DockControlCount - 1 < I - 1 then
+      I := dxDockingController.DockControlCount - 1
+    else
+      Dec(I);
+  end;
   FAllocTypeQuery.Free;
   FAllocSiteQuery.Free;
   FHeapQuery.Free;
@@ -356,12 +402,71 @@ end;
 
 /// AQTime's Explorer: the results you can open, and the categories inside the one that
 /// is open. Double-clicking a session loads it.
+/// One dockable panel, docked where it belongs on first run; after that the saved
+/// layout decides.
+function TMainForm.AddDockPanel(const ACaption: string; ATarget: TdxCustomDockControl;
+  AType: TdxDockingType): TdxDockPanel;
+// No manager assignment: the docking controller is global, a panel only needs an
+// owner form and somewhere to dock.
+var
+  LTarget: TdxCustomDockControl;
+begin
+  Result := TdxDockPanel.Create(Self);
+  // A saved layout matches controls by Name, so panels built in code need one or the
+  // layout comes back as a tree of strangers and leaves panels unparented.
+  Result.Name := 'Panel' + TRegEx.Replace(ACaption, '[^A-Za-z0-9]', '');
+  // A panel with no parent has no ParentForm, and the docking painter is resolved
+  // through it: docking one straight after Create walks into a nil form.
+  Result.Parent := Self;
+  Result.Caption := ACaption;
+  LTarget := ATarget;
+  // Tabbing onto a panel that already has tabs means joining the container, not the
+  // panel: docking to the panel again leaves this one homeless.
+  if (AType = dtClient) and (ATarget is TdxDockPanel) and (TdxDockPanel(ATarget).TabContainer <> nil) then
+    LTarget := TdxDockPanel(ATarget).TabContainer;
+  Result.DockTo(LTarget, AType, 0);
+end;
+
+function TMainForm.LayoutFile: string;
+begin
+  Result := TPath.ChangeExtension(ParamStr(0), '.layout.ini');
+end;
+
+procedure TMainForm.SaveLayout;
+begin
+  try
+    FDockManager.SaveLayoutToIniFile(LayoutFile);
+  except
+    // a layout that cannot be saved is not worth an error dialog on the way out
+  end;
+end;
+
+procedure TMainForm.LoadLayout;
+begin
+  if not TFile.Exists(LayoutFile) then
+    Exit;
+  try
+    FDockManager.LoadLayoutFromIniFile(LayoutFile);
+  except
+    // an old or broken layout file must not stop the application from opening
+    on E: Exception do
+      FLog.Lines.Add('layout not restored: ' + E.Message);
+  end;
+end;
+
+procedure TMainForm.ResetLayoutClick(Sender: TObject);
+begin
+  if TFile.Exists(LayoutFile) then
+    TFile.Delete(LayoutFile);
+  MessageDlg('The panel layout will be back to its default the next time you start.',
+    mtInformation, [mbOK], 0);
+end;
+
 procedure TMainForm.BuildExplorer;
 begin
   FExplorer := TcxTreeList.Create(Self);
-  FExplorer.Parent := Self;
-  FExplorer.Align := alLeft;
-  FExplorer.Width := 280;
+  FExplorer.Parent := FExplorerPanel;
+  FExplorer.Align := alClient;
   FExplorer.OptionsData.Editing := False;
   FExplorer.OptionsSelection.CellSelect := False;
   FExplorer.OptionsView.Headers := False;
@@ -371,10 +476,6 @@ begin
   FExplorerColumn.Caption.Text := 'Results';
   FExplorerColumn.Width := 260;
 
-  FExplorerSplitter := TSplitter.Create(Self);
-  FExplorerSplitter.Parent := Self;
-  FExplorerSplitter.Align := alLeft;
-  FExplorerSplitter.Width := 4;
 end;
 
 procedure TMainForm.ReloadExplorer;
@@ -448,7 +549,7 @@ begin
       FGridView.EndUpdate;
     end;
     FGridView.ViewData.Expand(True);
-    FPages.ActivePage := FReportTab;
+    FReportPanel.Activate;
     Exit;
   end;
   if FExplorer.FocusedNode.Level <> 1 then
@@ -462,22 +563,16 @@ end;
 procedure TMainForm.BuildReportTab;
 begin
   FDetailsPanel := TPanel.Create(Self);
-  FDetailsPanel.Parent := FReportTab;
-  FDetailsPanel.Align := alBottom;
-  FDetailsPanel.Height := 220;
+  FDetailsPanel.Parent := FDetailsDock;
+  FDetailsPanel.Align := alClient;
   FDetailsPanel.BevelOuter := bvNone;
 
   FParentsGrid := BuildNeighbourGrid(FDetailsPanel, alLeft, 'Parents', FParentsView);
   FParentsGrid.Parent.Width := 560;
   FChildrenGrid := BuildNeighbourGrid(FDetailsPanel, alClient, 'Children', FChildrenView);
 
-  FReportSplitter := TSplitter.Create(Self);
-  FReportSplitter.Parent := FReportTab;
-  FReportSplitter.Align := alBottom;
-  FReportSplitter.Height := 4;
-
   FGrid := TcxGrid.Create(Self);
-  FGrid.Parent := FReportTab;
+  FGrid.Parent := FReportPanel;
   FGrid.Align := alClient;
   FGridLevel := FGrid.Levels.Add;
   FGridView := FGrid.CreateView(TcxGridDBTableView) as TcxGridDBTableView;
@@ -546,7 +641,7 @@ end;
 procedure TMainForm.BuildTreeTab;
 begin
   FTree := TcxTreeList.Create(Self);
-  FTree.Parent := FTreeTab;
+  FTree.Parent := FTreePanel;
   FTree.Align := alClient;
   FTree.OptionsData.Editing := False;
   FTree.OptionsSelection.CellSelect := False;
@@ -572,7 +667,7 @@ end;
 procedure TMainForm.BuildGraphTab;
 begin
   FGraphScroll := TScrollBox.Create(Self);
-  FGraphScroll.Parent := FGraphTab;
+  FGraphScroll.Parent := FGraphPanel;
   FGraphScroll.Align := alClient;
   FGraphScroll.Color := clWindow;
   FGraphScroll.ParentColor := False;
@@ -743,12 +838,12 @@ end;
 procedure TMainForm.BuildEditorTab;
 begin
   FEditorHeader := TLabel.Create(Self);
-  FEditorHeader.Parent := FEditorTab;
+  FEditorHeader.Parent := FSourcePanel;
   FEditorHeader.Align := alTop;
   FEditorHeader.Caption := ' Pick a method in the Report to see its source.';
 
   FEditor := TSynEdit.Create(Self);
-  FEditor.Parent := FEditorTab;
+  FEditor.Parent := FSourcePanel;
   FEditor.Align := alClient;
   FEditor.ReadOnly := True;
   FEditor.Gutter.ShowLineNumbers := True;
@@ -843,7 +938,7 @@ var
   LLabel: TLabel;
 begin
   FMemoryPages := TPageControl.Create(Self);
-  FMemoryPages.Parent := FMemoryTab;
+  FMemoryPages.Parent := FMemoryPanel;
   FMemoryPages.Align := alClient;
 
   LByType := TTabSheet.Create(Self);
@@ -966,12 +1061,12 @@ end;
 procedure TMainForm.BuildMonitorTab;
 begin
   FMonitorLabel := TLabel.Create(Self);
-  FMonitorLabel.Parent := FMonitorTab;
+  FMonitorLabel.Parent := FMonitorPanel;
   FMonitorLabel.Align := alTop;
   FMonitorLabel.Caption := ' No session running.';
 
   FMonitor := TPaintBox.Create(Self);
-  FMonitor.Parent := FMonitorTab;
+  FMonitor.Parent := FMonitorPanel;
   FMonitor.Align := alClient;
   FMonitor.OnPaint := PaintMonitor;
 end;
@@ -1061,7 +1156,7 @@ end;
 procedure TMainForm.BuildSummaryTab;
 begin
   FSummary := TMemo.Create(Self);
-  FSummary.Parent := FSummaryTab;
+  FSummary.Parent := FSummaryPanel;
   FSummary.Align := alClient;
   FSummary.ReadOnly := True;
   FSummary.ScrollBars := ssBoth;

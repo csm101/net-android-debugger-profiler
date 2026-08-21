@@ -156,8 +156,22 @@ selected type across snapshots.
 DevExpress VCL, sources under `C:\Athens\DevExpress` (`DOCS/` holds per-library
 notes written for agents; `Demos/VCL/<component>` is the first place to look).
 
-- **ExpressBars** ribbon or toolbar for the run controls, **ExpressDockingLibrary**
-  for the panel layout (AQTime's docked panels are the interaction model).
+- **ExpressDockingLibrary** carries the shell, and it is a real docking layout, not a
+  page control: Explorer docked left, Report in the centre, and a bottom tab group
+  holding Session log, Summary, Monitor, Memory, Source, Call graph, Call tree and
+  Details - the same strip AQTime keeps down there. Every panel can be dragged
+  elsewhere, tabbed with another, floated or closed, and the arrangement is saved to
+  `NapGui.layout.ini` beside the executable and restored on the next run.
+
+  Three things bite when the panels are built in code rather than dropped on a form:
+  a panel with no `Parent` has no `ParentForm`, and the docking painter is resolved
+  through it, so docking one straight after `Create` walks into a nil form; tabbing
+  onto a panel that already has tabs means docking to its `TabContainer`, not to the
+  panel; and a saved layout matches controls by `Name`, so runtime panels need one or
+  the layout comes back as a tree of strangers. `DockTo` returns quietly when the
+  target refuses, so the code raises instead - a panel that looks placed but is not
+  fails later with "has no parent window".
+- **ExpressBars** ribbon or toolbar for the run controls.
 - **ExpressQuantumGrid** for Report, Details, allocations. Grouping, sorting,
   filtering and layout persistence come for free - that is our "result views".
 - **ExpressQuantumTreeList** for the call tree: it must expand lazily, the tree

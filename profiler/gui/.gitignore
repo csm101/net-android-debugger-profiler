@@ -8,3 +8,5 @@ StoreTests.cfg
 StoreTests.exe
 *.error.log
 *.map
+NapGui.layout.ini
+NapGui.trace.log
