@@ -18,7 +18,8 @@ uses
 
 type
   /// The glyphs, in the order they sit in the image list: ImageIndex = Ord(kind).
-  TGlyphKind = (gkOpen, gkRefresh, gkRun, gkSnapshot, gkPause, gkStop, gkSettings, gkLayouts);
+  TGlyphKind = (gkOpen, gkRefresh, gkRun, gkSnapshot, gkPause, gkStop, gkSettings, gkLayouts,
+    gkExport);
 
 /// A 16x16 alpha image list holding every glyph, tinted with AColor.
 function BuildGlyphs(AOwner: TComponent; AColor: TColor): TImageList;
@@ -99,6 +100,18 @@ begin
       ACanvas.Rectangle(16, 16, 48, 48);
     gkSettings:
       DrawGear(ACanvas);
+    gkExport:
+      begin
+        // A sheet with an arrow leaving it.
+        ACanvas.Pen.Width := 5;
+        ACanvas.Brush.Color := clWhite;
+        ACanvas.Rectangle(8, 6, 40, 58);
+        ACanvas.Brush.Color := clBlack;
+        ACanvas.Pen.Width := 6;
+        ACanvas.MoveTo(30, 32);
+        ACanvas.LineTo(56, 32);
+        ACanvas.Polygon([Point(46, 20), Point(60, 32), Point(46, 44)]);
+      end;
     gkLayouts:
       begin
         // Three panels: the shape of an arrangement worth saving.

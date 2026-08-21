@@ -17,11 +17,12 @@ interface
 uses
   System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types, System.RegularExpressions,
   Winapi.Windows, Winapi.Messages,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Menus,
   System.Variants, System.IOUtils, System.StrUtils, System.IniFiles, Data.DB, FireDAC.Comp.Client,
   cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
+  cxGridExportLink, cxFindPanel, cxTLExportLink,
   cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
@@ -46,6 +47,7 @@ type
     FUnits: TdxBarCombo;
     FThemeBox: TdxBarCombo;
     FSettingsButton: TdxBarButton;
+    FExportButton: TdxBarButton;
     FLayoutButton: TdxBarButton;
     FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
@@ -167,6 +169,9 @@ type
     procedure RecolourGlyphs;
     procedure SettingsClick(Sender: TObject);
     procedure LayoutsClick(Sender: TObject);
+    procedure ExportClick(Sender: TObject);
+    procedure ExportGrid(AGrid: TcxGrid; const AFileName: string);
+    function FocusedGrid: TcxGrid;
     procedure ApplyCodeFont;
     procedure ShowPendingDialog(Sender: TObject);
     procedure ReloadExplorer;
@@ -342,6 +347,15 @@ begin
       else if SameText(LTab, 'monitor') then FMonitorPanel.Activate
       else FReportPanel.Activate;
     end;
+  // --export=<file> writes the report of the session given on the command line and
+  // quits: the same export the button performs, available to a build script.
+  for LIndex := 1 to ParamCount do
+    if ParamStr(LIndex).StartsWith('--export=', True) then
+    begin
+      ExportGrid(FGrid, ParamStr(LIndex).Substring(9));
+      Application.ShowMainForm := False;
+      PostMessage(Handle, WM_CLOSE, 0, 0);
+    end;
   UpdateInfo;
 end;
 
@@ -426,8 +440,10 @@ begin
   LSession := NewBar('Session');
   FOpenButton := NewButton(LSession, 'Open session...',
     'Open the results of a session already collected', gkOpen, OpenButtonClick);
+  FOpenButton.ShortCut := TextToShortCut('Ctrl+O');
   FRefreshButton := NewButton(LSession, 'Refresh',
     'Re-read the open session from disk', gkRefresh, RefreshButtonClick);
+  FRefreshButton.ShortCut := TextToShortCut('F5');
   FStartButton := NewButton(LSession, 'New session...',
     'Profile an app: pick the device, the mode and what to instrument', gkRun,
     StartButtonClick, True);
@@ -446,6 +462,9 @@ begin
     SettingsClick);
   FLayoutButton := NewButton(LView, 'Layouts...',
     'Save, load and manage panel arrangements', gkLayouts, LayoutsClick);
+  FExportButton := NewButton(LView, 'Export...',
+    'Write the table you are looking at to a spreadsheet or a text file', gkExport,
+    ExportClick);
 
   FThemeBox := NewCombo(LView, 'Theme', 70, ThemeChanged);
   FThemeBox.Items.Add(ThemeName(atLight));
@@ -470,6 +489,7 @@ begin
   FStatus.Panels.Add.Fixed := False;
   SetStatus('No session open.');
 
+  uLayouts.GBarManager := FBarManager;
   FSuppressCombo := False;
   UpdateButtons('');
 end;
@@ -1028,6 +1048,10 @@ begin
   AView.OptionsData.Editing := False;
   AView.OptionsSelection.CellSelect := False;
   AView.OptionsView.GroupByBox := True;
+  // Ctrl+F over a 200k-row report is not a luxury: the find panel filters as you type
+  // and highlights what matched, and it costs no space until it is asked for.
+  AView.FindPanel.DisplayMode := fpdmManual;
+  AView.FindPanel.InfoText := 'Type to find a method, a type or a module';
   ASource := TDataSource.Create(Self);
   AView.DataController.DataSource := ASource;
   Result := LGrid;
@@ -1531,6 +1555,69 @@ begin
   ApplyTheme;
   ApplyCodeFont;
   UnitsChanged(nil);
+end;
+
+/// The grid the user is working in, so Export means "this table" and not "the one the
+/// code happens to know about". Walks up from the focused control, which is where the
+/// answer actually lives.
+function TMainForm.FocusedGrid: TcxGrid;
+var
+  LControl: TWinControl;
+begin
+  LControl := Screen.ActiveControl;
+  while LControl <> nil do
+  begin
+    if LControl is TcxGrid then
+      Exit(TcxGrid(LControl));
+    LControl := LControl.Parent;
+  end;
+  Result := FGrid;
+end;
+
+procedure TMainForm.ExportClick(Sender: TObject);
+var
+  LDialog: TSaveDialog;
+  LGrid: TcxGrid;
+begin
+  LGrid := FocusedGrid;
+  if LGrid = nil then
+  begin
+    MessageDlg('There is no table to export here.', mtInformation, [mbOK], 0);
+    Exit;
+  end;
+  LDialog := TSaveDialog.Create(Self);
+  try
+    LDialog.Title := 'Export the table';
+    LDialog.Filter := 'Excel workbook (*.xlsx)|*.xlsx|Comma separated (*.csv)|*.csv|' +
+      'Web page (*.html)|*.html|Plain text (*.txt)|*.txt';
+    LDialog.DefaultExt := 'xlsx';
+    LDialog.Options := LDialog.Options + [ofOverwritePrompt];
+    LDialog.FileName := 'profile';
+    if not LDialog.Execute then
+      Exit;
+    ExportGrid(LGrid, LDialog.FileName);
+    SetStatus('exported to ' + LDialog.FileName);
+  finally
+    LDialog.Free;
+  end;
+end;
+
+/// Grouping, sorting and the find filter are part of what the user is looking at, so the
+/// export follows the view rather than the underlying table. The format comes from the
+/// extension, which is what both the dialog and --export already carry.
+procedure TMainForm.ExportGrid(AGrid: TcxGrid; const AFileName: string);
+var
+  LExtension: string;
+begin
+  LExtension := LowerCase(TPath.GetExtension(AFileName));
+  if LExtension = '.csv' then
+    ExportGridToCSV(AFileName, AGrid)
+  else if LExtension = '.html' then
+    ExportGridToHTML(AFileName, AGrid)
+  else if LExtension = '.txt' then
+    ExportGridToText(AFileName, AGrid)
+  else
+    ExportGridToXLSX(AFileName, AGrid);
 end;
 
 procedure TMainForm.LayoutsClick(Sender: TObject);

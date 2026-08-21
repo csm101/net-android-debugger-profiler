@@ -304,6 +304,20 @@ the file name. With no default chosen, the window comes back the way it was clos
 
 `--dialog=settings` and `--dialog=layouts` open one straight away, which is how the
 dialogs get exercised without a hand on the mouse (the same reason `--tab=` exists).
+`--export=<file>` writes the report of the session named on the command line and quits,
+so a build script can produce the same spreadsheet the Export button produces.
+
+## Working with the tables
+
+- **Find panel** on every grid, `Ctrl+F`: filters as you type and highlights the
+  matches. A 200k-row report is not readable without it, and it costs no space
+  until it is asked for.
+- **Export** of the table in front of you - xlsx, csv, html or text - following
+  the view, so grouping, sorting and the find filter are part of what comes out.
+  The button exports the grid that has focus, not a fixed one.
+- **Shortcuts**: `Ctrl+O` opens a session, `F5` re-reads it.
+- Saved layouts carry the toolbars as well as the panels: `<name>.ini` holds the
+  docking layout, `<name>.bars.ini` the bar manager's.
 
 ## Open questions
 
