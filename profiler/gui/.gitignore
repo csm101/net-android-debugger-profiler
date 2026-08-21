@@ -14,3 +14,5 @@ NapGui.settings.ini
 layouts/
 *.drc
 *.map.idx
+ControlTests.cfg
+ControlTests.exe
