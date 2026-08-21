@@ -78,6 +78,15 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   (`Stopped`, `StateChanged`) are raised outside the lock on that thread.
 - `AndroidLauncher` runs the logcat reader on a thread-pool task; property
   rotation is synchronous on that thread (blocking adb calls, ~100 ms).
+- A launch waits for the package to have no live process before it publishes the
+  port: `am force-stop` is asynchronous, and a leftover (or a sticky service on
+  its way back up) would read the property and take the port.
+- The agent-detection handler on the logcat thread is on the critical path for
+  port rotation: the property is rewritten only after it has decided whether the
+  process is ours. Anything slow there (an extra `ps`, a retry, a sleep) widens
+  the window in which the next process reads the same port and loses its agent.
+  Measured the hard way on 2026-08-21: a 400 ms retry added there was enough to
+  make helper processes fail their SDB handshake.
 - `LaunchOptions.KeepPropertyFresh` starts a renewal loop in `AndroidLauncher`
   that rewrites `debug.mono.extra` (same port, new deadline) every
   `lifetime/3`, so processes the app starts much later are still attached. All

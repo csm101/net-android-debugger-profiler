@@ -311,10 +311,37 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `Task.Delay`), then `StopSelf()`; `Sticky`. So the helper process is
     alive from the first seconds of every launch → port conflict with the
     main process is the **normal case**, not an edge case.
+  - **`am force-stop` returns before the processes are gone.** Publishing the
+    port while one of them is still alive (or while Android is bringing a sticky
+    service back up) hands it the property, and the process we actually want
+    loses its agent — the symptom is `no SDB handshake on port N within 20s`
+    followed by the app dying. The launcher now waits (up to 8 s) for the
+    package to have no processes left before writing the property, and warns if
+    something refuses to die. Found 2026-08-21 by full-suite runs where the
+    victim changed every time; single tests never showed it, because the
+    leftovers come from the *previous* test.
+  - **Port rotation is not race-free.** The property is rotated when the agent
+    of a process is *detected* in logcat, so two processes that start within the
+    same instant both read the same value and take the same port. The second
+    agent cannot listen (`debugger-agent: Unable to listen on ...`) and that
+    process dies. Observed 2026-08-21 on the emulator when a broadcast spawned a
+    process while `:helper` was still starting: the loser died, and in that run
+    the app's other processes went down with it. Rare in practice (processes
+    normally start seconds apart), but real for apps that fan out several
+    processes at init. See KNOWN_UNKNOWNS U14.
   - `the background service` (referenced by App.Droid):
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Third process debugged for real (2026-08-21, republished server):** with
+  `keepPropertyFresh`, `adb shell am start-foreground-service -n
+  App.Droid/the app's background service` starts `the app's own android:process` (uid 10174,
+  same as `App.Droid`), the launcher recognises it by uid and attaches it on port
+  10002 alongside the main process and `:crash_report_process`. A breakpoint in
+  `the background service` `OnStartCommand` is hit there, with its
+  stack (through the JNI marshal frames) and its locals — `intent`, `startId`
+  and `this` — readable. This is the process Visual Studio cannot debug at all.
+  **[verified]**
 - **Late processes and the deadline (2026-08-21):** the `timeout=` field is a
   device-epoch instant, and a process reading the property after it has passed
   starts without a debugger — silently, from the debugger's point of view.

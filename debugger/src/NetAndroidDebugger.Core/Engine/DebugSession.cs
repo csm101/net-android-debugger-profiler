@@ -577,6 +577,10 @@ public sealed class DebugSession : IAsyncDisposable
             }
             catch { /* session may be gone */ }
         }
+        // The status message belongs to whichever process answered first, and in a multi-process
+        // app that can be one where the assembly is not loaded. Once any process has the
+        // breakpoint bound, "will not currently be hit" is misleading: drop it.
+        if (verified) message = null;
         return new BreakpointInfo(id, spec, verified, string.IsNullOrEmpty(message) ? null : message);
     }
 

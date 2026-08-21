@@ -4,6 +4,24 @@
 the reference application re-drive through the freshly published MCP server (2026-08-21), and
 the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
 
+## Live run against the reference application on the republished server (2026-08-21)
+- `launch_app(keepPropertyFresh: true)` accepted, so the published server is
+  today's build.
+- **The third process is debugged for real.** `am start-foreground-service -n
+  App.Droid/the app's background service` starts `the app's own android:process` (uid 10174,
+  same as App.Droid); the launcher recognises it by uid and attaches it on port
+  10002 next to the main process and `:crash_report_process`. Breakpoint in
+  `BackgroundService.OnStartCommand` hit, stack and locals (`intent`, `startId`,
+  `this`) readable. Visual Studio cannot debug this process at all.
+- App output timestamps line up across both channels now (device clock).
+- One display bug found and fixed on the spot: `set_breakpoint` answered
+  `[verified] The breakpoint will not currently be hit` — the status message
+  came from a process where the assembly is not loaded while another had the
+  breakpoint bound. A bound breakpoint no longer carries a message.
+- Trap learned the hard way: a live MCP debug session on the device breaks the
+  suite (it owns `debug.mono.extra`, and rewrites it with keepPropertyFresh).
+  Terminate it before running tests.
+
 ## State
 - The MCP server was re-registered by the user, so the tools now run the code
   with the breakpoint-disarm fix.
@@ -81,8 +99,48 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   (~2 min on its own).
   Use it on the reference application: `the app's own android:process` is on-demand, the crash reporter
   restarts on its own schedule.
-- Suite: **55 tests, 55/55 green** (7 m 54 s — the new test waits ~2 min by
-  design).
+- The suite then caught something the live run had not: a globally-named
+  process is only identified through `ps`, and `ps` can miss a pid that has just
+  forked — the launcher then calls one of our own processes foreign. Fixed at
+  the source: ActivityManager prints the uid right after the process name on its
+  `Start proc` line (`u0a174` → 10174), so the process is recognised there,
+  without `ps`; the `ps` fallback also retries once before refusing.
+- Also found: **port rotation is not race-free**. The property is rotated when
+  an agent is *detected*, so two processes starting in the same instant read the
+  same value and fight for one port; the loser's agent cannot listen and it
+  dies. Documented (ANDROID_ATTACH_NOTES, KNOWN_UNKNOWNS U14) and left alone —
+  processes normally start seconds apart. The test that tripped it now waits for
+  `:helper` before spawning the second process.
+- Next full run caught another one of the same family:
+  `AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack` stepped with its
+  breakpoint still armed, and TestTarget re-enters that probe, so the stop the
+  step call returned was a fresh breakpoint hit on the same line. The test now
+  disarms first and asserts `StopReason.Step`, which is what makes the class of
+  mistake visible instead of silent.
+- The `ps` retry described above was a mistake and is gone: the agent-detection
+  handler runs on the logcat thread and the debug property is rotated only
+  *after* it decides whether a pid is ours, so a 400 ms delay there widened the
+  window in which the next process reads the same port. Removing it was not the
+  whole story, though — see below. The Start proc uid recognition (which is
+  what actually fixed the globalproc case) stays, and needs no `ps` at all.
+
+- **The real cause of the handshake failures**: `am force-stop` returns before
+  the app's processes are actually gone. A leftover — or a sticky `:helper`
+  Android is restarting — was still alive when the next launch published the
+  port, read the property and took it, so the process we wanted lost its agent
+  (`no SDB handshake on port N within 20s`, then the app dies). It only ever
+  showed in full-suite runs, with a different victim each time, because the
+  leftovers come from the *previous* test. The launcher now waits (up to 8 s)
+  for the package to have no live process before writing the property.
+- The force-stop wait worked (its warning never fired), and the next run was
+  54/55. The last holdout was `Detach_TerminatesTheApp_ByDesign`, which waited
+  for the package to have *no* process at all — but Android restarts the sticky
+  `:helper` a few seconds later, so that condition is only briefly true. It now
+  checks that the pids it saw before the detach are gone, which is what "detach
+  terminates the app" actually means.
+- Suite: **55 tests, 55/55 green** (6 m 27 s), with neither the force-stop
+  warning nor a handshake failure anywhere in the output. The five runs before
+  it were 54, 54, 52, 53 and 54 of 55 — a different fragile spot each time.
 
 ## Next steps (in order)
 1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The

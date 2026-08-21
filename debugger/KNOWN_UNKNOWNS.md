@@ -93,3 +93,23 @@ Deliberately not chased further: the test asserts "at least N hits" and the
 limitation is documented for users (hit counts are approximate in
 multi-process apps). Settle it with data, not more reading, if it ever
 matters — log `CurrentHitCount` per stop across many runs.
+
+## U14 - Can port rotation be made race-free?
+`debug.mono.extra` is device-global and read at process start; the launcher
+rotates it to the next port when it *sees* an agent-init line in logcat. Two
+processes starting within the same instant therefore read the same value, take
+the same port, and the second one's agent cannot listen - it dies (observed
+2026-08-21, details in ANDROID_ATTACH_NOTES).
+Options, none obviously right:
+- rotate on ActivityManager's `Start proc` line instead of on agent init. That
+  line comes earlier, but the runtime reads the property after it, so rotating
+  then risks stealing the port from the process that is about to read it.
+- rotate on a timer while any process of the app is starting.
+- accept the collision and recover: two pids announcing the same port is
+  detectable, but by then the loser's agent has already failed.
+Related, and measured: the decision "is this pid ours?" happens on that same
+thread before the rotation, so it must stay fast. A 400 ms retry added there on
+2026-08-21 was enough to make `:helper` lose its port and fail the handshake in
+three different tests.
+Not worth solving until an app is actually hurt by it: processes normally start
+seconds apart, and the tests that used to trip it now sequence themselves.

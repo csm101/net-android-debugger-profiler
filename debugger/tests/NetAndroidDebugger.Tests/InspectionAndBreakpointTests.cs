@@ -103,6 +103,10 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
 
         var bp = await session.SetBreakpointAsync(new BreakpointSpec(Main, TickLine), TimeSpan.FromSeconds(5), cts.Token);
         Assert.True(bp.Verified, $"reported unbound: {bp.Message ?? "no message"}");
+        // A bound breakpoint carries no status message: in a multi-process app the first process
+        // to answer can be one where the assembly is not loaded, and its "will not currently be
+        // hit" would contradict the Verified flag.
+        Assert.Null(bp.Message);
 
         // Before any process is attached nothing can bind a breakpoint, so the call must not wait.
         await using var idle = new DebugSession();
@@ -271,8 +275,12 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.Contains(frames, f => f.Method.Contains("AsyncProbeAsync") && !f.IsExternal);
 
         // Stepping over the line after the await stays inside the method.
+        // Disarm first: TestTarget runs this probe repeatedly, and a second invocation hitting the
+        // same breakpoint mid-step would be the stop the step call returns.
+        session.RemoveAllBreakpoints();
         var stepped = await session.StepOverAsync(stop.Pid, stop.ThreadId, StopTimeout, cts.Token);
         Assert.NotNull(stepped);
+        Assert.Equal(StopReason.Step, stepped.Reason);
         Assert.Contains("AsyncProbeAsync", stepped.Location?.Method);
         Assert.True(stepped.Location?.Line > afterAwait, $"stepped to line {stepped.Location?.Line}");
     }

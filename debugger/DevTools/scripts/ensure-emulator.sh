@@ -31,7 +31,12 @@ CORES=${CORES:-4}
 EMULATOR=${EMULATOR:-/c/Program Files (x86)/Android/android-sdk/emulator/emulator.exe}
 BOOT_TIMEOUT=${BOOT_TIMEOUT:-300}
 
-booted() { [ "$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; }
+# sys.boot_completed stays 1 even when system_server has crashed and is restarting, and a run
+# started in that state dies with "Can't find service: package". Ask the package service directly.
+booted() {
+  [ "$(adb -s "$SERIAL" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] &&
+    adb -s "$SERIAL" shell cmd package list packages >/dev/null 2>&1
+}
 
 if booted; then
   echo "$SERIAL already booted"

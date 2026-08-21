@@ -64,7 +64,8 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
   the registered MCP server: attach, helper process auto-attach, breakpoints
   on startup code (main) and in App.Core (multi-assembly), locals/expansion,
   stepping, clean terminate. A process with a global `android:process` name
-  (the shape of the App.Background service) is now recognised by uid and attached.
+  (the App.Background service, `the app's own android:process`) is recognised by uid and
+  attached: verified live, breakpoint hit in `OnStartCommand`.
   Remaining: physical device over adb connect (U9), the reference application build specifics
   (U6).
   Re-driven 2026-08-21 after the breakpoint-disarm fix: breakpoints on the

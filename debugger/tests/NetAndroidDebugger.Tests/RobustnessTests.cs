@@ -252,6 +252,14 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
 
         var pkg = TestEnvironment.TestTargetPackage;
         var adb = new AdbClient();
+        // Let the helper process settle first. Two processes starting at the same instant read the
+        // same value of the (device-global) property and race for one port; the loser's agent
+        // cannot listen and it dies. That race is a property of the mechanism, not what this test
+        // is about.
+        await WaitForAsync(
+            () => session.GetProcesses().FirstOrDefault(p => p.Name.EndsWith(":helper", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(45), cts.Token);
+
         // The receiver stops at our breakpoint, so the broadcast command would not return: fire it.
         _ = Task.Run(async () =>
         {
@@ -535,7 +543,8 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         var adb = new AdbClient();
         var pkg = TestEnvironment.TestTargetPackage;
         var session = await LaunchAsync(cts.Token);
-        Assert.NotEmpty(await adb.ListPackageProcessesAsync(device.Serial, pkg, cts.Token));
+        var before = await adb.ListPackageProcessesAsync(device.Serial, pkg, cts.Token);
+        Assert.NotEmpty(before);
 
         // On Mono Android the runtime exits when the debugger disconnects, so detaching cannot
         // leave the app running. The engine models this by terminating explicitly; this test
@@ -543,8 +552,12 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         await session.DetachAsync(cts.Token);
         Assert.Equal(SessionState.Exited, session.State);
 
+        // The processes that were running must die. Android restarting the sticky `:helper`
+        // afterwards is its own behaviour and would make "no process at all" flaky, so this looks
+        // at the pids we saw.
+        var pids = before.Select(p => p.Pid).ToHashSet();
         var left = await WaitForAsync(
-            async () => (await adb.ListPackageProcessesAsync(device.Serial, pkg, CancellationToken.None)).Count == 0 ? "gone" : null,
+            async () => (await adb.ListPackageProcessesAsync(device.Serial, pkg, CancellationToken.None)).All(p => !pids.Contains(p.Pid)) ? "gone" : null,
             TimeSpan.FromSeconds(20), cts.Token);
         Assert.Equal("gone", left);
     }

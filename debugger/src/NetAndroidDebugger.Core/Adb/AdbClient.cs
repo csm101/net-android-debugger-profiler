@@ -154,9 +154,16 @@ public sealed class AdbClient(string adbPath = "adb")
     /// <c>android:process</c> name). Apps sharing a uid would also match, which is intended: they
     /// share the sandbox this debugger drives.
     /// </summary>
-    public async Task<IReadOnlyList<(int Pid, string Name)>> ListPackageProcessesAsync(string serial, string package, CancellationToken ct)
+    public Task<IReadOnlyList<(int Pid, string Name)>> ListPackageProcessesAsync(string serial, string package, CancellationToken ct)
+        => ListPackageProcessesAsync(serial, package, null, ct);
+
+    /// <summary>
+    /// Same, with the package uid already known (saves a `pm list packages` round trip when this is
+    /// called in a loop). Pass null to have it resolved.
+    /// </summary>
+    public async Task<IReadOnlyList<(int Pid, string Name)>> ListPackageProcessesAsync(string serial, string package, int? uid, CancellationToken ct)
     {
-        var uid = await GetPackageUidAsync(serial, package, ct).ConfigureAwait(false);
+        uid ??= await GetPackageUidAsync(serial, package, ct).ConfigureAwait(false);
         var outp = await ShellAsync(serial, "ps -A -o PID,UID,NAME", ct).ConfigureAwait(false);
         var result = new List<(int, string)>();
         foreach (var raw in outp.Split('\n'))
@@ -171,6 +178,7 @@ public sealed class AdbClient(string adbPath = "adb")
         }
         return result;
     }
+
     public Task LogcatClearAsync(string serial, CancellationToken ct)
         => RunDeviceAsync(serial, ["logcat", "-c"], ct);
 

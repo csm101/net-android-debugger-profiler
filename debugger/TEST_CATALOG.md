@@ -27,7 +27,10 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 55 tests in four files, ~5 min on the headless emulator after deploy. Each
+- `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
+  back, and a run started then dies with `Can't find service: package`. The
+  script's health check asks the package service itself, not just the property.
+- 55 tests in four files, ~7-10 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -37,6 +40,9 @@ Conventions (mirroring the Delphi project's discipline):
 - TestTarget's `Sample` gained a lazy `Sequence` property (a `yield` iterator)
   so the enumerable case has a debuggee to exercise; the suite must deploy
   once (drop `NAD_SKIP_DEPLOY`) after pulling this.
+- A live MCP debug session on the same device breaks the suite: it owns
+  `debug.mono.extra` (and rewrites it when `keepPropertyFresh` is on), so the
+  tests' own launches lose the port. Terminate it first.
 - The engine logs from background threads that can outlive a test; the fixture
   ignores the `InvalidOperationException` xUnit's output helper throws once its
   test is over, because an unhandled throw there kills the whole test host.
@@ -105,7 +111,9 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Setting a breakpoint waits for the runtime to bind it before reporting
       (binding is asynchronous: the immediate answer says "not bound" with a
       message that reads like a failure), and does not wait when no process is
-      attached — `SetBreakpointAsync_WaitsForTheRuntimeToBindIt`
+      attached; a bound breakpoint carries no status message (in a multi-process
+      app the first process to answer may be one where the assembly is not
+      loaded) — `SetBreakpointAsync_WaitsForTheRuntimeToBindIt`
 - [x] Remove-all while stopped — no further hits — `RemoveAllBreakpoints_WhileStopped_NoFurtherHits`
 - [x] Breakpoint on a comment line — bound to the next statement or pending,
       no crash, session stays usable — `Breakpoint_OnCommentLine_DoesNotCrash_SessionStaysUsable`

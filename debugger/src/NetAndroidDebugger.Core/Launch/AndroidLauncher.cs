@@ -24,7 +24,8 @@ public sealed class AndroidLauncher : IAsyncDisposable
         @"^(?<stamp>\d\d-\d\d\s+\d\d:\d\d:\d\d\.\d+)\s+(?<pid>\d+)\s+(?<tid>\d+)\s+(?<lvl>[VDIWEFS])\s+(?<tag>.*?)\s*:\s(?<msg>.*)$",
         RegexOptions.Compiled);
     private static readonly Regex AgentInit = new(@"Trying to initialize the debugger with options:.*address=127\.0\.0\.1:(?<port>\d+)", RegexOptions.Compiled);
-    private static readonly Regex StartProc = new(@"Start proc (?<pid>\d+):(?<name>\S+?)/", RegexOptions.Compiled);
+    private static readonly Regex StartProc = new(@"Start proc (?<pid>\d+):(?<name>\S+?)/(?<uid>\S+)", RegexOptions.Compiled);
+    private static readonly Regex AmUid = new(@"^u(?<user>\d+)a(?<app>\d+)$", RegexOptions.Compiled);
 
     private readonly AdbClient _adb;
     private readonly AppTarget _app;
@@ -120,6 +121,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
         var deviceNow = await _adb.GetDeviceEpochSecondsAsync(serial, ct).ConfigureAwait(false);
         await MeasureDeviceClockOffsetAsync(serial, ct).ConfigureAwait(false);
         _packageUid = await _adb.GetPackageUidAsync(serial, _app.PackageName, ct).ConfigureAwait(false);
+        await WaitUntilPackageIsGoneAsync(serial, ct).ConfigureAwait(false);
         _deadline = deviceNow + (long)_options.EffectivePropertyLifetime.TotalSeconds;
 
         await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
@@ -282,7 +284,9 @@ public sealed class AndroidLauncher : IAsyncDisposable
             if (sp.Success)
             {
                 var name = sp.Groups["name"].Value;
-                if (name == _app.PackageName || name.StartsWith(_app.PackageName + ":", StringComparison.Ordinal))
+                // ActivityManager prints the uid right after the process name, which is the only
+                // thing that identifies a process declared with a global `android:process`.
+                if (BelongsToPackage(name) || ParseAmUid(sp.Groups["uid"].Value) == _packageUid)
                 {
                     var npid = int.Parse(sp.Groups["pid"].Value);
                     lock (_gate) { _processNames[npid] = name; _appPids.Add(npid); }
@@ -315,7 +319,13 @@ public sealed class AndroidLauncher : IAsyncDisposable
                 lock (_gate) _processNames.TryGetValue(pid, out name);
                 int? uid = null;
                 if (name is null)
+                {
+                    // ActivityManager did not announce this pid (its line can be missed when the
+                    // logcat reader starts late). `ps` is the fallback. Keep this path short: the
+                    // property is rotated only after this decision, and every millisecond spent
+                    // here is a millisecond in which another process can read the same port.
                     (name, uid) = LookupProcess(pid, ct);
+                }
                 var ours = IsOurs(name, uid, pid, ct);
                 if (!ours)
                 {
@@ -351,6 +361,26 @@ public sealed class AndroidLauncher : IAsyncDisposable
                 handler(new AppLogLine(ParseLogcatTimestamp(m.Groups["stamp"].Value), pid, tid, level, tag, msg));
             }
         }
+    }
+
+    /// <summary>
+    /// `am force-stop` returns before the processes are actually gone, and a sticky service Android
+    /// is restarting can still be on its way up. Any of them still alive when we publish the port
+    /// reads the property and takes it, and the process we do want loses its agent. Waits a few
+    /// seconds; if something refuses to die we go ahead anyway and say so.
+    /// </summary>
+    private async Task WaitUntilPackageIsGoneAsync(string serial, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(8);
+        while (DateTime.UtcNow < deadline)
+        {
+            IReadOnlyList<(int Pid, string Name)> alive;
+            try { alive = await _adb.ListPackageProcessesAsync(serial, _app.PackageName, _packageUid, ct).ConfigureAwait(false); }
+            catch (Exception ex) { _log($"could not check for leftover processes: {ex.Message}"); return; }
+            if (alive.Count == 0) return;
+            await Task.Delay(250, ct).ConfigureAwait(false);
+        }
+        _log($"WARNING: processes of {_app.PackageName} are still alive after force-stop; they may take the debug port");
     }
 
     /// <summary>
@@ -390,6 +420,21 @@ public sealed class AndroidLauncher : IAsyncDisposable
             CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
             ? parsed
             : deviceNow;
+    }
+
+    /// <summary>
+    /// Turns the uid ActivityManager prints after a process name into a Linux uid: <c>u0a174</c>
+    /// is app 174 of user 0, i.e. 10174; a plain number (system processes) is the uid itself.
+    /// Returns null for anything else.
+    /// </summary>
+    private static int? ParseAmUid(string token)
+    {
+        if (int.TryParse(token, out var plain)) return plain;
+        var m = AmUid.Match(token);
+        if (!m.Success) return null;
+        var user = int.Parse(m.Groups["user"].Value);
+        var app = int.Parse(m.Groups["app"].Value);
+        return user * 100000 + 10000 + app;
     }
 
     /// <summary>
