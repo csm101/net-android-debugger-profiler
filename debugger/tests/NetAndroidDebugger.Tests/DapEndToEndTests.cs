@@ -252,4 +252,83 @@ public sealed class DapEndToEndTests(DeviceFixture device, ITestOutputHelper out
         var threads = await client.SendAsync("threads", null, ct);
         Assert.True(threads["success"]!.GetValue<bool>());
     }
+
+    /// <summary>
+    /// A client sends the enabled exception filters two ways, and once any filter advertises
+    /// `supportsCondition` it uses the second: `filterOptions`, with `filters` left EMPTY. Reading
+    /// only the legacy array makes every first-chance filter a silent no-op — the Delphi debugger
+    /// records finding exactly that under real VS Code, with its own test masking it by populating
+    /// both. This drives the real shape.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionFilters_ArriveAsFilterOptions_AndSelectTheTypes()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        var ct = cts.Token;
+        await using var client = Start();
+
+        var caps = await client.ExpectAsync("initialize", new JsonObject { ["adapterID"] = "net-android-debugger" }, ct);
+        Assert.True(caps["supportsExceptionFilterOptions"]?.GetValue<bool>());
+        var filters = caps["exceptionBreakpointFilters"]!.AsArray();
+        var types = filters.Single(f => f!["filter"]!.GetValue<string>() == "types");
+        Assert.True(types["supportsCondition"]?.GetValue<bool>(), "the type filter must accept a condition");
+        Assert.NotNull(await client.WaitForEventAsync("initialized", TimeSpan.FromSeconds(10), ct));
+
+        // The shape a real client sends: `filters` empty, ids under `filterOptions.filterId`.
+        await client.ExpectAsync("setExceptionBreakpoints", new JsonObject
+        {
+            ["filters"] = new JsonArray(),
+            ["filterOptions"] = new JsonArray(new JsonObject
+            {
+                ["filterId"] = "types",
+                ["condition"] = "System.InvalidOperationException",
+            }),
+        }, ct);
+
+        await client.ExpectAsync("launch", LaunchArgs(), ct);
+        await client.ExpectAsync("configurationDone", null, ct);
+
+        // TestTarget throws a caught InvalidOperationException every fifth tick. Nothing else is
+        // armed, so a stop can only be that exception.
+        var stopped = await client.WaitForEventAsync("stopped", StopTimeout, ct);
+        Assert.NotNull(stopped);
+        Assert.Equal("exception", stopped["body"]!["reason"]!.GetValue<string>());
+
+        var info = await client.ExpectAsync("exceptionInfo", new JsonObject
+        {
+            ["threadId"] = stopped["body"]!["threadId"]!.GetValue<int>(),
+        }, ct);
+        Assert.Contains("InvalidOperationException", info["exceptionId"]!.GetValue<string>(), StringComparison.Ordinal);
+
+        await client.ExpectAsync("disconnect", new JsonObject { ["terminateDebuggee"] = true }, ct);
+    }
+
+    /// <summary>
+    /// The legacy shape still works: a client that sends only `filters` must not end up with the
+    /// filters silently off.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionFilters_LegacyFiltersArray_StillSelectsAll()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        var ct = cts.Token;
+        await using var client = Start();
+
+        await client.ExpectAsync("initialize", new JsonObject { ["adapterID"] = "net-android-debugger" }, ct);
+        Assert.NotNull(await client.WaitForEventAsync("initialized", TimeSpan.FromSeconds(10), ct));
+
+        await client.ExpectAsync("setExceptionBreakpoints", new JsonObject
+        {
+            ["filters"] = new JsonArray("all"),
+        }, ct);
+
+        await client.ExpectAsync("launch", LaunchArgs(), ct);
+        await client.ExpectAsync("configurationDone", null, ct);
+
+        var stopped = await client.WaitForEventAsync("stopped", StopTimeout, ct);
+        Assert.NotNull(stopped);
+        Assert.Equal("exception", stopped["body"]!["reason"]!.GetValue<string>());
+
+        await client.ExpectAsync("disconnect", new JsonObject { ["terminateDebuggee"] = true }, ct);
+    }
 }

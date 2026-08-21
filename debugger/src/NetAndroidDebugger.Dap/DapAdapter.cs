@@ -105,11 +105,34 @@ public sealed class DapAdapter : IAsyncDisposable
             ["supportsEvaluateForHovers"] = true,
             ["supportsConditionalBreakpoints"] = true,
             ["supportsHitConditionalBreakpoints"] = true,
+            ["supportsLogPoints"] = true,
             ["supportsExceptionInfoRequest"] = true,
             ["supportsTerminateRequest"] = true,
+            ["supportsExceptionFilterOptions"] = true,
             ["exceptionBreakpointFilters"] = new JsonArray(
-                new JsonObject { ["filter"] = "uncaught", ["label"] = "Unhandled exceptions", ["default"] = true },
-                new JsonObject { ["filter"] = "all", ["label"] = "All exceptions (first chance)", ["default"] = false }),
+                new JsonObject
+                {
+                    ["filter"] = "uncaught",
+                    ["label"] = "Unhandled exceptions",
+                    ["description"] = "Stop when an exception is about to bring the process down. Always on.",
+                    ["default"] = true,
+                },
+                new JsonObject
+                {
+                    ["filter"] = "types",
+                    ["label"] = "Exception types",
+                    ["description"] = "Stop when an exception of a named type is thrown, subclasses included.",
+                    ["default"] = false,
+                    ["supportsCondition"] = true,
+                    ["conditionDescription"] = "Comma-separated type names, e.g. System.InvalidOperationException, App.Core.SyncException",
+                },
+                new JsonObject
+                {
+                    ["filter"] = "all",
+                    ["label"] = "All exceptions (first chance)",
+                    ["description"] = "Stop on every managed exception as it is thrown. Noisy on a real app.",
+                    ["default"] = false,
+                }),
         };
         await _conn.SendResponseAsync(request, capabilities, ct);
         await _conn.SendEventAsync("initialized", null, ct);
@@ -167,7 +190,9 @@ public sealed class DapAdapter : IAsyncDisposable
         {
             if (node is not JsonObject bp) continue;
             var line = Int(bp, "line") ?? throw new ArgumentException("a breakpoint without a line");
-            specs.Add(new BreakpointSpec(path, line, Str(bp, "condition"), HitCountOf(Str(bp, "hitCondition"))));
+            // DAP carries both natively, and the engine understands the same spellings, so they
+            // pass straight through — including logMessage, which makes it a logpoint.
+            specs.Add(new BreakpointSpec(path, line, Str(bp, "condition"), 0, Str(bp, "hitCondition"), Str(bp, "logMessage")));
         }
 
         var infos = await _session.SetBreakpointsAsync(path, specs, BindSettleTime, ct);
@@ -185,22 +210,46 @@ public sealed class DapAdapter : IAsyncDisposable
         await _conn.SendResponseAsync(request, body, ct);
     }
 
-    /// <summary>DAP's hitCondition is free text; the engine only knows "stop from the Nth hit".</summary>
-    private static int HitCountOf(string? hitCondition)
-        => int.TryParse(hitCondition?.TrimStart('>', '=', ' '), out var n) && n > 0 ? n : 0;
 
     private async Task SetExceptionBreakpointsAsync(JsonObject request, CancellationToken ct)
     {
         var args = request["arguments"] as JsonObject ?? new JsonObject();
-        var filters = (args["filters"] as JsonArray ?? new JsonArray())
-            .Select(f => f?.GetValue<string>())
-            .Where(f => f is not null)
-            .ToHashSet();
 
-        // "all" means every managed exception; the engine takes type names, and System.Exception
-        // with subclasses included is exactly that.
-        var firstChance = filters.Contains("all") ? new[] { "System.Exception" } : Array.Empty<string>();
-        _session.SetExceptionFilters(new ExceptionFilters(BreakOnUnhandled: true, firstChance));
+        // A client sends the enabled filters two ways: the legacy `filters: [id]` array, and - once
+        // any filter advertises `supportsCondition`, as `types` does - the richer
+        // `filterOptions: [{ filterId, condition }]`, leaving `filters` EMPTY. Both are read here.
+        // Reading only one of them makes every first-chance filter a silent no-op under a real
+        // client; the Delphi debugger records that exact bug, found the hard way.
+        var enabled = new HashSet<string>(StringComparer.Ordinal);
+        string? typeCondition = null;
+
+        foreach (var node in args["filters"] as JsonArray ?? new JsonArray())
+            if (node?.GetValue<string>() is { Length: > 0 } id)
+                enabled.Add(id);
+
+        foreach (var node in args["filterOptions"] as JsonArray ?? new JsonArray())
+        {
+            if (node is not JsonObject option) continue;
+            // `filterId` is the specified key; some clients send `filter`.
+            var id = Str(option, "filterId") ?? Str(option, "filter");
+            if (id is null) continue;
+            enabled.Add(id);
+            if (id == "types") typeCondition = Str(option, "condition");
+        }
+
+        var types = new List<string>();
+        // "all" is every managed exception, and System.Exception with subclasses included says
+        // exactly that. It is deliberately listed second: a specific list is more useful, and
+        // combining them would drown it.
+        if (enabled.Contains("all"))
+            types.Add("System.Exception");
+        else if (typeCondition is { Length: > 0 })
+            types.AddRange(typeCondition
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        // Unhandled exceptions always stop: the process is going down either way, and saying
+        // nothing about it would leave the client with an app that vanished.
+        _session.SetExceptionFilters(new ExceptionFilters(BreakOnUnhandled: true, types));
         await _conn.SendResponseAsync(request, null, ct);
     }
 

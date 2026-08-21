@@ -339,6 +339,20 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Exception rules beat filters on a real app (2026-08-21):** the reference application raises
+  `MqttCommunicationTimedOutException` whenever the network blinks and a handled
+  `InvalidOperationException` ("Not allowed to connect while connect/disconnect
+  is pending") on every reconnect. With filters alone, debugging it means either
+  no exception stops at all or one every few seconds. An ordered rule list
+  (ignore that type, log this message, break on the rest) is what makes it
+  workable. See ARCHITECTURE.md, "Exception rules".
+- **Logpoints matter more here than on a desktop (2026-08-21):** suspending an
+  app that talks to a backend makes it time out — measured on the reference application, where a
+  pause costs an MQTT reconnect and, if held long enough, a watchdog bug report.
+  A logpoint (`logMessage` on a breakpoint, `{expression}` substituted in place)
+  traces to the debugger output and lets the app run, which on a real device is
+  often the only usable form. Mono implements it natively: `HitAction` without
+  the `Break` flag, plus `TraceExpression`.
 - **Exception type can be missing at stop time (2026-08-21):** a first-chance
   stop inside a third-party assembly without symbols (MQTTnet's
   `MqttClient.ConnectAsync`) reported an empty type; the message and stack came

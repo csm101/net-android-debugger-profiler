@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Text;
 using Mono.Debugging.Client;
 using NetAndroidDebugger.Core.Adb;
@@ -21,6 +22,7 @@ public sealed class DebugSession : IAsyncDisposable
     private readonly Dictionary<int, ProcessDebuggerEntry> _processes = new();
     private readonly Dictionary<int, Task> _attaching = new();
     private readonly HashSet<int> _unhandledReported = new();
+    private List<ExceptionRule> _exceptionRules = new();
     private readonly Dictionary<int, (BreakpointSpec Spec, Breakpoint Bp)> _breakpoints = new();
     private readonly List<AppLogLine> _appOutput = new();
     private readonly List<string> _debuggerOutput = new();
@@ -292,24 +294,47 @@ public sealed class DebugSession : IAsyncDisposable
             }
         }
 
+        // Capture what can be read without calling into the debuggee, while the VM is certainly
+        // suspended: for an unhandled exception the runtime may tear the process down right after
+        // this event, and a later query would find the VM gone.
+        (string Type, string Message, string StackTrace)? snapshot = null;
+        if (pd.LastStopReason is StopReason.Exception or StopReason.UnhandledException)
+            snapshot = CaptureExceptionAtStop(pd);
+
+        // Rules apply to first-chance exceptions only. An unhandled one always stops: the process
+        // is going down either way, and passing it over would leave the caller with an app that
+        // vanished for no stated reason.
+        if (pd.LastStopReason == StopReason.Exception && HandledByExceptionRules(pd, snapshot))
+            return;
+
+        ReportStop(pd, snapshot, snapshot?.Message);
+    }
+
+    /// <summary>
+    /// Publishes a stop: state, generation, last-stop record, and the events waiters are on. Split
+    /// out because the exception rules may decide on a worker thread, after the event thread has
+    /// already returned.
+    /// </summary>
+    private void ReportStop(Engine.ProcessDebugger pd, (string Type, string Message, string StackTrace)? snapshot, string? message)
+    {
         StopEvent ev;
         lock (_lock)
         {
             _generation++;
             var loc = TryDescribeLocation(pd.StopBacktrace);
-            string? exType = null, message = null;
+            string? exType = null;
             if (pd.LastStopReason is StopReason.Exception or StopReason.UnhandledException)
             {
-                // Capture what we can while the VM is certainly suspended: for unhandled exceptions
-                // the runtime may tear the process down right after this event, so a later
-                // GetExceptionDetails call can find the VM no longer suspended.
-                var snap = CaptureExceptionAtStop(pd);
-                exType = snap?.Type;
-                message = snap?.Message;
-                _lastExceptionSnapshot = snap;
+                exType = snapshot?.Type;
+                _lastExceptionSnapshot = snapshot is null
+                    ? null
+                    : (snapshot.Value.Type, message ?? snapshot.Value.Message, snapshot.Value.StackTrace);
             }
-            if (pd.LastStopReason is not (StopReason.Exception or StopReason.UnhandledException))
+            else
+            {
                 _lastExceptionSnapshot = null;
+                message = null;
+            }
             ev = new StopEvent(_generation, pd.Pid, pd.LastStopReason, pd.StopThread?.Id ?? 0, loc, exType, message);
             _lastStop = ev;
             InvalidateValuesNoLock(pd.Pid);
@@ -463,15 +488,53 @@ public sealed class DebugSession : IAsyncDisposable
             var bp = _store.Add(spec.File, spec.Line);
             if (!string.IsNullOrWhiteSpace(spec.Condition))
                 bp.ConditionExpression = spec.Condition;
-            if (spec.HitCount > 0)
+            ApplyHitCount(bp, spec);
+            if (!string.IsNullOrWhiteSpace(spec.LogMessage))
             {
-                bp.HitCountMode = HitCountMode.GreaterThanOrEqualTo;
-                bp.HitCount = spec.HitCount;
+                // A logpoint traces and carries on: HitAction without the Break flag is what tells
+                // Mono not to suspend. The `{expression}` parts are substituted by the runtime.
+                bp.TraceExpression = spec.LogMessage;
+                bp.HitAction = HitAction.PrintExpression;
             }
             var id = ++_nextBreakpointId;
             _breakpoints[id] = (spec, bp);
             return DescribeNoLock(id, spec, bp);
         }
+    }
+
+    /// <summary>
+    /// Applies whichever of the two hit-count forms was given. `HitCondition` is the richer one and
+    /// wins; `HitCount` stays for callers that only ever wanted "from the Nth hit".
+    /// </summary>
+    private static void ApplyHitCount(Breakpoint bp, BreakpointSpec spec)
+    {
+        var condition = spec.HitCondition?.Trim();
+        if (string.IsNullOrEmpty(condition))
+        {
+            if (spec.HitCount > 0)
+            {
+                bp.HitCountMode = HitCountMode.GreaterThanOrEqualTo;
+                bp.HitCount = spec.HitCount;
+            }
+            return;
+        }
+
+        var (mode, digits) = condition switch
+        {
+            ['>', '=', .. var rest] => (HitCountMode.GreaterThanOrEqualTo, rest),
+            ['<', '=', .. var rest] => (HitCountMode.LessThanOrEqualTo, rest),
+            ['>', .. var rest] => (HitCountMode.GreaterThan, rest),
+            ['<', .. var rest] => (HitCountMode.LessThan, rest),
+            ['=', .. var rest] => (HitCountMode.EqualTo, rest),
+            ['%', .. var rest] => (HitCountMode.MultipleOf, rest),
+            _ => (HitCountMode.GreaterThanOrEqualTo, condition),
+        };
+        if (!int.TryParse(digits.Trim(), out var count) || count <= 0)
+            throw new ArgumentException(
+                $"'{spec.HitCondition}' is not a hit condition. Use 5 or >=5 (from the fifth hit), " +
+                $">5 (after it), =5 (only it), %5 (every fifth).", nameof(spec));
+        bp.HitCountMode = mode;
+        bp.HitCount = count;
     }
 
     /// <summary>
@@ -606,6 +669,128 @@ public sealed class DebugSession : IAsyncDisposable
     }
 
     public ExceptionFilters GetExceptionFilters() { lock (_lock) return _exceptionFilters; }
+
+    /// <summary>
+    /// Replaces the exception rules. They are consulted for first-chance exceptions only: an
+    /// unhandled one always stops, because the process is going down either way and saying nothing
+    /// would leave the caller with an app that simply vanished.
+    /// </summary>
+    /// <param name="rules">Ordered; the first whose criteria all match decides. Empty restores
+    /// plain filter behaviour.</param>
+    public void SetExceptionRules(IReadOnlyList<ExceptionRule> rules)
+    {
+        foreach (var rule in rules)
+        {
+            // Compile now, so a bad pattern is the caller's error rather than a surprise on the
+            // first exception - by which time the app is running and the failure is far away.
+            if (rule.MessageRegex is { Length: > 0 } pattern)
+            {
+                try { _ = new Regex(pattern); }
+                catch (ArgumentException ex)
+                {
+                    throw new ArgumentException($"'{pattern}' is not a valid regular expression: {ex.Message}", nameof(rules));
+                }
+            }
+        }
+        lock (_lock) _exceptionRules = rules.ToList();
+        _log($"exception rules: {rules.Count} in force");
+    }
+
+    /// <summary>The exception rules currently in force, in order.</summary>
+    public IReadOnlyList<ExceptionRule> GetExceptionRules() { lock (_lock) return _exceptionRules; }
+
+    /// <summary>
+    /// Decides what to do with a first-chance exception. Returns null when no rule matches, which
+    /// leaves the filters in charge.
+    /// </summary>
+    private ExceptionAction? MatchExceptionRules(string type, string? message, string? sourceFile)
+    {
+        List<ExceptionRule> rules;
+        lock (_lock) rules = _exceptionRules;
+        foreach (var rule in rules)
+        {
+            if (rule.Type is { Length: > 0 } exact && !string.Equals(type, exact, StringComparison.Ordinal)) continue;
+            if (rule.TypeContains is { Length: > 0 } part && !type.Contains(part, StringComparison.Ordinal)) continue;
+            if (rule.SourceFileContains is { Length: > 0 } file
+                && (sourceFile is null || !sourceFile.Contains(file, StringComparison.OrdinalIgnoreCase))) continue;
+            if (rule.MessageContains is { Length: > 0 } text
+                && (message is null || !message.Contains(text, StringComparison.OrdinalIgnoreCase))) continue;
+            if (rule.MessageRegex is { Length: > 0 } pattern
+                && (message is null || !Regex.IsMatch(message, pattern))) continue;
+            return rule.Action;
+        }
+        return null;
+    }
+
+    /// <summary>True when some rule can only be decided once the message is known.</summary>
+    private bool RulesNeedMessage()
+    {
+        lock (_lock)
+            return _exceptionRules.Any(r => r.MessageContains is { Length: > 0 } || r.MessageRegex is { Length: > 0 });
+    }
+
+    /// <summary>
+    /// Applies the rules to a first-chance exception stop. Returns true when the stop was handled
+    /// (logged and/or resumed) and must not be reported.
+    /// </summary>
+    private bool HandledByExceptionRules(Engine.ProcessDebugger pd, (string Type, string Message, string StackTrace)? snapshot)
+    {
+        lock (_lock) if (_exceptionRules.Count == 0) return false;
+
+        var type = snapshot?.Type ?? "";
+        var site = TryDescribeLocation(pd.StopBacktrace)?.File;
+
+        // The message needs a call into the debuggee, which is not allowed on this thread - it is
+        // the event thread and the VM is not "suspended" from its point of view. When no rule asks
+        // for the message the decision is made here; when one does, it moves to a worker.
+        if (!RulesNeedMessage())
+        {
+            var decided = MatchExceptionRules(type, null, site);
+            return decided is not null && ActOnRule(pd, decided.Value, type, null, snapshot);
+        }
+
+        var pid = pd.Pid;
+        var threadId = pd.StopThread?.Id ?? 0;
+        Task.Run(() =>
+        {
+            string? message = null;
+            try { message = ResolveExceptionMessageLive(pid, threadId); }
+            catch (Exception ex) { _log($"pid {pid}: reading the exception message for the rules failed: {ex.Message}"); }
+
+            var decided = MatchExceptionRules(type, message, site);
+            if (decided is not null && decided.Value != ExceptionAction.Break)
+            {
+                ActOnRule(pd, decided.Value, type, message, snapshot);
+                return;
+            }
+            // No rule, or one that says break: report it as an ordinary exception stop.
+            ReportStop(pd, snapshot, message);
+        });
+        return true;
+    }
+
+    /// <summary>Carries out a rule's action. Returns true when the app was resumed.</summary>
+    private bool ActOnRule(Engine.ProcessDebugger pd, ExceptionAction action, string type, string? message, (string Type, string Message, string StackTrace)? snapshot)
+    {
+        if (action == ExceptionAction.Break) return false;
+
+        var described = string.IsNullOrEmpty(message) ? type : $"{type}: {message}";
+        switch (action)
+        {
+            case ExceptionAction.Log:
+                _log($"[pid {pd.Pid}] exception rule: {described} (not stopping)");
+                break;
+            case ExceptionAction.LogStack:
+                _log($"[pid {pd.Pid}] exception rule: {described} (not stopping)\n{snapshot?.StackTrace}");
+                break;
+            case ExceptionAction.Ignore:
+            default:
+                break;
+        }
+        try { pd.Continue(); }
+        catch (Exception ex) { _log($"pid {pd.Pid}: resuming after an exception rule failed: {ex.Message}"); }
+        return true;
+    }
 
     // ------------------------------------------------------------------ inspection
 

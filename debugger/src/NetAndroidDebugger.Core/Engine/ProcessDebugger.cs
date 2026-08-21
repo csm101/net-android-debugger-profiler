@@ -65,6 +65,13 @@ internal sealed class ProcessDebugger : IDisposable
         // output, not debugger log; without DebugWriter Mono.Debugging folds them into LogWriter.
         s.DebugWriter = (level, category, message) =>
             Output?.Invoke(this, false, string.IsNullOrEmpty(category) ? message : $"[{category}] {message}");
+        // A logpoint's message: the runtime has already substituted its {expression} parts. It goes
+        // to the debugger output rather than the app's, because the app never printed it.
+        s.BreakpointTraceHandler = (be, trace) =>
+        {
+            var where = be is Breakpoint b ? $"{Path.GetFileName(b.FileName)}:{b.Line}" : "breakpoint";
+            _log($"[pid {Pid}] logpoint {where}: {trace}");
+        };
         s.TargetEvent += OnTargetEvent;
         s.Breakpoints = _store;
 

@@ -95,6 +95,13 @@ no debugging logic of its own. Notes that matter to a client:
   their pid.
 - Frame and variable ids are invalidated on every stop; a stale id is refused
   with a message rather than silently addressing something else.
+- Exception filters are read from **both** `filters` and `filterOptions`. A
+  client sends the legacy array until some filter advertises `supportsCondition`
+  — ours `types` does — and then sends `filterOptions` with `filters` empty.
+  Reading one of the two makes every first-chance filter a silent no-op; the
+  Delphi debugger hit exactly that under real VS Code, with a test that masked
+  it by populating both. `filterId` is the specified key, `filter` the one some
+  clients send; both are accepted.
 - Every event goes through one queue with a single sender. They are raised on
   engine threads — a stop, a resume, a line of app output — and a client reads
   them as a sequence: a `continued` delivered after the `stopped` that followed
@@ -102,6 +109,30 @@ no debugging logic of its own. Notes that matter to a client:
 - Step requests are acknowledged before the step runs, so the client sees the
   response before the `stopped` event that follows it.
 
+
+## Exception rules
+
+Filters answer "which types should stop the app". That is not enough for an app
+that throws on purpose: the reference application raises an MQTT timeout whenever the network
+blinks and a handled `InvalidOperationException` on every reconnect, so "stop on
+everything" and "stop on nothing" are equally useless.
+
+`DebugSession` therefore carries an ordered rule list (`SetExceptionRules`),
+taken from the Delphi debugger's design. The first rule whose set criteria all
+match decides: `Break`, `Log`, `LogStack` or `Ignore`. Criteria are AND-ed and an
+unset one is a wildcard, so a bare `{action: break}` is the catch-all. Rules
+apply to **first-chance** exceptions only — an unhandled one always stops,
+because the process is going down either way.
+
+The one structural difference from the Delphi engine: reading an exception's
+message means calling into the debuggee, which Mono forbids on its event thread.
+So when no rule mentions a message the decision is made inline on that thread;
+when one does, the stop is held and decided on a worker, and `ReportStop` is
+called from whichever path wins. Type and raise-site criteria never need the
+debuggee, which is why they are the cheap ones.
+
+Not implemented, and worth having if rules become routine: the machine-wide
+rules file and the hot reload on resume that the Delphi debugger has.
 ## Threading model
 
 - Mono.Debugging raises events on its own event thread, one per

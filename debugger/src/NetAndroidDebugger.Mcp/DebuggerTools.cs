@@ -1,7 +1,11 @@
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using NetAndroidDebugger.Core;
+
 
 namespace NetAndroidDebugger.Mcp;
 
@@ -142,16 +146,23 @@ public sealed class DebuggerTools(SessionHost host)
 
     // ------------------------------------------------------------------ breakpoints
 
-    [McpServerTool(Name = "set_breakpoint"), Description("Adds a source-line breakpoint. The file path must match the path compiled into the app's PDB (usually the absolute path of the source on this machine). When a session is running, the answer waits briefly for the runtime to bind the breakpoint.")]
+    [McpServerTool(Name = "set_breakpoint"), Description(
+        "Adds a source-line breakpoint. The file path must match the path compiled into the app's PDB " +
+        "(get_source_files reports it). When a session is running, the answer waits briefly for the runtime to bind it. " +
+        "With logMessage the app is NOT suspended: the message is written to get_debugger_output instead, which is " +
+        "often the only usable form on an app that talks to a backend, since suspending it makes the backend time out.")]
     public async Task<string> SetBreakpoint(
         [Description("Absolute source file path")] string file,
         [Description("1-based line")] int line,
         [Description("Optional C# condition expression")] string? condition = null,
         [Description("Stop only when hit count >= this value (0 = every hit)")] int hitCount = 0,
+        [Description("Richer hit count: 5 or >=5 (from the fifth hit), >5 (after it), =5 (only it), %5 (every fifth). Wins over hitCount.")] string? hitCondition = null,
+        [Description("Log instead of stopping: the message is traced with each {expression} evaluated in place, and the app keeps running")] string? logMessage = null,
         CancellationToken ct = default)
     {
         var s = host.RequireForSetup();
-        var info = await s.SetBreakpointAsync(new BreakpointSpec(file, line, condition, hitCount), BindSettleTime, ct);
+        var spec = new BreakpointSpec(file, line, condition, hitCount, hitCondition, logMessage);
+        var info = await s.SetBreakpointAsync(spec, BindSettleTime, ct);
         return TextFormat.Breakpoint(info);
     }
 
@@ -190,6 +201,83 @@ public sealed class DebuggerTools(SessionHost host)
     {
         host.RequireForSetup().SetExceptionFilters(new ExceptionFilters(true, firstChanceTypes));
         return firstChanceTypes.Length == 0 ? "First-chance filters cleared." : "Stopping on: " + string.Join(", ", firstChanceTypes);
+    }
+
+    [McpServerTool(Name = "set_exception_rules"), Description(
+        "Per-exception rules, in order; the first whose criteria all match decides what happens. " +
+        "Criteria that are set are AND-ed, an unset one matches anything. This is what makes a noisy app workable: " +
+        "a real app throws on purpose (network timeouts, handled retries), so 'stop on everything' and 'stop on nothing' " +
+        "are both useless. Rules apply to first-chance exceptions; an unhandled one always stops. " +
+        "An empty list restores plain filter behaviour. " +
+        "Each rule is {action, type?, typeContains?, messageContains?, messageRegex?, sourceFileContains?} " +
+        "with action one of break | log | logStack | ignore. " +
+        "Example: [{\"type\":\"MQTTnet.Exceptions.MqttCommunicationTimedOutException\",\"action\":\"ignore\"}," +
+        "{\"messageContains\":\"connect/disconnect is pending\",\"action\":\"log\"},{\"action\":\"break\"}]")]
+    public string SetExceptionRules(
+        [Description("JSON array of rules, in order. [] clears them.")] string rules)
+    {
+        var parsed = ParseExceptionRules(rules);
+        host.RequireForSetup().SetExceptionRules(parsed);
+        if (parsed.Count == 0) return "No exception rules; the filters decide.";
+        return string.Join('\n', parsed.Select((r, i) => $"{i + 1}. {DescribeRule(r)}"));
+    }
+
+    [McpServerTool(Name = "get_exception_rules", ReadOnly = true), Description("The exception rules in force, in order.")]
+    public string GetExceptionRules()
+    {
+        var rules = host.RequireForSetup().GetExceptionRules();
+        return rules.Count == 0
+            ? "No exception rules; the filters decide."
+            : string.Join('\n', rules.Select((r, i) => $"{i + 1}. {DescribeRule(r)}"));
+    }
+
+    private static string DescribeRule(ExceptionRule r)
+    {
+        var criteria = new List<string>();
+        if (r.Type is { Length: > 0 }) criteria.Add($"type={r.Type}");
+        if (r.TypeContains is { Length: > 0 }) criteria.Add($"typeContains={r.TypeContains}");
+        if (r.MessageContains is { Length: > 0 }) criteria.Add($"messageContains=\"{r.MessageContains}\"");
+        if (r.MessageRegex is { Length: > 0 }) criteria.Add($"messageRegex=/{r.MessageRegex}/");
+        if (r.SourceFileContains is { Length: > 0 }) criteria.Add($"sourceFileContains={r.SourceFileContains}");
+        var what = criteria.Count == 0 ? "any exception" : string.Join(" and ", criteria);
+        return $"{r.Action.ToString().ToLowerInvariant()} on {what}";
+    }
+
+    /// <summary>
+    /// Parses the rule array. Errors name the rule that is wrong and what was expected: a rule
+    /// silently dropped would look like the engine ignoring it.
+    /// </summary>
+    private static List<ExceptionRule> ParseExceptionRules(string json)
+    {
+        JsonNode? root;
+        try { root = JsonNode.Parse(json); }
+        catch (JsonException ex) { throw new McpException($"rules is not valid JSON: {ex.Message}"); }
+
+        if (root is not JsonArray array)
+            throw new McpException("rules must be a JSON array, e.g. [{\"type\":\"System.TimeoutException\",\"action\":\"ignore\"}]");
+
+        var result = new List<ExceptionRule>();
+        for (var i = 0; i < array.Count; i++)
+        {
+            if (array[i] is not JsonObject o)
+                throw new McpException($"rule {i + 1} is not an object");
+
+            var actionText = Text(o, "action") ?? throw new McpException($"rule {i + 1} has no action (break, log, logStack or ignore)");
+            if (!Enum.TryParse<ExceptionAction>(actionText, ignoreCase: true, out var action))
+                throw new McpException($"rule {i + 1}: '{actionText}' is not an action. Use break, log, logStack or ignore.");
+
+            result.Add(new ExceptionRule(
+                action,
+                Text(o, "type"),
+                Text(o, "typeContains"),
+                Text(o, "messageContains"),
+                Text(o, "messageRegex"),
+                Text(o, "sourceFileContains")));
+        }
+        return result;
+
+        static string? Text(JsonObject o, string name)
+            => o[name] is JsonValue v && v.TryGetValue<string>(out var s) && !string.IsNullOrWhiteSpace(s) ? s : null;
     }
 
     [McpServerTool(Name = "set_evaluation_options"), Description(

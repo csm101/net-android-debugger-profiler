@@ -695,4 +695,140 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         output.WriteLine(ex.GetType().Name + ": " + ex.Message);
         Assert.Equal(SessionState.Exited, session.State);
     }
+
+    // ------------------------------------------------------------------ exception rules
+
+    /// <summary>
+    /// The case the rule engine exists for: an app that throws on purpose. TestTarget raises a
+    /// handled InvalidOperationException every fifth tick, exactly as the reference application raises MQTT timeouts
+    /// whenever the network blinks. With a filter alone the choice is "stop every few seconds" or
+    /// "see nothing"; a rule makes it "let that one through, break on anything else".
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRule_Ignore_LetsTheNoisyOneThrough()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+            s.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, Type: "System.InvalidOperationException")]);
+        });
+
+        // Long enough for several of them: with the rule in force none of these stops the app.
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(25), cts.Token);
+        Assert.Null(stop);
+        Assert.Equal(SessionState.Running, session.State);
+    }
+
+    /// <summary>
+    /// Same exception, action `log`: the app keeps running and the debugger says what it saw. This
+    /// is the form that answers "is it still throwing?" without freezing an app that talks to a
+    /// backend.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRule_Log_ReportsWithoutStopping()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+            s.SetExceptionRules([new ExceptionRule(ExceptionAction.Log, Type: "System.InvalidOperationException")]);
+        });
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(25), cts.Token);
+        Assert.Null(stop);
+
+        var logged = session.GetDebuggerOutput(500).Where(l => l.Contains("exception rule", StringComparison.Ordinal)).ToList();
+        output.WriteLine(string.Join("\n", logged.Take(3)));
+        Assert.NotEmpty(logged);
+        Assert.Contains(logged, l => l.Contains("InvalidOperationException", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Order decides: the first matching rule wins, so a specific "ignore" placed before a general
+    /// "break" is how one exception is let through while everything else still stops.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRules_FirstMatchWins_SoTheGeneralRuleStillBreaks()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            // Stop on both types the app raises...
+            s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException", "System.ApplicationException"]));
+            // ...but let the routine one through, and break on anything else.
+            s.SetExceptionRules([
+                new ExceptionRule(ExceptionAction.Ignore, Type: "System.InvalidOperationException"),
+                new ExceptionRule(ExceptionAction.Break),
+            ]);
+        });
+
+        // The routine exception is ignored, so nothing stops...
+        Assert.Null(await session.WaitForStopAsync(0, TimeSpan.FromSeconds(20), cts.Token));
+
+        // ...until a different one is raised, which the general rule breaks on.
+        var adb = new Core.Adb.AdbClient();
+        var pkg = TestEnvironment.TestTargetPackage;
+        await adb.ShellAsync(device.Serial, $"run-as {pkg} touch files/crash-on-tick", cts.Token);
+        try
+        {
+            var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(40), cts.Token);
+            Assert.NotNull(stop);
+            Assert.Contains("ApplicationException", stop.ExceptionType);
+        }
+        finally
+        {
+            await adb.ShellAsync(device.Serial, $"run-as {pkg} rm -f files/crash-on-tick", CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// A rule that matches on the message needs a call into the debuggee, which cannot happen on
+    /// the event thread. The decision therefore moves to a worker, and the visible behaviour has
+    /// to be the same.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRule_MatchingOnMessage_Works()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+            s.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, MessageContains: "expected failure")]);
+        });
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(25), cts.Token);
+        Assert.Null(stop);
+        Assert.Equal(SessionState.Running, session.State);
+    }
+
+    /// <summary>
+    /// A rule whose message criterion does not match must leave the exception alone, so the filter
+    /// still stops the app. Without this the "ignore" tests above would pass even if the engine
+    /// ignored everything.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRule_ThatDoesNotMatch_LeavesTheStopAlone()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+        {
+            s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+            s.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, MessageContains: "this text never appears")]);
+        });
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(40), cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(StopReason.Exception, stop.Reason);
+        Assert.Contains("InvalidOperationException", stop.ExceptionType);
+    }
+
+    [Fact]
+    public async Task ExceptionRule_BadRegex_IsRejectedWhenItIsSet()
+    {
+        await using var session = new DebugSession();
+        var ex = Assert.Throws<ArgumentException>(() =>
+            session.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, MessageRegex: "(unclosed")]));
+        Assert.Contains("regular expression", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
 }

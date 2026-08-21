@@ -466,4 +466,60 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         var elements = session.ExpandVariable(group.ExpansionHandle!);
         Assert.Equal(new[] { "1", "2", "3" }, elements.Select(e => e.Value).ToArray());
     }
+
+    /// <summary>
+    /// A logpoint traces and lets the app run on. That matters more here than on a desktop: an
+    /// Android app that talks to a backend times out while it is suspended (measured on the reference application,
+    /// see ANDROID_ATTACH_NOTES.md), so on a real app this is often the only usable form.
+    /// </summary>
+    [Fact]
+    public async Task Logpoint_TracesWithoutStopping()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine, LogMessage: "tick {_ticks} at {now}")));
+
+        // Give the app several ticks: a logpoint that stops would show up as a stop here.
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(12), cts.Token);
+        Assert.Null(stop);
+        Assert.Equal(SessionState.Running, session.State);
+
+        var traced = session.GetDebuggerOutput(500).Where(l => l.Contains("logpoint", StringComparison.Ordinal)).ToList();
+        output.WriteLine(string.Join("\n", traced.Take(5)));
+        Assert.NotEmpty(traced);
+        // The {expression} parts are evaluated in place, not printed literally.
+        Assert.Contains(traced, l => l.Contains("MainActivity.cs:" + TickLine, StringComparison.Ordinal));
+        Assert.DoesNotContain(traced, l => l.Contains("{_ticks}", StringComparison.Ordinal));
+        Assert.Contains(traced, l => System.Text.RegularExpressions.Regex.IsMatch(l, @"tick \d+ at \d+"));
+
+        // More than one hit was traced, which is the point: the app never stopped.
+        Assert.True(traced.Count > 1, $"only {traced.Count} logpoint line(s); the app should have kept ticking");
+    }
+
+    /// <summary>
+    /// The hit-count spellings, on the same line the app runs every second. `%N` is the one that
+    /// only this form can express, and the one that makes a logpoint on a hot line affordable.
+    /// </summary>
+    [Fact]
+    public async Task HitCondition_EveryNthHit_StopsOnAMultiple()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s =>
+            s.SetBreakpoint(new BreakpointSpec(Main, TickLine, HitCondition: "%4")));
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(stop);
+        var ticks = int.Parse(Eval(session, stop, "_ticks"));
+        output.WriteLine($"stopped at tick {ticks}");
+        Assert.True(ticks % 4 == 0, $"stopped at tick {ticks}, which is not a multiple of 4");
+    }
+
+    [Fact]
+    public async Task HitCondition_Nonsense_IsRejectedWithTheSpellingsThatWork()
+    {
+        await using var session = new DebugSession();
+        var ex = Assert.Throws<ArgumentException>(() =>
+            session.SetBreakpoint(new BreakpointSpec(Main, TickLine, HitCondition: "every other")));
+        Assert.Contains("%5", ex.Message, StringComparison.Ordinal);
+    }
 }

@@ -438,4 +438,112 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
         Assert.True(uncovered.Count == 0,
             "these tools are never called through the server: " + string.Join(", ", uncovered));
     }
+
+    /// <summary>
+    /// The logpoint path through the server, because this is the form a real app usually needs:
+    /// suspending an app that talks to a backend makes it time out, tracing does not.
+    /// </summary>
+    [Fact]
+    public async Task Logpoint_TracesToDebuggerOutput_WithoutStoppingTheApp()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var tickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        var bp = await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = tickLine,
+            ["logMessage"] = "tick {_ticks}",
+        }, ct);
+        Assert.StartsWith("bp 1 ", bp);
+
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+
+        // Long enough for several ticks. A logpoint that suspended the app would leave the session
+        // stopped instead of running.
+        await Task.Delay(TimeSpan.FromSeconds(12), ct);
+        var status = await CallAsync(client, "get_debug_session_status", null, ct);
+        Assert.Contains("state=Running", status);
+
+        var log = await CallAsync(client, "get_debugger_output", new Dictionary<string, object?> { ["maxLines"] = 500 }, ct);
+        Assert.Contains("logpoint", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("{_ticks}", log, StringComparison.Ordinal);
+        Assert.Matches(@"tick \d+", log);
+
+        await CallAsync(client, "terminate_app", null, ct);
+    }
+
+    /// <summary>
+    /// The rule engine through the server: rules are parsed, read back, and actually applied - a
+    /// noisy exception is let through while the app keeps running.
+    /// </summary>
+    [Fact]
+    public async Task ExceptionRules_ParsedAndApplied_ThroughTheServer()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var set = await CallAsync(client, "set_exception_rules", new Dictionary<string, object?>
+        {
+            ["rules"] = """
+                [{"type":"System.InvalidOperationException","action":"ignore"},
+                 {"action":"break"}]
+                """,
+        }, ct);
+        Assert.Contains("ignore on type=System.InvalidOperationException", set);
+        Assert.Contains("break on any exception", set);
+
+        // Read back through the server, in order.
+        var read = await CallAsync(client, "get_exception_rules", null, ct);
+        Assert.StartsWith("1. ignore on type=System.InvalidOperationException", read);
+
+        await CallAsync(client, "set_exception_filters", new Dictionary<string, object?>
+        {
+            ["firstChanceTypes"] = new[] { "System.InvalidOperationException" },
+        }, ct);
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+
+        // The app raises that exception every fifth tick. The rule lets it through, so after
+        // several of them the session is still running.
+        await Task.Delay(TimeSpan.FromSeconds(20), ct);
+        Assert.Contains("state=Running", await CallAsync(client, "get_debug_session_status", null, ct));
+
+        await CallAsync(client, "terminate_app", null, ct);
+    }
+
+    [Fact]
+    public async Task ExceptionRules_BadInput_IsRejectedWithWhatWasExpected()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var notJson = await client.CallToolAsync("set_exception_rules",
+            new Dictionary<string, object?> { ["rules"] = "{not json" }, cancellationToken: ct);
+        Assert.True(notJson.IsError);
+
+        var notAnArray = await client.CallToolAsync("set_exception_rules",
+            new Dictionary<string, object?> { ["rules"] = """{"action":"ignore"}""" }, cancellationToken: ct);
+        Assert.True(notAnArray.IsError);
+
+        var badAction = await client.CallToolAsync("set_exception_rules",
+            new Dictionary<string, object?> { ["rules"] = """[{"action":"explode"}]""" }, cancellationToken: ct);
+        Assert.True(badAction.IsError);
+        var text = string.Join(" ", badAction.Content.OfType<TextContentBlock>().Select(c => c.Text));
+        Assert.Contains("break", text, StringComparison.Ordinal);
+
+        // Still serving, and the rules were left alone.
+        Assert.Contains("No exception rules", await CallAsync(client, "get_exception_rules", null, ct));
+    }
 }

@@ -80,7 +80,24 @@ public sealed record StopEvent(
     string? Message);
 
 /// <summary>A source-line breakpoint request.</summary>
-public sealed record BreakpointSpec(string File, int Line, string? Condition = null, int HitCount = 0);
+/// <param name="File">Absolute source path, as compiled into the PDB.</param>
+/// <param name="Line">1-based line.</param>
+/// <param name="Condition">Stop only when this C# expression is true.</param>
+/// <param name="HitCount">Stop from the Nth hit on (0 = every hit). Ignored when
+/// <paramref name="HitCondition"/> is given.</param>
+/// <param name="HitCondition">Richer form of the same idea: <c>"5"</c> or <c>">=5"</c> from the
+/// fifth hit, <c>">5"</c> after it, <c>"=5"</c> only on it, <c>"%5"</c> every fifth.</param>
+/// <param name="LogMessage">Turns the breakpoint into a logpoint: the app is NOT suspended, the
+/// message is written to the debugger output with each <c>{expression}</c> evaluated in place.
+/// On a phone this is often the only usable form - suspending an app that talks to a backend
+/// makes it time out (see ANDROID_ATTACH_NOTES.md, the reference application).</param>
+public sealed record BreakpointSpec(
+    string File,
+    int Line,
+    string? Condition = null,
+    int HitCount = 0,
+    string? HitCondition = null,
+    string? LogMessage = null);
 
 /// <summary>A breakpoint as stored by the session. <see cref="Verified"/> is true when at least one process resolved it.</summary>
 public sealed record BreakpointInfo(int Id, BreakpointSpec Spec, bool Verified, string? Message);
@@ -89,6 +106,46 @@ public sealed record BreakpointInfo(int Id, BreakpointSpec Spec, bool Verified, 
 /// <param name="BreakOnUnhandled">Stop on unhandled managed exceptions.</param>
 /// <param name="FirstChanceTypes">Fully qualified exception type names to stop on when thrown (subclasses included).</param>
 public sealed record ExceptionFilters(bool BreakOnUnhandled = true, IReadOnlyList<string>? FirstChanceTypes = null);
+
+/// <summary>What to do with an exception that matches a rule.</summary>
+public enum ExceptionAction
+{
+    /// <summary>Suspend the app and report the stop, as an exception filter would.</summary>
+    Break,
+    /// <summary>Write a line to the debugger output and let the app carry on.</summary>
+    Log,
+    /// <summary>Write a line plus the stack, and let the app carry on.</summary>
+    LogStack,
+    /// <summary>Let the app carry on, silently.</summary>
+    Ignore,
+}
+
+/// <summary>
+/// One rule of the per-exception engine. The criteria that are set are AND-ed; an unset one is a
+/// wildcard, so a rule with only an action matches everything. Rules are ordered and the first
+/// match wins, which is what makes "ignore this one, break on the rest" expressible.
+/// <para>
+/// This exists because a real app throws constantly on purpose: the reference application raises MQTT timeouts
+/// whenever the network blinks and a handled InvalidOperationException on every reconnect. An
+/// all-or-nothing filter is unusable there — the choice is between no exceptions and a stop every
+/// few seconds.
+/// </para>
+/// </summary>
+/// <param name="Type">Exact runtime type name, e.g. <c>System.InvalidOperationException</c>.</param>
+/// <param name="TypeContains">Substring of the runtime type name, for matching a namespace.</param>
+/// <param name="MessageContains">Substring of the exception message. Reading the message needs a
+/// call into the debuggee, so a rule using it costs more than one matching on type alone.</param>
+/// <param name="MessageRegex">Regular expression over the message. Same cost as the substring.</param>
+/// <param name="SourceFileContains">Substring of the file the exception was raised in, matched
+/// against the topmost frame that has source.</param>
+/// <param name="Action">What to do when every set criterion matches.</param>
+public sealed record ExceptionRule(
+    ExceptionAction Action,
+    string? Type = null,
+    string? TypeContains = null,
+    string? MessageContains = null,
+    string? MessageRegex = null,
+    string? SourceFileContains = null);
 
 public sealed record ThreadSnapshot(int Pid, long Id, string Name, string? Location, bool IsStopped);
 

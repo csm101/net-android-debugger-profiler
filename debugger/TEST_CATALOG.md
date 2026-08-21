@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 67 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- 81 tests in five files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -115,6 +115,14 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Breakpoint set before launch resolves when the assembly loads (covered
       implicitly by all breakpoint tests; `Verified` asserted)
 - [x] Conditional breakpoint — `ConditionalBreakpoint_StopsOnlyWhenConditionIsTrue`
+- [x] Logpoint: the app is not suspended, the message is traced to the debugger
+      output with each `{expression}` evaluated in place, and several hits are
+      traced because the app keeps running — `Logpoint_TracesWithoutStopping`,
+      and through the server `Logpoint_TracesToDebuggerOutput_WithoutStoppingTheApp`
+- [x] `%N` hit condition stops on a multiple of N —
+      `HitCondition_EveryNthHit_StopsOnAMultiple`
+- [x] A hit condition that is not one of the spellings is rejected with the ones
+      that work — `HitCondition_Nonsense_IsRejectedWithTheSpellingsThatWork`
 - [~] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit` asserts "at
       least N hits". Six consecutive runs were exact after the port-rotation
       work; the engine logs `hit count now N (stops at M)` at every such stop, so
@@ -255,6 +263,13 @@ Conventions (mirroring the Delphi project's discipline):
       request, missing `packageName`, stale frame id, stale variablesReference,
       evaluate with nothing stopped — and the adapter still serves requests —
       `ErrorPaths_AreAnswered_NeverLeaveTheClientWaiting`
+- [x] Exception filters arrive as `filterOptions` with `filters` left empty (the
+      shape a client uses once a filter advertises `supportsCondition`), and the
+      condition selects the types to stop on —
+      `ExceptionFilters_ArriveAsFilterOptions_AndSelectTheTypes`. Verified to
+      fail when `filterOptions` is ignored, which is the silent no-op the Delphi
+      debugger hit under real VS Code.
+- [x] The legacy `filters` array still selects — `ExceptionFilters_LegacyFiltersArray_StillSelectsAll`
 - [x] Events arrive in the order they happened: repeated continue/stop cycles
       with app output flowing never interleave a `continued` after the `stopped`
       that followed it — `Events_ArriveInTheOrderTheyHappened`
@@ -267,6 +282,28 @@ Conventions (mirroring the Delphi project's discipline):
       resolution, the missing-adapter message, configuration validation) against
       a stand-in for the `vscode` module. Nobody has yet run it inside a real
       VS Code against a real device — that part is still uncovered.
+
+## L. Exception rules (per-exception engine)
+- [x] A noisy exception is let through while the app keeps running —
+      `ExceptionRule_Ignore_LetsTheNoisyOneThrough`
+- [x] `log` reports it to the debugger output without stopping —
+      `ExceptionRule_Log_ReportsWithoutStopping`
+- [x] First match wins, so a specific ignore before a general break lets one
+      exception through and still stops on the next —
+      `ExceptionRules_FirstMatchWins_SoTheGeneralRuleStillBreaks`
+- [x] Matching on the message works, which needs a call into the debuggee and so
+      is decided off the event thread — `ExceptionRule_MatchingOnMessage_Works`
+- [x] A rule that does NOT match leaves the stop alone (without this, the ignore
+      tests would pass even if the engine ignored everything) —
+      `ExceptionRule_ThatDoesNotMatch_LeavesTheStopAlone`
+- [x] A bad regex is rejected when the rule is set, not on the first exception —
+      `ExceptionRule_BadRegex_IsRejectedWhenItIsSet`
+- [x] Through the server: rules parsed, read back in order, and applied —
+      `ExceptionRules_ParsedAndApplied_ThroughTheServer`
+- [x] Bad rule input is refused naming what was expected, and leaves the rules
+      in force alone — `ExceptionRules_BadInput_IsRejectedWithWhatWasExpected`
+- [ ] Rules from a machine-wide file, and hot-reloaded on resume (the Delphi
+      debugger has both; not implemented here)
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →
