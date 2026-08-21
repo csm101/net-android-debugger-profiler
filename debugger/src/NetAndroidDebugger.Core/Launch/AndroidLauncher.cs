@@ -41,6 +41,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     private long _deadline;
     private int _nextPort;
     private bool _propertyOwned;
+    private int? _packageUid;
 
     /// <summary>
     /// Device wall clock minus host wall clock, measured once at launch. logcat stamps its lines
@@ -115,6 +116,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await _adb.ForceStopAsync(serial, _app.PackageName, ct).ConfigureAwait(false);
         var deviceNow = await _adb.GetDeviceEpochSecondsAsync(serial, ct).ConfigureAwait(false);
         await MeasureDeviceClockOffsetAsync(serial, ct).ConfigureAwait(false);
+        _packageUid = await _adb.GetPackageUidAsync(serial, _app.PackageName, ct).ConfigureAwait(false);
         _deadline = deviceNow + (long)_options.EffectivePropertyLifetime.TotalSeconds;
 
         await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
@@ -247,8 +249,10 @@ public sealed class AndroidLauncher : IAsyncDisposable
                 var port = int.Parse(am.Groups["port"].Value);
                 string? name;
                 lock (_gate) _processNames.TryGetValue(pid, out name);
-                name ??= LookupProcessName(pid, ct);
-                var ours = name is not null && BelongsToPackage(name);
+                int? uid = null;
+                if (name is null)
+                    (name, uid) = LookupProcess(pid, ct);
+                var ours = IsOurs(name, uid, pid, ct);
                 if (!ours)
                 {
                     // debug.mono.extra is device-global: any Mono app process that starts while our
@@ -324,26 +328,43 @@ public sealed class AndroidLauncher : IAsyncDisposable
             : deviceNow;
     }
 
+    /// <summary>
+    /// True when the process belongs to the app under debug. The name settles it for the main
+    /// process and for `package:suffix` helpers; a component declared with a global
+    /// <c>android:process</c> name (the reference application's `the app's own android:process`, for instance) carries a name
+    /// of its own, and only the uid identifies it. The uid is looked up on demand, so the common
+    /// case costs nothing.
+    /// </summary>
+    private bool IsOurs(string? processName, int? uid, int pid, CancellationToken ct)
+    {
+        if (processName is not null && BelongsToPackage(processName)) return true;
+        if (_packageUid is null) return false;
+        uid ??= LookupProcess(pid, ct).Uid;
+        return uid == _packageUid;
+    }
+
     private bool BelongsToPackage(string processName)
         => processName == _app.PackageName || processName.StartsWith(_app.PackageName + ":", StringComparison.Ordinal);
 
-    /// <summary>Resolves a process name through `ps` (synchronous; called on the logcat thread only when ActivityManager did not announce the pid).</summary>
-    private string? LookupProcessName(int pid, CancellationToken ct)
+    /// <summary>
+    /// Resolves a process through `ps` (synchronous; called on the logcat thread only when
+    /// ActivityManager did not announce the pid). Returns its name and its uid.
+    /// </summary>
+    private (string? Name, int? Uid) LookupProcess(int pid, CancellationToken ct)
     {
         try
         {
-            var outp = _adb.ShellAsync(_options.DeviceSerial, $"ps -A -o PID,NAME", ct, TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
+            var outp = _adb.ShellAsync(_options.DeviceSerial, "ps -A -o PID,UID,NAME", ct, TimeSpan.FromSeconds(10)).GetAwaiter().GetResult();
             foreach (var raw in outp.Split('\n'))
             {
-                var parts = raw.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (parts.Length == 2 && int.TryParse(parts[0], out var p) && p == pid)
-                    return parts[1];
+                var parts = raw.Trim().Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length != 3 || !int.TryParse(parts[0], out var p) || p != pid) continue;
+                return (parts[2], int.TryParse(parts[1], out var uid) ? uid : null);
             }
         }
         catch (Exception ex) { _log($"ps lookup for pid {pid} failed: {ex.Message}"); }
-        return null;
+        return (null, null);
     }
-
     private void RotateOnly(int takenPort, CancellationToken ct)
     {
         try

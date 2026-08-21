@@ -27,7 +27,7 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 52 tests in four files, ~5 min on the headless emulator after deploy. Each
+- 53 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -69,6 +69,10 @@ Conventions (mirroring the Delphi project's discipline):
       its place is attached on a new port —
       `KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt`
 - [x] `GetProcesses` reports a helper that died (`HasExited`) — same test
+- [x] A process whose name has nothing to do with the package (component
+      declared with a global `android:process`, as the reference application's
+      `the app's own android:process` is) is recognised by uid and attached, not
+      refused as foreign — `ProcessWithAGlobalName_IsRecognisedByUid_AndAttached`
 - [x] A foreign Mono app process starting during the session is NOT attached
       (warning logged, port rotated, our own processes unaffected) —
       `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` (skips when no

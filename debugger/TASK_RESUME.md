@@ -42,7 +42,25 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   labels it `<enumerated elements: expand>`. TestTarget's `Sample` gained a
   lazy `Sequence` property to exercise it; the suite needs one deploy.
   Test `IEnumerableValue_ExposesItsElements_UnderTheEnumeratorGroup`.
-- Build green. Suite: **52 tests, 52/52 green** (4 m 51 s, with deploy).
+- Fourth item, and the one that mattered for the reference application: a component declared with
+  a **global `android:process`** name (the reference application has one, `the app's own android:process`)
+  runs in a process whose name shares nothing with the package, so the launcher
+  used to refuse it as a foreign Mono app and burn its port. Ownership is now
+  decided by uid when the name does not settle it:
+  - `AdbClient.GetPackageUidAsync` (`pm list packages -U`), and
+    `ListPackageProcessesAsync` matches by uid as well
+  - `AndroidLauncher.IsOurs` / `LookupProcess` (`ps -A -o PID,UID,NAME`),
+    uid resolved lazily so the common case costs nothing
+  - TestTarget gained `GlobalProcessReceiver` (process
+    `net.androiddebugger.globalproc`) and the test
+    `ProcessWithAGlobalName_IsRecognisedByUid_AndAttached`
+  Apps sharing a uid match too: intended, they share the sandbox.
+- U13 narrowed by reading upstream and then deliberately parked: there is
+  exactly one path that zeroes `CurrentHitCount` and our code does not take it,
+  so the "shared store gets reset" hypothesis is out; missed hits during
+  (re-)registration is what is left. Details in KNOWN_UNKNOWNS.
+- Build green. Suite: **53 tests, 53/53 green** (5 m 37 s, with deploy) —
+  including both the new uid case and the foreign-app guard.
 
 ## Next steps (in order)
 1. The three gaps left, each blocked on something external: a WiFi device

@@ -92,3 +92,29 @@ public class HelperService : Service
         Android.Util.Log.Debug("TestTarget", message);
     }
 }
+
+/// <summary>
+/// Runs in a process whose name has nothing to do with the package, the way a component declared
+/// with a global <c>android:process</c> does (the reference application ships one). Nothing in the process name says
+/// it belongs to the app, so only its uid does — which is what the launcher has to rely on:
+/// <c>adb shell am broadcast -a net.androiddebugger.testtarget.SPAWN_GLOBAL</c>.
+/// </summary>
+[BroadcastReceiver(Name = "net.androiddebugger.testtarget.GlobalProcessReceiver", Exported = true, Process = "net.androiddebugger.globalproc")]
+[IntentFilter([GlobalProcessReceiver.SpawnAction])]
+public class GlobalProcessReceiver : BroadcastReceiver
+{
+    public const string SpawnAction = "net.androiddebugger.testtarget.SPAWN_GLOBAL";
+
+    public override void OnReceive(Context? context, Intent? intent)
+    {
+        int computed = Compute();
+        Android.Util.Log.Debug("TestTarget", $"global-process receiver ran: {computed}");
+    }
+
+    private static int Compute()
+    {
+        int value = 456; // marker: global-process-compute
+        Android.Util.Log.Verbose("TestTarget", $"global compute {value}");
+        return value;
+    }
+}

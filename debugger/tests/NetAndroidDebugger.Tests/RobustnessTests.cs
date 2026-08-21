@@ -237,6 +237,41 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         Assert.Equal("123", session.GetLocals(lateStop.Pid, lateStop.ThreadId).Single(l => l.Name == "value").Value);
     }
 
+    /// <summary>
+    /// A component declared with a global <c>android:process</c> runs in a process whose name says
+    /// nothing about the package (the reference application's `the app's own android:process` is one). It is still the app,
+    /// and the launcher must recognise it by uid instead of refusing it as a foreign Mono process.
+    /// </summary>
+    [Fact]
+    public async Task ProcessWithAGlobalName_IsRecognisedByUid_AndAttached()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var globalLine = TestEnvironment.LineOf(TestEnvironment.HelperServiceSource, "Android.Util.Log.Verbose(\"TestTarget\", $\"global compute {value}\");");
+        await using var session = await LaunchAsync(cts.Token, s =>
+            s.SetBreakpoint(new BreakpointSpec(TestEnvironment.HelperServiceSource, globalLine)));
+
+        var pkg = TestEnvironment.TestTargetPackage;
+        var adb = new AdbClient();
+        // The receiver stops at our breakpoint, so the broadcast command would not return: fire it.
+        _ = Task.Run(async () =>
+        {
+            try { await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.SPAWN_GLOBAL -p {pkg}", CancellationToken.None, TimeSpan.FromMinutes(2)); }
+            catch (Exception ex) { output.WriteLine($"broadcast command ended: {ex.Message}"); }
+        }, CancellationToken.None);
+
+        var global = await WaitForAsync(
+            () => session.GetProcesses().FirstOrDefault(p => p.Name.Contains("globalproc", StringComparison.Ordinal)),
+            TimeSpan.FromSeconds(45), cts.Token);
+        Assert.NotNull(global);
+        // Its name shares nothing with the package: only the uid made it ours.
+        Assert.DoesNotContain(pkg, global.Name, StringComparison.Ordinal);
+
+        var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(global.Pid, stop.Pid);
+        Assert.Equal("456", session.GetLocals(stop.Pid, stop.ThreadId).Single(l => l.Name == "value").Value);
+    }
+
     [Fact]
     public async Task KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt()
     {

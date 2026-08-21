@@ -58,12 +58,14 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 52 integration tests; TEST_CATALOG has 3 open gaps left.
+  mode). 53 integration tests; TEST_CATALOG has 3 open gaps left.
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints
   on startup code (main) and in App.Core (multi-assembly), locals/expansion,
-  stepping, clean terminate. Remaining: App.Background service, physical device
-  over adb connect (U9), the reference application build specifics (U6), main-thread labelling.
+  stepping, clean terminate. A process with a global `android:process` name
+  (the shape of the App.Background service) is now recognised by uid and attached.
+  Remaining: physical device over adb connect (U9), the reference application build specifics
+  (U6).
   Re-driven 2026-08-21 after the breakpoint-disarm fix: breakpoints on the
   periodic sync threads plus deep expansion held up (details in
   ANDROID_ATTACH_NOTES.md); helper process restart is re-attached on a new

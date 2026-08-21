@@ -127,22 +127,50 @@ public sealed class AdbClient(string adbPath = "adb")
     public Task ForceStopAsync(string serial, string package, CancellationToken ct)
         => ShellAsync(serial, $"am force-stop {package}", ct);
 
-    /// <summary>Processes whose name is <paramref name="package"/> or starts with <c>package:</c> (helper processes).</summary>
+    /// <summary>
+    /// Linux uid the package's processes run under, or null when the package is not installed.
+    /// A process of the app can carry a name unrelated to the package (a component declared with a
+    /// global <c>android:process</c>), and its uid is what still identifies it as ours.
+    /// </summary>
+    public async Task<int?> GetPackageUidAsync(string serial, string package, CancellationToken ct)
+    {
+        var outp = await ShellAsync(serial, $"pm list packages -U {package}", ct).ConfigureAwait(false);
+        foreach (var raw in outp.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("package:", StringComparison.Ordinal)) continue;
+            var rest = line["package:".Length..];
+            var sep = rest.IndexOf(" uid:", StringComparison.Ordinal);
+            // `pm list packages` matches by substring, so only the exact package counts.
+            if (sep < 0 || !string.Equals(rest[..sep], package, StringComparison.Ordinal)) continue;
+            if (int.TryParse(rest[(sep + " uid:".Length)..].Trim(), out var uid)) return uid;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Processes of the app: those named <paramref name="package"/> or <c>package:suffix</c>, plus
+    /// any other process running under the package's uid (components declared with a global
+    /// <c>android:process</c> name). Apps sharing a uid would also match, which is intended: they
+    /// share the sandbox this debugger drives.
+    /// </summary>
     public async Task<IReadOnlyList<(int Pid, string Name)>> ListPackageProcessesAsync(string serial, string package, CancellationToken ct)
     {
-        var outp = await ShellAsync(serial, "ps -A -o PID,NAME", ct).ConfigureAwait(false);
+        var uid = await GetPackageUidAsync(serial, package, ct).ConfigureAwait(false);
+        var outp = await ShellAsync(serial, "ps -A -o PID,UID,NAME", ct).ConfigureAwait(false);
         var result = new List<(int, string)>();
         foreach (var raw in outp.Split('\n'))
         {
-            var parts = raw.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length != 2 || !int.TryParse(parts[0], out var pid)) continue;
-            var name = parts[1];
-            if (name == package || name.StartsWith(package + ":", StringComparison.Ordinal))
+            var parts = raw.Trim().Split(' ', 3, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length != 3 || !int.TryParse(parts[0], out var pid)) continue;
+            var name = parts[2];
+            var matchesName = name == package || name.StartsWith(package + ":", StringComparison.Ordinal);
+            var matchesUid = uid is not null && int.TryParse(parts[1], out var puid) && puid == uid;
+            if (matchesName || matchesUid)
                 result.Add((pid, name));
         }
         return result;
     }
-
     public Task LogcatClearAsync(string serial, CancellationToken ct)
         => RunDeviceAsync(serial, ["logcat", "-c"], ct);
 

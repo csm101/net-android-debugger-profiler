@@ -315,6 +315,14 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Processes of the app are identified by uid, not only by name (2026-08-21):**
+  a component declared with a global `android:process` (the reference application's
+  `the background service` → `the app's own android:process`) runs in a
+  process whose name shares nothing with the package. The launcher resolves the
+  package uid once per launch (`pm list packages -U <pkg>` → `uid:<n>`) and
+  falls back to comparing it against the process's uid (`ps -A -o PID,UID,NAME`)
+  before deciding a Mono process that took our port is foreign. Apps that share
+  a uid would match too, which is intended: they share the sandbox. **[verified]**
 - **Long debugger pause (U6, measured 2026-08-20):** stopped at a breakpoint
   on **thread 1 (the UI thread)** and held for **4.5 minutes** on the
   emulator, foreground:

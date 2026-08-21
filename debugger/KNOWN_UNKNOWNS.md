@@ -77,18 +77,19 @@ outlive the crashing main process.
 `HitCountBreakpoint_StopsAtNthHit` asks for the 3rd hit and usually gets it,
 but once in several runs the stop arrived on the 9th (suite run 28b). The
 breakpoint was already resolved before the first hit, so it is not a late
-arming. Working hypothesis: the Mono `BreakpointStore` is shared by every
-process of the app (one store, N sessions), so when a second process attaches
-the breakpoint is re-registered and Mono's `CurrentHitCount` restarts - which
-also matches the variability (it depends on when `:helper` connects).
-Found in upstream while looking (verified by reading, not yet by experiment):
-`CurrentHitCount` lives on the shared `BreakEvent`, not per session, and
-`DebuggerSession.Breakpoints`'s setter calls `store.ResetBreakpoints()`,
-which zeroes every count. Each `ProcessDebugger` assigns the same store to
-its own session, so the second process attaching is exactly the moment a
-reset could fire. Disarming breakpoints for evaluations removes and re-adds
-break events too, which is another window where hits are not counted.
-To confirm: log `CurrentHitCount` per stop, or give each process its own
-store and see whether the count becomes stable. Until then the test asserts
-"at least N hits" and the limitation is documented for users: hit counts are
-approximate in multi-process apps.
+arming.
+Narrowed by reading upstream (2026-08-21): `CurrentHitCount` lives on the
+shared `BreakEvent`, and there is exactly **one** code path that zeroes it —
+`DebuggerSession.Breakpoints`'s setter, which calls `ResetBreakpoints()` on
+the store the session had *before*. `ProcessDebugger` assigns the store once
+per session, on a session that has none yet, so the "second process attaching
+resets the counter" hypothesis is not confirmed: the reset would land on the
+empty store the getter auto-creates, not on ours. Toggling `Enabled` (what the
+evaluation disarm does) does not reset anything either.
+What remains plausible is that hits are **missed** rather than reset: a hit
+that lands while a break event is being registered, re-registered or disabled
+in one of the sessions is never counted.
+Deliberately not chased further: the test asserts "at least N hits" and the
+limitation is documented for users (hit counts are approximate in
+multi-process apps). Settle it with data, not more reading, if it ever
+matters — log `CurrentHitCount` per stop across many runs.
