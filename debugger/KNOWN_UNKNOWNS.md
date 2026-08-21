@@ -113,3 +113,24 @@ thread before the rotation, so it must stay fast. A 400 ms retry added there on
 three different tests.
 Not worth solving until an app is actually hurt by it: processes normally start
 seconds apart, and the tests that used to trip it now sequence themselves.
+
+## U15 - Exception type is empty when the throw site has no debug info
+Seen live on the reference application (2026-08-21): a first-chance stop on
+`MQTTnet.Client.MqttClient.ConnectAsync` reported an empty exception type - the
+stop line read `exception= message=` - while `GetExceptionDetails` still
+produced the message and the stack. The type captured on the event thread comes
+from `GetException()` on the stopping frame, and that frame belongs to an
+assembly shipped without symbols.
+Fixed by resolving the type from the `$exception` value's own type name on the
+caller thread when the captured one is empty (no debuggee invocation involved).
+Not reproduced in TestTarget, and the attempt is worth recording so nobody
+repeats it: a symbol-less helper assembly whose method throws was added, and the
+type came through correctly from `GetException()` anyway - so that shape is not
+what defeats it. Making the throw `async` inside that assembly did break the
+test, but for an unrelated reason: the broadcast receiver driving it hung (60 s
+`BroadcastQueue` timeout) with the app otherwise healthy and ticking, and the
+cause was not found. The scaffolding was reverted rather than left in place
+hanging the debuggee.
+What is still unknown: which property of the V7 frame (async state machine in a
+symbol-less third-party assembly, rethrow through a continuation, or something
+else) makes `GetException()` return nothing. The fallback covers it either way.

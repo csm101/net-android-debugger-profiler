@@ -333,6 +333,16 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Exception type can be missing at stop time (2026-08-21):** a first-chance
+  stop inside a third-party assembly without symbols (MQTTnet's
+  `MqttClient.ConnectAsync`) reported an empty type; the message and stack came
+  through. The engine now falls back to the `$exception` value's own type name,
+  read on the caller thread. See KNOWN_UNKNOWNS U15.
+- **Null locals of an async frame lie about having children (2026-08-21):**
+  locals a method has not reached yet are fields of the state machine, so they
+  are visible and null; Mono reports them as `(null)` *without* its null flag
+  and claims they have children. Expanding one returns nothing. The engine now
+  treats a value rendered as `(null)` as null and gives it no expansion handle.
 - **Third process debugged for real (2026-08-21, republished server):** with
   `keepPropertyFresh`, `adb shell am start-foreground-service -n
   App.Droid/the app's background service` starts `the app's own android:process` (uid 10174,

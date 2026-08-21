@@ -840,26 +840,31 @@ public sealed class DebugSession : IAsyncDisposable
         lock (_lock) { snap = _lastExceptionSnapshot; last = _lastStop; }
         if (snap is null) return null;
 
-        // Message could not be read on the event thread (evaluation is not allowed there). If it is
-        // still missing and the owning process is stopped and alive, resolve it now on this thread.
-        if (string.IsNullOrEmpty(snap.Value.Message) && last is not null)
+        // Neither the type nor the message can always be read on the event thread (evaluation is
+        // not allowed there, and the stopping frame may have no debug info). Resolve what is
+        // missing now, on this thread, while the process is still stopped.
+        if (last is not null && (string.IsNullOrEmpty(snap.Value.Message) || string.IsNullOrEmpty(snap.Value.Type)))
         {
             try
             {
-                var resolved = RunBounded("GetExceptionMessage", () => ResolveExceptionMessageLive(last.Pid, last.ThreadId));
-                if (!string.IsNullOrEmpty(resolved))
+                var (type, message) = RunBounded("GetExceptionDetails", () =>
+                (
+                    string.IsNullOrEmpty(snap.Value.Type) ? ResolveExceptionTypeLive(last.Pid, last.ThreadId) : snap.Value.Type,
+                    string.IsNullOrEmpty(snap.Value.Message) ? ResolveExceptionMessageLive(last.Pid, last.ThreadId) : snap.Value.Message
+                ));
+                if (!string.IsNullOrEmpty(type) || !string.IsNullOrEmpty(message))
                 {
-                    snap = (snap.Value.Type, resolved, snap.Value.StackTrace);
+                    snap = (type, message, snap.Value.StackTrace);
                     lock (_lock) if (_lastExceptionSnapshot is not null) _lastExceptionSnapshot = snap;
                 }
             }
-            catch (Exception ex) { _log($"resolving exception message failed: {ex.Message}"); }
+            catch (Exception ex) { _log($"resolving exception details failed: {ex.Message}"); }
         }
         return snap;
     }
 
     /// <summary>
-    /// Runs on the Mono event thread while the VM is suspended. Reads ONLY what needs no debuggee
+    /// Captures what can be read from the stop event thread without any debuggee
     /// invocation — the exception type (mirror type name) and the stack trace (from the already
     /// materialized backtrace). Expression/property evaluation is NOT allowed from inside the stop
     /// event handler ("vm is not suspended"), so the message is left empty and resolved later by
@@ -889,6 +894,30 @@ public sealed class DebugSession : IAsyncDisposable
         catch (Exception ex) { _log($"capturing exception type failed: {ex.Message}"); }
 
         return (type, "", trace.ToString().TrimEnd());
+    }
+
+    /// <summary>
+    /// Reads the exception's type from the live frame. The type captured at stop time comes from
+    /// <c>GetException()</c> on the stopping frame, which returns nothing when the throw site is in
+    /// an assembly without debug info (MQTTnet in the reference application, for instance). The `$exception` value's
+    /// own type name is there either way, and reading it invokes nothing in the debuggee.
+    /// </summary>
+    private string ResolveExceptionTypeLive(int pid, long threadId)
+    {
+        Engine.ProcessDebugger? pd;
+        lock (_lock) pd = _processes.TryGetValue(pid, out var e) ? e.Debugger : null;
+        if (pd is null || !pd.IsStopped) return "";
+        var bt = pd.GetBacktrace(threadId);
+        if (bt is null || bt.FrameCount == 0) return "";
+        var tag = _sessionOptions.EvaluationOptions.CurrentExceptionTag ?? "$exception";
+        try
+        {
+            var v = bt.GetFrame(0).GetExpressionValue(tag, _sessionOptions.EvaluationOptions);
+            if (v.IsEvaluating) v.WaitHandle.WaitOne(_sessionOptions.EvaluationOptions.EvaluationTimeout + 2000);
+            if (!v.IsEvaluating && !v.IsError) return v.TypeName ?? "";
+        }
+        catch (Exception ex) { _log($"exception type via {tag}: {ex.Message}"); }
+        return "";
     }
 
     /// <summary>Resolves the exception message via a field/property read on the current thread (VM properly suspended here).</summary>
@@ -1067,8 +1096,19 @@ public sealed class DebugSession : IAsyncDisposable
             const string pending = "<evaluation timed out>";
             return new VariableSnapshot(v.Name ?? "", v.TypeName ?? "", pending, pending, false, null, IsError: true);
         }
+        string value;
+        try { value = v.Value ?? "null"; } catch (Exception ex) { value = $"<error: {ex.Message}>"; }
+        string display;
+        try { display = v.DisplayValue ?? value; } catch { display = value; }
+
+        // `IsNull` is only set on the values Mono builds through CreateNullObject. A null a frame
+        // reports by another route - the locals of an async state machine that the method has not
+        // assigned yet are the common case - arrives with IsNull false and "(null)" as its value,
+        // and claims to have children. Expanding it yields nothing, so trust the rendering too.
+        var isNull = v.IsNull || string.Equals(value, "(null)", StringComparison.Ordinal);
+
         string? handle = null;
-        if (v.HasChildren && !v.IsError && !v.IsNull)
+        if (v.HasChildren && !v.IsError && !isNull)
         {
             lock (_lock)
             {
@@ -1076,16 +1116,12 @@ public sealed class DebugSession : IAsyncDisposable
                 _values[handle] = (pid, v);
             }
         }
-        string value;
-        try { value = v.Value ?? "null"; } catch (Exception ex) { value = $"<error: {ex.Message}>"; }
-        string display;
-        try { display = v.DisplayValue ?? value; } catch { display = value; }
         // Mono exposes the elements of an IEnumerable as an extra group child named "IEnumerator",
         // sitting among the iterator's own fields and carrying no value of its own. Say what it is,
         // otherwise the elements look absent and the state machine looks like the whole story.
         if ((v.Flags & Mono.Debugging.Client.ObjectValueFlags.IEnumerable) != 0 && string.IsNullOrEmpty(value))
             value = display = "<enumerated elements: expand>";
-        return new VariableSnapshot(v.Name ?? "", v.TypeName ?? "", value, display, v.HasChildren, handle, v.IsError);
+        return new VariableSnapshot(v.Name ?? "", v.TypeName ?? "", value, display, handle is not null, handle, v.IsError);
     }
 
     private void InvalidateValuesNoLock(int pid)

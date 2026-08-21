@@ -91,7 +91,11 @@ public class MainActivity : Activity
         int before = (int)(_ticks % 100);
         await Task.Delay(30).ConfigureAwait(false);
         int after = before + 1;
-        Android.Util.Log.Verbose("TestTarget", $"async probe {before}->{after}");
+        // Declared after the breakpoint line on purpose: in an async method every local is a field
+        // of the state machine, so a debugger sees this one before it is assigned. Mono reports it
+        // as "(null)" without flagging it null, which is what V7 showed.
+        Sample? notAssignedYet = _ticks < 0 ? new Sample(0) : null;
+        Android.Util.Log.Verbose("TestTarget", $"async probe {before}->{after} ({notAssignedYet?.Name ?? "none"})");
         return after;
     }
 

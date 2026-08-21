@@ -147,10 +147,23 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   in the test output, no assertion) when the foreign app never reaches its Mono
   agent init: the guard had nothing to refuse, so that run proves nothing. It
   was failing on emulators that had just come back from a crash.
-- Suite: **56 tests, 56/56 green** (7 m 27 s), with neither the force-stop
+- Suite: **56 tests, 56/56 green** (7 m 31 s), with neither the force-stop
   warning nor a handshake failure anywhere in the output. The runs before
   it each failed on a different fragile spot; all are understood and repaired.
 
+
+## the reference application drive, round 2 (2026-08-21)
+Two engine defects, both found on the first two stops:
+- Null locals of an async frame claimed to have children. A local the method has
+  not reached yet is a field of the state machine, so it is visible and null;
+  Mono renders it `(null)` but does not set its null flag, and we handed out an
+  expansion handle that expanded to nothing. Reproduced in TestTarget with a
+  local declared after the breakpoint line.
+- The exception type was empty for a first-chance stop inside MQTTnet (an
+  assembly without symbols). `GetExceptionDetails` now falls back to the
+  `$exception` value's own type name. **The TestTarget reproduction failed** —
+  see U15 for what was tried, why it proved nothing, and why the scaffolding was
+  reverted. The fix rests on the V7 observation alone.
 ## Next steps (in order)
 1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The
    published server is older than everything landed today — including the uid

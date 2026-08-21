@@ -274,6 +274,15 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         var frames = session.GetCallStack(stop.Pid, stop.ThreadId);
         Assert.Contains(frames, f => f.Method.Contains("AsyncProbeAsync") && !f.IsExternal);
 
+        // A local the method has not reached yet is a field of the state machine, so it is visible
+        // and null. Mono reports those without its null flag, claiming they have children; an
+        // expansion handle on them expands to nothing and reads as "there is something in here".
+        var notYet = locals.SingleOrDefault(l => l.Name == "notAssignedYet");
+        Assert.NotNull(notYet);
+        Assert.Equal("(null)", notYet.Value);
+        Assert.False(notYet.HasChildren);
+        Assert.Null(notYet.ExpansionHandle);
+
         // Stepping over the line after the await stays inside the method.
         // Disarm first: TestTarget runs this probe repeatedly, and a second invocation hitting the
         // same breakpoint mid-step would be the stop the step call returns.

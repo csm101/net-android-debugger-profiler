@@ -159,6 +159,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Arrays / List<T> expansion — `ObjectExpansion_…`
 - [x] Dictionary<K,V> expansion — `DictionaryExpansion_ShowsEntries`
 - [x] Null locals: no expansion handle — `NullValue_HasNoExpansionHandle`
+- [x] A null local of an async frame that the method has not reached yet has no
+      expansion handle and does not claim to have children (Mono reports those
+      as `(null)` without its null flag) —
+      `AsyncFrame_StopsAfterAwait_WithLocalsAndUserStack`
 - [x] Generic types display with their type arguments (List<int>,
       Dictionary<string,int>) — `ObjectExpansion_…`
 - [x] Stuck debuggee invoke yields a bounded TimeoutException, never a hang —
