@@ -1,27 +1,31 @@
 # Task resume
 
 ## Current task
-`nap serve` implemented: the local control service the Delphi GUI will drive
-(U7), HttpListener + System.Text.Json on loopback, no web framework. Verified end
-to end against real devices - a sampling session started over HTTP produced 1338
-samples and a session.db in the sessions root.
+Delivering the rest of the product on my own judgement (user: "non ti alzi da
+tavola finche non hai finito"). Order: live control -> Delphi GUI -> packaging.
 
-Core grew two frontend-neutral pieces the MCP server now sits on as well:
-SessionRegistry (sessions of one process, "current session", results resolution)
-and SessionSpecFactory (the string-shaped input every frontend gets, validated
-once). That is what stops the two frontends drifting on what "heap" or "weaver"
-means.
+Done: live control (U7) works on the weaver engine and is verified on the device.
+Snapshot pulls the collector's files and rewrites the results while the app keeps
+running; pause/resume toggle a control file the collector polls once a second;
+clear wipes the device files and the tables. Schema v2 adds `segment` (the
+history of refreshes) - results stay cumulative, so no segment id on fact tables
+and the GUI contract is unchanged. Exposed over HTTP (nap serve) and as MCP tools.
 
-pause / resume / snapshot / clear answer 501 with what is missing (session
-segments in Core, and the device-side toggle of the collector's Enabled flag for
-a real pause). The route exists so the GUI can be written against the final shape.
+Two defects found and fixed on the way:
+- A weaver session with no duration stopped after 20 s instead of waiting for
+  Stop(), which made open-ended GUI sessions impossible.
+- Pulling event files assumed they were not growing; a snapshot pulls files the
+  app is still appending to, so a short read is a truncation (retry) but a longer
+  one is just growth (keep).
 
-Windows quirk pinned by a test: a POST without Content-Length gets 411 from
-HTTP.SYS before the service sees it (`curl -X POST` without data; use -d '').
+## Next
+Delphi GUI (P4) per docs/GUI_DESIGN.md, starting with the shell + Setup + Report
+over session.db, then Call Tree with the critical path, Details, Editor (SynEdit),
+Summary, Monitor, memory. Then P5 packaging (bundle dotnet-dsrouter, register
+script, versioning, SynEdit in THIRD-PARTY-NOTICES).
 
 ## Substep
-Full suite green: 71 tests, 68 passed, 3 skipped. Docs written
-(docs/CONTROL_SERVICE.md, U7, ARCHITECTURE, TEST_CATALOG, README, USAGE).
+Full suite green: 74 tests, 71 passed, 3 skipped.
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

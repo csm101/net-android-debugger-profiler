@@ -36,7 +36,10 @@ stops it.
 | POST | `/sessions` | starts a session in the background, `201` with its id and state |
 | GET | `/sessions/{id}` | state, error, warnings and the last 20 log lines |
 | POST | `/sessions/{id}/stop` | ends collection; the session then analyzes and becomes `Ready` |
-| POST | `/sessions/{id}/pause`&#124;`resume`&#124;`snapshot`&#124;`clear` | `501` for now - see below |
+| POST | `/sessions/{id}/pause` | stops recording without stopping the app |
+| POST | `/sessions/{id}/resume` | starts recording again |
+| POST | `/sessions/{id}/snapshot` | refreshes the results from what is collected so far; answers the new segment id |
+| POST | `/sessions/{id}/clear` | throws away what was collected and keeps going |
 | POST | `/shutdown` | ends the service |
 
 `POST /sessions` takes the same loose shape every frontend uses; Core validates
@@ -60,14 +63,25 @@ Errors are `{"error":"..."}` with the guidance text the engine produces:
 callspec, malformed JSON, a session this service did not start), `500` only for
 a genuine failure.
 
-## The four verbs that answer 501
+## Live control, and which engine can serve it
 
-`pause`, `resume`, `snapshot` and `clear` are part of the contract already so the
-GUI can be written against the final shape, but the engine work behind them is
-not done: it needs session segments in Core and, for a real pause, a way to
-toggle the on-device collector's `Enabled` flag. The 501 body says so rather than
-pretending the route does not exist. See U7 for what each verb means per engine -
-notably that a real pause is only possible with the weaver.
+`pause`, `resume`, `snapshot` and `clear` work on **weaver** sessions: the
+collector writes event files it flushes every second, and the method names come
+from the weave map, so the results can be rebuilt at any moment without stopping
+anything. Pause is real - the collector polls a control file and stops recording
+within about a second - and the app keeps running.
+
+On a **runtime-provider** session they answer `400` explaining why: a .nettrace
+only resolves its method names when the session ends (the rundown), so there the
+honest move is to stop and start another session.
+
+Two things the GUI must show rather than hide:
+
+- **Snapshot results are cumulative**, not deltas: the tables are rewritten with
+  everything collected since the last clear, which is what AQTime's Get Results
+  does. The `segment` table records each refresh.
+- **Clearing does not remove instrumentation**: woven methods stay woven, so the
+  overhead remains while collection is paused or cleared.
 
 ## One Windows quirk worth knowing
 

@@ -75,10 +75,20 @@ verbs answer 501 with what is missing. Core grew `SessionRegistry` and
 `SessionSpecFactory` for this, and the MCP frontend now sits on both, so the two
 frontends cannot drift on what "heap" or "weaver" means.
 
-Open: session segments - whether they become rows in the existing tables with a
-segment id or separate databases merged on read - and the device-side channel for
-toggling the collector's Enabled flag, which is what makes pause real on the
-weaver engine.
+Live control implemented 2026-08-21 for the weaver engine, and verified on the
+device (`Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`):
+snapshot pulls the collector's files and rewrites the results while the app keeps
+running, pause and resume toggle a control file the collector polls once a second,
+clear wipes both the device files and the result tables. The provider engine
+refuses all four with the reason (its names arrive with the rundown at session
+end). Exposed over HTTP and as MCP tools (profile_snapshot / pause / resume /
+clear).
+
+The segment question resolved itself: results are cumulative, so a snapshot
+rewrites the result tables and a `segment` row records the refresh (schema v2).
+No segment id on the fact tables, and the GUI contract stays as it was.
+
+Nothing open here beyond the GUI itself.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

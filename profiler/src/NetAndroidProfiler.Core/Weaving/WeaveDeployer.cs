@@ -174,6 +174,24 @@ public sealed class WeaveDeployer
     /// <summary>Marker the collector writes the first time a woven method runs.</summary>
     public string MarkerPath => "files/nap-collector-loaded.txt";
 
+    /// <summary>Path of the collector's pause/resume file inside the app's private files.</summary>
+    public string ControlPath => "files/" + ControlFileName;
+
+    /// <summary>Must match NetAndroidProfiler.Collector.Profiler.ControlFileName.</summary>
+    public const string ControlFileName = "nap-control.txt";
+
+    /// <summary>
+    /// Pause or resume collection in the running app. The collector polls this file once a
+    /// second, so a pause takes effect within about a second; the app keeps running and the
+    /// woven methods stay woven (the overhead of the instrumentation remains).
+    /// </summary>
+    public Task SetCollectingAsync(bool collecting, CancellationToken ct) =>
+        _adb.RunAsAsync(_serial, _package, $"echo {(collecting ? "run" : "pause")} > {ControlPath}", ct);
+
+    /// <summary>Throw away the events collected so far on the device (clear results).</summary>
+    public Task ClearEventsAsync(CancellationToken ct) =>
+        _adb.RunAsAsync(_serial, _package, $"rm -f {RemoteEventsDir}/*.napw", ct);
+
     /// <summary>Remove a stale marker from a previous session.</summary>
     public Task ClearCollectorMarkerAsync(CancellationToken ct) =>
         _adb.RunAsync(_serial, ["shell", $"run-as {_package} rm -f {MarkerPath}"], ct);
@@ -219,9 +237,12 @@ public sealed class WeaveDeployer
     /// <summary>
     /// Copy a file out of the app sandbox, verifying that the payload is complete:
     /// a truncated read was observed once (2 KB of a 6656-byte assembly), which then
-    /// corrupts everything downstream, so the size is checked against stat and the
-    /// read is retried. /data/local/tmp cannot be used for staging: the app user
-    /// cannot write there.
+    /// corrupts everything downstream, so the size is checked against stat and the read is
+    /// retried. /data/local/tmp cannot be used for staging: the app user cannot write there.
+    ///
+    /// A snapshot pulls files the app is still appending to, so "complete" cannot mean
+    /// "exactly the size stat reported before the read": the file legitimately grows in
+    /// between. Short is a truncation and is retried; longer is growth and is kept.
     /// </summary>
     private async Task CatToLocalAsync(string relPath, string local, CancellationToken ct)
     {
@@ -229,11 +250,14 @@ public sealed class WeaveDeployer
         for (int attempt = 1; attempt <= 3; attempt++)
         {
             var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {relPath}", ct).ConfigureAwait(false);
-            if (expected == 0 || data.Length == expected)
+            if (expected == 0 || data.Length >= expected)
             {
                 await File.WriteAllBytesAsync(local, data, ct).ConfigureAwait(false);
                 return;
             }
+            // Perhaps it simply grew and shrank? No: files are append-only. Re-stat, in case
+            // the first stat was taken before a burst and the read caught an earlier state.
+            expected = await RemoteSizeAsync(relPath, ct).ConfigureAwait(false);
         }
         throw new ToolException($"Pull of {relPath} kept returning a truncated payload (expected {expected} bytes)");
     }

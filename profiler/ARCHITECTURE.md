@@ -54,7 +54,7 @@ Profiling modes:
 
 | Module | Responsibility |
 |---|---|
-| Core/Sessions/ProfilerSession | Facade: `SessionSpec` -> Preparing (device + APK prerequisites, dsrouter, app config) -> WaitingForApp -> Collecting -> Analyzing -> Ready/Failed; session directory with session.json, trace.nettrace, session.db, session.log; collection stops at `SessionSpec.MaxTraceBytes` (default 512 MB) with a warning; `Results` = ResultStore |
+| Core/Sessions/ProfilerSession | Facade: `SessionSpec` -> Preparing (device + APK prerequisites, dsrouter, app config) -> WaitingForApp -> Collecting -> Analyzing -> Ready/Failed; session directory with session.json, trace.nettrace, session.db, session.log; collection stops at `SessionSpec.MaxTraceBytes` (default 512 MB) with a warning; live control on weaver sessions (`SnapshotAsync` / `PauseAsync` / `ResumeAsync` / `ClearAsync`); `Results` = ResultStore |
 | Core/Devices/AdbClient, ProcessRunner, ToolLocator | serial-explicit adb (shell, exec-out, push/pull, run-as, setprop, launch, pidof, reverse, logcat); tool discovery |
 | Core/Apps/AppInspector | pulls the installed APK(s), reports `AppPrerequisites` (diagnostics component, AOT libs, debuggable, baked MONO_DIAGNOSTICS) and `Check(mode)` -> blocking problems / warnings with guidance |
 | Core/Collection/AppEnvironment, EnvironmentOverrideFile | per-app DOTNET_DiagnosticPorts / MONO_DIAGNOSTICS injection through the Debug runtime's override environment file (backup + restore); `debug.mono.profile` fallback for release apps |
@@ -66,6 +66,7 @@ Profiling modes:
 | Collector (NetAndroidProfiler.Collector, netstandard2.0, zero deps) | runtime target of woven calls; disabled unless NAP_PROFILER_OUT is set; per-thread .napw event files, 1 s flush |
 | Mcp/ | stdio MCP server over ProfilerSession (P1, next) |
 | src/NetAndroidProfiler.Cli (`nap`) | Non-MCP entry point to Core: `nap serve` is the local control service the GUI drives (HttpListener + System.Text.Json, loopback only), plus one-shot commands. Endpoints in docs/CONTROL_SERVICE.md |
+| Store schema v2 | Adds `segment`: the history of when the results were refreshed (`snapshot`), finalized (`final`) or thrown away (`clear`). Results are cumulative, so a snapshot rewrites the result tables rather than appending a segment id to every row |
 | Core/Sessions/SessionRegistry | Sessions created by one process, "the current session", results resolution. Shared by the MCP server and the control service |
 | Core/Sessions/SessionSpecFactory | The string-shaped input every frontend receives ("heap", "weaver", callspec) validated into a SessionSpec, so frontends cannot drift |
 | gui/ (P4) | Delphi + DevExpress VCL frontend (AQTime-style), reads SQLite, drives sessions via the local control service of U7. Panel-by-panel design, metric mapping and the AQTime features we do and do not take: docs/GUI_DESIGN.md |

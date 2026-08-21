@@ -2,6 +2,7 @@ using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Collection;
 using NetAndroidProfiler.Core.Devices;
 using NetAndroidProfiler.Core.Sessions;
+using NetAndroidProfiler.Core.Store;
 
 namespace NetAndroidProfiler.Tests.Device;
 
@@ -280,6 +281,85 @@ public class SessionTests
         var timings = s.Results.Timings(10);
         Assert.NotEmpty(timings);
         Assert.Contains(timings, t => t.FullName.StartsWith("TestTarget.Workloads", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// U7's live control on the engine that can serve it: snapshot refreshes the results
+    /// while the app keeps running, pause stops the events without stopping the app, and
+    /// clear throws away what was collected. This is AQTime's Get Results / Disable
+    /// Profiling / Clear Results, and it is what the GUI's toolbar drives.
+    /// </summary>
+    [Fact]
+    public async Task Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs()
+    {
+        var session = ProfilerSession.Create(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Callspec: "N:TestTarget.Workloads",
+            Engine: InstrumentingEngine.Weaver,
+            WeaveAssemblies: ["TestTarget"]), SessionsRoot);          // no duration: runs until Stop()
+        var run = Task.Run(() => session.RunAsync(CancellationToken.None));
+        try
+        {
+            await WaitForStateAsync(session, SessionState.Collecting, TimeSpan.FromMinutes(3));
+            await Task.Delay(TimeSpan.FromSeconds(4));
+
+            int first = await session.SnapshotAsync();
+            long callsFirst = TotalCalls(session.DatabasePath);
+            Assert.True(callsFirst > 0, "the first snapshot saw no calls");
+
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await session.SnapshotAsync();
+            long callsSecond = TotalCalls(session.DatabasePath);
+            Assert.True(callsSecond > callsFirst, $"calls did not grow between snapshots: {callsFirst} -> {callsSecond}");
+
+            // Pause: the collector polls its control file once a second, so let it settle,
+            // then check that two snapshots three seconds apart see the same numbers.
+            await session.PauseAsync();
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await session.SnapshotAsync();
+            long paused = TotalCalls(session.DatabasePath);
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await session.SnapshotAsync();
+            Assert.Equal(paused, TotalCalls(session.DatabasePath));
+
+            await session.ResumeAsync();
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await session.SnapshotAsync();
+            Assert.True(TotalCalls(session.DatabasePath) > paused, "resume did not restart collection");
+
+            await session.ClearAsync();
+            Assert.Equal(0, TotalCalls(session.DatabasePath));
+
+            // The history says what happened, and the app was never restarted.
+            using var store = ResultStore.Open(session.DatabasePath);
+            var segments = store.Segments();
+            Assert.True(segments.Count(s => s.kind == "snapshot") >= 5, $"segments: {segments.Count}");
+            Assert.Contains(segments, s => s.kind == "clear");
+        }
+        finally
+        {
+            session.Stop();
+            try { await run; } catch { /* the assertions above own the failure */ }
+            await session.DisposeAsync();
+        }
+    }
+
+    private static long TotalCalls(string databasePath)
+    {
+        using var store = ResultStore.Open(databasePath);
+        return store.Timings(500).Sum(t => t.Calls);
+    }
+
+    private static async Task WaitForStateAsync(ProfilerSession session, SessionState state, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (session.State == state) return;
+            if (session.State is SessionState.Failed)
+                throw new Xunit.Sdk.XunitException($"session failed before reaching {state}: {session.Info.Error}");
+            await Task.Delay(250);
+        }
+        throw new Xunit.Sdk.XunitException($"session stayed {session.State}, never reached {state}");
     }
 
     [Fact]

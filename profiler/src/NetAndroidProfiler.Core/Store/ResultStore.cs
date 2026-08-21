@@ -132,9 +132,11 @@ public sealed class ResultStore : IDisposable
         tx.Commit();
     }
 
+    /// <summary>Write the sampling result, replacing whatever a previous snapshot wrote.</summary>
     public void WriteSampling(SamplingResult r)
     {
         using var tx = _conn.BeginTransaction();
+        ClearFactTables();
         WriteMethods(r.Methods);
         WriteThreads(r.Threads);
         using (var cmd = Prepare("INSERT INTO sample_stat(method_id, inclusive, exclusive, inclusive_cpu, exclusive_cpu) VALUES ($m,$i,$e,$ic,$ec)", "$m", "$i", "$e", "$ic", "$ec"))
@@ -146,9 +148,11 @@ public sealed class ResultStore : IDisposable
         tx.Commit();
     }
 
+    /// <summary>Write the instrumenting result, replacing whatever a previous snapshot wrote.</summary>
     public void WriteInstrumenting(InstrumentingResult r)
     {
         using var tx = _conn.BeginTransaction();
+        ClearFactTables();
         WriteMethods(r.Methods);
         WriteThreads(r.Threads);
         using (var cmd = Prepare("INSERT INTO timing_stat(method_id, calls, total_ns, self_ns, min_ns, max_ns, exception_leaves) VALUES ($m,$c,$t,$s,$mi,$ma,$x)", "$m", "$c", "$t", "$s", "$mi", "$ma", "$x"))
@@ -161,6 +165,54 @@ public sealed class ResultStore : IDisposable
         using (var cmd = Prepare("INSERT INTO alloc_by_site(type_id, method_id, count, bytes) VALUES ($t,$m,$c,$b)", "$t", "$m", "$c", "$b"))
             foreach (var a in r.AllocsBySite) Run(cmd, a.TypeId, a.MethodId, a.Count, a.Bytes);
         tx.Commit();
+    }
+
+    /// <summary>
+    /// Empty every result table, keeping the session row and the segment history: this is
+    /// "clear results" - the app keeps running (and stays instrumented), only what was
+    /// collected so far is discarded.
+    /// </summary>
+    public void ClearResults()
+    {
+        using var tx = _conn.BeginTransaction();
+        ClearFactTables();
+        tx.Commit();
+    }
+
+    private void ClearFactTables()
+    {
+        foreach (string table in new[]
+        {
+            "sample_stat", "sample_tree", "sample_edge",
+            "timing_stat", "timing_tree",
+            "alloc_by_type", "alloc_by_site",
+            "method", "thread", "type",
+        })
+            Exec(_conn, "DELETE FROM " + table);
+    }
+
+    /// <summary>Record that the results were refreshed (snapshot), finalized, or cleared.</summary>
+    public int AddSegment(DateTimeOffset takenUtc, string kind, long events, string? note = null)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "INSERT INTO segment(taken_utc, kind, events, note) VALUES ($t,$k,$e,$n); SELECT last_insert_rowid()";
+        cmd.Parameters.AddWithValue("$t", takenUtc.ToString("O"));
+        cmd.Parameters.AddWithValue("$k", kind);
+        cmd.Parameters.AddWithValue("$e", events);
+        cmd.Parameters.AddWithValue("$n", (object?)note ?? DBNull.Value);
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    /// <summary>The snapshot history of this session, oldest first.</summary>
+    public IReadOnlyList<(int id, DateTimeOffset takenUtc, string kind, long events, string? note)> Segments()
+    {
+        var list = new List<(int, DateTimeOffset, string, long, string?)>();
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT id, taken_utc, kind, events, note FROM segment ORDER BY id";
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read())
+            list.Add((rd.GetInt32(0), DateTimeOffset.Parse(rd.GetString(1)), rd.GetString(2), rd.GetInt64(3), rd.IsDBNull(4) ? null : rd.GetString(4)));
+        return list;
     }
 
     /// <summary>Write a heap snapshot (types are added to the shared type table by name).</summary>

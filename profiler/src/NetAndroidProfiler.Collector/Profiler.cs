@@ -43,6 +43,20 @@ public static class Profiler
     private static Timer? s_flushTimer;
 
     /// <summary>
+    /// Name of the file the profiler writes next to the marker to pause and resume
+    /// collection without stopping the app ("pause" or "run"): this is what makes the GUI's
+    /// pause button real on the weaver engine. Polled on the flush tick, so it costs one
+    /// small read per second and nothing on the instrumented path.
+    /// </summary>
+    public const string ControlFileName = "nap-control.txt";
+
+    private static volatile bool s_paused;
+    private static string? s_controlPath;
+
+    /// <summary>False while collection is paused; woven methods then return immediately.</summary>
+    public static bool Collecting => Enabled && !s_paused;
+
+    /// <summary>
     /// Name of the marker file written next to the app's private files as soon as
     /// this type is loaded (i.e. the first time a woven method runs), regardless of
     /// whether profiling is enabled. It is the diagnostic that tells "the woven code
@@ -69,7 +83,11 @@ public static class Profiler
             // of this constructor, so a local would be collected and every buffered event
             // would then sit in its 64 KB stream until the buffer filled - which for a small
             // weave scope never happens, and the session reads empty files.
-            s_flushTimer = new Timer(_ => FlushAll(), null, 1000, 1000);
+            s_flushTimer = new Timer(_ => { FlushAll(); PollControl(); }, null, 1000, 1000);
+            string? markerDir = null;
+            try { markerDir = Environment.GetEnvironmentVariable("NAP_PROFILER_MARKER_DIR"); } catch { }
+            s_controlPath = Path.Combine(string.IsNullOrEmpty(markerDir) ? dir! : markerDir!, ControlFileName);
+            PollControl();
             AppDomain.CurrentDomain.ProcessExit += (_, __) => FlushAll();
             AppDomain.CurrentDomain.DomainUnload += (_, __) => FlushAll();
         }
@@ -121,19 +139,19 @@ public static class Profiler
 
     public static void Enter(int methodId)
     {
-        if (!Enabled) return;
+        if (!Collecting) return;
         Write(KindEnter, methodId);
     }
 
     public static void Leave(int methodId)
     {
-        if (!Enabled) return;
+        if (!Collecting) return;
         Write(KindLeave, methodId);
     }
 
     public static void ExceptionLeave(int methodId)
     {
-        if (!Enabled) return;
+        if (!Collecting) return;
         Write(KindExceptionLeave, methodId);
     }
 
@@ -145,7 +163,7 @@ public static class Profiler
     /// </summary>
     public static void Allocated(RuntimeTypeHandle handle)
     {
-        if (!Enabled) return;
+        if (!Collecting) return;
         Write(KindAllocation, TypeId(handle));
     }
 
@@ -188,6 +206,22 @@ public static class Profiler
         if (w is null) return ThreadWriter.Broken;
         lock (Writers) Writers.Add(w);
         return w;
+    }
+
+    /// <summary>
+    /// Read the pause/resume file written by the profiler. Absent or unreadable means
+    /// "collect": a control channel that fails must never silently stop a session.
+    /// </summary>
+    private static void PollControl()
+    {
+        if (s_controlPath is null) return;
+        try
+        {
+            if (!File.Exists(s_controlPath)) { s_paused = false; return; }
+            s_paused = File.ReadAllText(s_controlPath).Trim()
+                .StartsWith("pause", StringComparison.OrdinalIgnoreCase);
+        }
+        catch { /* keep the previous state */ }
     }
 
     /// <summary>Flush every thread's buffer to disk (also called by the 1 s timer).</summary>

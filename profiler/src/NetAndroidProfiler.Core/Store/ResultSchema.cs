@@ -7,7 +7,7 @@ namespace NetAndroidProfiler.Core.Store;
 /// </summary>
 public static class ResultSchema
 {
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const string CreateScript = """
         PRAGMA journal_mode = WAL;
@@ -32,6 +32,18 @@ public static class ResultSchema
             samples_with_stack INTEGER,
             spec_json          TEXT,
             error              TEXT
+        );
+
+        -- Snapshots taken while the session was running, newest last. The fact tables
+        -- always hold the latest analysis (results are cumulative from the start of
+        -- collection, like AQTime's Get Results); this is the history of when they were
+        -- refreshed and what they covered.
+        CREATE TABLE segment (
+            id        INTEGER PRIMARY KEY,
+            taken_utc TEXT    NOT NULL,
+            kind      TEXT    NOT NULL,          -- snapshot | final | clear
+            events    INTEGER NOT NULL DEFAULT 0,
+            note      TEXT
         );
 
         -- Shared dictionaries -------------------------------------------------

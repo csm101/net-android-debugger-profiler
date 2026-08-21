@@ -150,16 +150,34 @@ public sealed class ControlService : IAsyncDisposable
                 return (200, Describe(live));
             }
 
-            // The live-control verbs of U7. They are part of the contract on purpose:
-            // the GUI is written against the final shape, and the engine work behind them
-            // (collector toggle, session segments) lands without changing the wire.
-            case ["sessions", var id, "pause" or "resume" or "snapshot" or "clear"] when method == "POST":
+            // The live-control verbs of U7. Core refuses them on the runtime-provider
+            // engine with an explanation, which travels back as a 400.
+            case ["sessions", var id, "pause"] when method == "POST":
             {
-                _ = LiveOrThrow(id);
-                string verb = segments[2];
-                return (501, new ErrorResponse(
-                    $"'{verb}' is part of the control contract but is not implemented yet: it needs session segments in " +
-                    "Core (and, for a real pause, the collector's Enabled flag on the device). Use stop for now."));
+                var live = LiveOrThrow(id);
+                await live.Session.PauseAsync(ct).ConfigureAwait(false);
+                return (200, Describe(live));
+            }
+
+            case ["sessions", var id, "resume"] when method == "POST":
+            {
+                var live = LiveOrThrow(id);
+                await live.Session.ResumeAsync(ct).ConfigureAwait(false);
+                return (200, Describe(live));
+            }
+
+            case ["sessions", var id, "snapshot"] when method == "POST":
+            {
+                var live = LiveOrThrow(id);
+                int segment = await live.Session.SnapshotAsync(ct).ConfigureAwait(false);
+                return (200, new SnapshotResponse(segment, live.Session.DatabasePath, Describe(live)));
+            }
+
+            case ["sessions", var id, "clear"] when method == "POST":
+            {
+                var live = LiveOrThrow(id);
+                await live.Session.ClearAsync(ct).ConfigureAwait(false);
+                return (200, Describe(live));
             }
 
             default:
@@ -219,6 +237,7 @@ public sealed record HealthResponse(string Version, string SessionsRoot, int Por
 public sealed record OkResponse(string Message);
 public sealed record ErrorResponse(string Error);
 public sealed record SessionListItem(string Id, bool Ready);
+public sealed record SnapshotResponse(int Segment, string DatabasePath, SessionResponse Session);
 public sealed record CheckResponse(AppPrerequisites App, IReadOnlyList<PrerequisiteProblem> Problems);
 public sealed record SessionResponse(
     string Id, string State, string Directory, string DatabasePath,

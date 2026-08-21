@@ -127,6 +127,52 @@ public sealed class ProfilerTools(SessionHost host)
         return TextFormat.Info(info) + "\n\n" + Summary(info.Id);
     }
 
+    [McpServerTool(Name = "profile_snapshot"), Description(
+        "Refreshes the results of a running session from what has been collected so far, without stopping the app " +
+        "(AQTime's Get Results). Weaver sessions only: a runtime-provider trace only resolves method names when its " +
+        "session ends. After this, the read-only tools show the profile up to now.")]
+    public async Task<string> ProfileSnapshot([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
+    {
+        var live = LiveOrThrow(sessionId);
+        try
+        {
+            int segment = await live.Session.SnapshotAsync(ct);
+            return $"Snapshot {segment} written to {live.Session.DatabasePath}. The session keeps collecting." + Environment.NewLine + Summary(live.Session.Id);
+        }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
+    }
+
+    [McpServerTool(Name = "profile_pause"), Description(
+        "Stops recording events without stopping the app (AQTime's Disable Profiling). Weaver sessions only. " +
+        "The methods stay woven, so their overhead remains while paused.")]
+    public async Task<string> ProfilePause([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
+    {
+        var live = LiveOrThrow(sessionId);
+        try { await live.Session.PauseAsync(ct); return $"Session {live.Session.Id} paused (takes effect within a second)."; }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
+    }
+
+    [McpServerTool(Name = "profile_resume"), Description("Resumes recording after profile_pause. Weaver sessions only.")]
+    public async Task<string> ProfileResume([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
+    {
+        var live = LiveOrThrow(sessionId);
+        try { await live.Session.ResumeAsync(ct); return $"Session {live.Session.Id} resumed."; }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
+    }
+
+    [McpServerTool(Name = "profile_clear"), Description(
+        "Throws away what a running session has collected so far and keeps going (AQTime's Clear Results). " +
+        "Weaver sessions only. Clearing does not remove instrumentation.")]
+    public async Task<string> ProfileClear([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
+    {
+        var live = LiveOrThrow(sessionId);
+        try { await live.Session.ClearAsync(ct); return $"Session {live.Session.Id}: results cleared, still collecting."; }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
+    }
+
+    private SessionRegistry.LiveSession LiveOrThrow(string? sessionId) =>
+        host.Live(sessionId) ?? throw new McpException("No running session in this server. See profile_sessions for finished ones.");
+
     [McpServerTool(Name = "profile_status", ReadOnly = true), Description("State of a session started in this server (default: current) with the last log lines.")]
     public string ProfileStatus([Description("Session id (default: current)")] string? sessionId = null, [Description("Log lines to include")] int logLines = 15)
     {

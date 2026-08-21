@@ -36,6 +36,55 @@ public class ResultStoreTests
         Assert.Equal(r.Tree.Count, s.Count("sample_tree"));
     }
 
+    /// <summary>
+    /// A snapshot re-analyzes everything collected so far and rewrites the result tables:
+    /// the database always holds the current picture (AQTime's Get Results is cumulative),
+    /// while the segment table records when it was refreshed. Writing twice must therefore
+    /// leave one set of rows, not two.
+    /// </summary>
+    [Fact]
+    public void Snapshots_replace_the_results_and_leave_a_history()
+    {
+        var r = new SamplingAnalyzer().Analyze(Recorded.SamplingJit20s);
+        string db = Recorded.TempDb("snapshots");
+        using var w = ResultStore.Create(db, "test");
+
+        w.WriteSampling(r);
+        w.AddSegment(DateTimeOffset.UtcNow, "snapshot", r.TotalSamples, "first");
+        long methodsAfterFirst = w.Count("method");
+        long treeAfterFirst = w.Count("sample_tree");
+
+        w.WriteSampling(r);                       // same data again: a second snapshot
+        w.AddSegment(DateTimeOffset.UtcNow, "snapshot", r.TotalSamples, "second");
+
+        Assert.Equal(methodsAfterFirst, w.Count("method"));
+        Assert.Equal(treeAfterFirst, w.Count("sample_tree"));
+
+        var segments = w.Segments();
+        Assert.Equal(2, segments.Count);
+        Assert.Equal("first", segments[0].note);
+        Assert.All(segments, x => Assert.Equal("snapshot", x.kind));
+    }
+
+    [Fact]
+    public void Clearing_empties_the_results_and_keeps_the_session_row()
+    {
+        var r = new SamplingAnalyzer().Analyze(Recorded.SamplingJit20s);
+        string db = Recorded.TempDb("clear");
+        using var w = ResultStore.Create(db, "test");
+        w.WriteSession(new SessionRow("s1", "Sampling", "Collecting", "pkg", "serial", DateTimeOffset.UtcNow, null, null, null, null, null, null));
+        w.WriteSampling(r);
+        Assert.True(w.Count("sample_stat") > 0);
+
+        w.ClearResults();
+        w.AddSegment(DateTimeOffset.UtcNow, "clear", 0);
+
+        foreach (string table in new[] { "sample_stat", "sample_tree", "sample_edge", "method", "thread" })
+            Assert.Equal(0, w.Count(table));
+        Assert.NotNull(w.ReadSession());                       // the session itself survives
+        Assert.Contains(w.Segments(), x => x.kind == "clear"); // and so does the history
+    }
+
     [Fact]
     public void Instrumenting_round_trip_timings_and_allocations()
     {

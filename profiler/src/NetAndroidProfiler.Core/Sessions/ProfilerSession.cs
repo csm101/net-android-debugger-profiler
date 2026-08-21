@@ -97,6 +97,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     private DateTimeOffset? _started, _ended;
     private string? _traceFile;
     private DsRouterProcess? _dsrouter;
+    private ResultStore? _writeStore;
     private AppEnvironment? _env;
     private bool _reverseSet;
     private string? _expectedMarker;
@@ -407,10 +408,11 @@ public sealed class ProfilerSession : IAsyncDisposable
         Log("collector marker seen: woven code is running");
         SetState(SessionState.Collecting);
         _started = DateTimeOffset.UtcNow;
-        var duration = Spec.Duration ?? TimeSpan.FromSeconds(20);
         using (var waitCts = CancellationTokenSource.CreateLinkedTokenSource(_stopRequested.Token, ct))
         {
-            waitCts.CancelAfter(duration);
+            // No duration means "until someone stops it": that is what a GUI session is, and
+            // what makes snapshot and pause useful. Only a stated duration ends it by itself.
+            if (Spec.Duration is { } duration) waitCts.CancelAfter(duration);
             try { await Task.Delay(Timeout.InfiniteTimeSpan, waitCts.Token).ConfigureAwait(false); }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
         }
@@ -490,8 +492,9 @@ public sealed class ProfilerSession : IAsyncDisposable
     private async Task AnalyzeAsync(CancellationToken ct)
     {
         SetState(SessionState.Analyzing);
-        if (File.Exists(DatabasePath)) File.Delete(DatabasePath);
-        var store = ResultStore.Create(DatabasePath, ToolVersion);
+        // A snapshot taken during the run already created the database: reuse it so its
+        // segment history survives, and let the write path replace the result tables.
+        var store = TakeWriteStore();
         long? total = null, withStack = null;
         switch (Spec.Mode)
         {
@@ -526,16 +529,96 @@ public sealed class ProfilerSession : IAsyncDisposable
         store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Ready", Spec.Package, Spec.DeviceSerial, _started,
             _started is not null && _ended is not null ? (_ended.Value - _started.Value).TotalMilliseconds : null,
             _traceFile is null ? null : Path.GetFileName(_traceFile), total, withStack, JsonSerializer.Serialize(Spec, JsonOpts), null));
+        store.AddSegment(DateTimeOffset.UtcNow, "final", total ?? 0);
         store.Dispose();
         _store = ResultStore.Open(DatabasePath);
+    }
+
+    /// <summary>The writable store of this session, created on first use (a snapshot or the analysis).</summary>
+    private ResultStore TakeWriteStore()
+    {
+        var store = _writeStore ?? (File.Exists(DatabasePath)
+            ? ResultStore.Open(DatabasePath, readOnly: false)
+            : ResultStore.Create(DatabasePath, ToolVersion));
+        _writeStore = null;                     // ownership moves to the caller
+        return store;
+    }
+
+    // ------------------------------------------------------- live control (U7)
+
+    /// <summary>
+    /// Refresh the results from what has been collected so far, without stopping the app -
+    /// AQTime's "Get Results". Only the weaver engine can do this: its events are files the
+    /// collector flushes every second and its method names come from the weave map, while
+    /// the runtime provider only emits the names that resolve a trace when its session ends.
+    /// </summary>
+    public async Task<int> SnapshotAsync(CancellationToken ct = default)
+    {
+        RequireLiveWeaverSession("snapshot");
+        _weaveEventsDir ??= Path.Combine(Directory, "events");
+        int files = await _weaveDeployer!.PullEventsAsync(_weaveDeployer.RemoteEventsDir, _weaveEventsDir, ct).ConfigureAwait(false);
+        var result = await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+
+        _writeStore ??= File.Exists(DatabasePath) ? ResultStore.Open(DatabasePath, readOnly: false) : ResultStore.Create(DatabasePath, ToolVersion);
+        _writeStore.WriteInstrumenting(result);
+        _writeStore.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), _state.ToString(), Spec.Package, Spec.DeviceSerial,
+            _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), null));
+        int segment = _writeStore.AddSegment(DateTimeOffset.UtcNow, "snapshot", result.EnterEvents, $"{files} event files");
+        Log($"snapshot {segment}: enter={result.EnterEvents} leave={result.LeaveEvents} methods={result.Methods.Count} (session continues)");
+        return segment;
+    }
+
+    /// <summary>Stop recording events without stopping the app (AQTime's Disable Profiling).</summary>
+    public async Task PauseAsync(CancellationToken ct = default)
+    {
+        RequireLiveWeaverSession("pause");
+        await _weaveDeployer!.SetCollectingAsync(false, ct).ConfigureAwait(false);
+        Log("collection paused (the woven methods stay woven, so their overhead remains)");
+    }
+
+    /// <summary>Resume recording after <see cref="PauseAsync"/>.</summary>
+    public async Task ResumeAsync(CancellationToken ct = default)
+    {
+        RequireLiveWeaverSession("resume");
+        await _weaveDeployer!.SetCollectingAsync(true, ct).ConfigureAwait(false);
+        Log("collection resumed");
+    }
+
+    /// <summary>Throw away what was collected so far and keep going (AQTime's Clear Results).</summary>
+    public async Task ClearAsync(CancellationToken ct = default)
+    {
+        RequireLiveWeaverSession("clear");
+        await _weaveDeployer!.ClearEventsAsync(ct).ConfigureAwait(false);
+        if (_weaveEventsDir is not null && System.IO.Directory.Exists(_weaveEventsDir))
+            foreach (string f in System.IO.Directory.GetFiles(_weaveEventsDir, "*.napw")) { try { File.Delete(f); } catch { } }
+        if (File.Exists(DatabasePath))
+        {
+            _writeStore ??= ResultStore.Open(DatabasePath, readOnly: false);
+            _writeStore.ClearResults();
+            _writeStore.AddSegment(DateTimeOffset.UtcNow, "clear", 0);
+        }
+        Log("results cleared (the app keeps running and stays instrumented)");
+    }
+
+    private void RequireLiveWeaverSession(string operation)
+    {
+        if (_state is not (SessionState.Collecting or SessionState.WaitingForApp))
+            throw new ProfilerException($"Cannot {operation}: the session is {_state}, not collecting.");
+        if (Spec.Mode != ProfilingMode.Instrumenting || Spec.Engine != InstrumentingEngine.Weaver || _weaveDeployer is null || _weaveMap is null)
+            throw new ProfilerException(
+                $"'{operation}' needs the weaver engine (mode=instrumenting, engine=weaver): its events are files the collector " +
+                "flushes as it goes. A runtime-provider trace only becomes readable when its session ends, so there stop and " +
+                "start another session instead.");
     }
 
     private async Task WriteFailedDbAsync()
     {
         try
         {
-            if (File.Exists(DatabasePath)) return;
-            using var store = ResultStore.Create(DatabasePath, ToolVersion);
+            // A snapshot may already have created it while the session was running.
+            using var store = File.Exists(DatabasePath)
+                ? ResultStore.Open(DatabasePath, readOnly: false)
+                : ResultStore.Create(DatabasePath, ToolVersion);
             store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Failed", Spec.Package, Spec.DeviceSerial, _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), _error));
         }
         catch (Exception e) { Log("cannot write failed-session db: " + e.Message); }
@@ -560,6 +643,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         try { if (_reverseSet) await _adb.ReverseRemoveAsync(Spec.DeviceSerial, DsRouterProcess.AppPort, ct).ConfigureAwait(false); }
         catch (Exception e) { Log("adb reverse --remove failed: " + e.Message); }
         if (_dsrouter is not null) { await _dsrouter.DisposeAsync().ConfigureAwait(false); _dsrouter = null; }
+        if (_writeStore is not null) { try { _writeStore.Dispose(); } catch { } _writeStore = null; }
         try { await File.WriteAllLinesAsync(LogPath, _log, ct).ConfigureAwait(false); } catch { }
     }
 

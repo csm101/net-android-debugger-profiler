@@ -37,6 +37,7 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Stop() on a session without Duration ends collection
 
 - [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
+- [x] Live control on a weaver session: snapshot grows, pause freezes, resume restarts, clear empties - `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`
 - [x] U5: collection stops at the trace size limit, keeps a valid trace and warns - `Collection_stops_when_the_trace_reaches_its_size_limit`
 - [x] Iterator bodies are instrumented on the device (one call per item produced) - `Weaver_instruments_iterator_bodies_on_the_device`
 - [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
@@ -90,6 +91,8 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
 - [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
 - [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
+- [x] Snapshots replace the results and leave a history - `Snapshots_replace_the_results_and_leave_a_history`
+- [x] Clearing empties the results, keeps session and history - `Clearing_empties_the_results_and_keeps_the_session_row`
 - [x] Large tree (200k nodes, 5k methods): write and GUI queries stay interactive - `Large_call_tree_stays_queryable`
 
 ## F. MCP end-to-end (Fast/McpServerTests: the server is spawned as a process over stdio)
