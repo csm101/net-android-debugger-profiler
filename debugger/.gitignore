@@ -6,3 +6,4 @@ obj/
 TestResults/
 *.binlog
 .idea/
+DevTools/scripts/*.log
