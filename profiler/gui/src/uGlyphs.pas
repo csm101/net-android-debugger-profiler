@@ -19,7 +19,7 @@ uses
 type
   /// The glyphs, in the order they sit in the image list: ImageIndex = Ord(kind).
   TGlyphKind = (gkOpen, gkRefresh, gkRun, gkSnapshot, gkPause, gkStop, gkSettings, gkLayouts,
-    gkExport);
+    gkExport, gkClear);
 
 /// A 16x16 alpha image list holding every glyph, tinted with AColor.
 function BuildGlyphs(AOwner: TComponent; AColor: TColor): TImageList;
@@ -100,6 +100,18 @@ begin
       ACanvas.Rectangle(16, 16, 48, 48);
     gkSettings:
       DrawGear(ACanvas);
+    gkClear:
+      begin
+        // A bin: what Clear does to the results collected so far.
+        ACanvas.Polygon([Point(16, 20), Point(48, 20), Point(44, 56), Point(20, 56)]);
+        ACanvas.Rectangle(12, 12, 52, 20);
+        ACanvas.Rectangle(26, 6, 38, 12);
+        ACanvas.Brush.Color := clWhite;
+        ACanvas.Pen.Color := clWhite;
+        ACanvas.Pen.Width := 3;
+        ACanvas.MoveTo(26, 27); ACanvas.LineTo(24, 49);
+        ACanvas.MoveTo(38, 27); ACanvas.LineTo(40, 49);
+      end;
     gkExport:
       begin
         // A sheet with an arrow leaving it.

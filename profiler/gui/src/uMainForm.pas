@@ -142,6 +142,7 @@ type
     FSnapshotButton: TdxBarButton;
     FPauseButton: TdxBarButton;
     FStopButton: TdxBarButton;
+    FClearButton: TdxBarButton;
     FPaused: Boolean;
     FPendingDialog: string;
     FLog: TcxMemo;
@@ -210,6 +211,7 @@ type
     procedure DressColumns(AView: TcxGridDBTableView);
     procedure StartButtonClick(Sender: TObject);
     procedure SnapshotButtonClick(Sender: TObject);
+    procedure ClearButtonClick(Sender: TObject);
     procedure PauseButtonClick(Sender: TObject);
     procedure StopButtonClick(Sender: TObject);
     procedure PollTimer(Sender: TObject);
@@ -462,6 +464,9 @@ begin
   FPauseButton := NewButton(LSession, 'Pause',
     'Stop recording without stopping the app: the methods stay instrumented, so their overhead remains',
     gkPause, PauseButtonClick);
+  FClearButton := NewButton(LSession, 'Clear',
+    'Throw away what has been collected so far and keep going - the instrumentation stays in place',
+    gkClear, ClearButtonClick);
   FStopButton := NewButton(LSession, 'Stop', 'End the session and analyse what it collected',
     gkStop, StopButtonClick);
 
@@ -2270,6 +2275,31 @@ begin
   end;
 end;
 
+/// AQTime's Clear Results: throw away what has been collected and carry on. What it
+/// cannot do is remove the instrumentation - woven IL stays woven - so the overhead
+/// remains, and the message says so.
+procedure TMainForm.ClearButtonClick(Sender: TObject);
+var
+  LStatus: TSessionStatus;
+begin
+  if FSessionId = '' then
+    Exit;
+  if MessageDlg('Throw away everything collected so far in this session?' + sLineBreak +
+    'The app keeps running and stays instrumented, so collection continues from zero.',
+    mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  try
+    LStatus := FClient.Clear(FSessionId);
+    FLog.Lines.Add('results cleared');
+    if (LStatus.DatabasePath <> '') and TFile.Exists(LStatus.DatabasePath) then
+      LoadSession(LStatus.DatabasePath);
+    SetStatus(Format('session %s: %s, results cleared', [FSessionId, LStatus.State]));
+  except
+    on E: Exception do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
 procedure TMainForm.PauseButtonClick(Sender: TObject);
 begin
   if FSessionId = '' then
@@ -2316,6 +2346,7 @@ begin
     ((AState = 'Collecting') or (AState = 'WaitingForApp') or (AState = 'Preparing'));
   FSnapshotButton.Enabled := LRunning;
   FPauseButton.Enabled := LRunning;
+  FClearButton.Enabled := LRunning;
   FStopButton.Enabled := LRunning;
   if not LRunning then
   begin

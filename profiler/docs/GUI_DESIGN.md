@@ -210,8 +210,9 @@ notes written for agents; `Demos/VCL/<component>` is the first place to look).
 
 ## Run control
 
-Toolbar, straight from AQTime's vocabulary: **Start**, **Pause**, **Resume**,
-**Snapshot**, **Clear**, **Stop**. They map to the U7 endpoints one to one.
+Toolbar, straight from AQTime's vocabulary: **New session**, **Snapshot**,
+**Pause**/**Resume**, **Clear**, **Stop**. They map to the U7 endpoints one to
+one, and all but New session are enabled only while a session is running.
 
 Two honest constraints to surface in the UI, not hide:
 
