@@ -187,6 +187,39 @@ Two honest constraints to surface in the UI, not hide:
 A session is therefore a sequence of segments, and the Report panel needs a
 segment selector ("all segments" by default).
 
+## What exists today
+
+`gui/` builds headless with `build-gui.cmd` (which reads the DevExpress and SynEdit
+paths from the installed IDE, so a machine that can open the project can also build
+it from a script) and contains:
+
+- `src/uSessionStore.pas` - the read layer over `session.db`: session identity,
+  report rows per mode, lazy call-tree children, Details parents/children, segment
+  history. It opens the file read-only and tolerates older schemas.
+- `src/uMainForm.pas` - the shell: Report grid (cxGrid over the query, with the
+  columns captioned and nanoseconds formatted), Details with the Parents and
+  Children tables underneath, and a lazy Call Tree whose critical path is bold.
+- `tests/StoreTests.dpr` - a console harness that runs the read layer against real
+  session databases; this is where a schema mismatch surfaces first.
+
+Two defects were found by looking at the running window rather than the code: the
+grid showed negative times, because SQLite has no column widths and FireDAC read
+the declared `INTEGER` as 32 bits (fixed in the schema and, defensively, with a
+FireDAC map rule), and a cleared session lost its events because the collector kept
+writing to files that had been deleted under it.
+
+- `src/uControlClient.pas` - the control-service client: it starts `nap.exe serve`,
+  reads the port from the JSON line the service prints, owns the process and shuts
+  it down with the GUI.
+- `src/uSetupDialog.pas` - the Setup screen: device list, package, mode, engine,
+  callspec, duration, build output for the symbols, and the prerequisite check
+  before anything starts.
+- The live toolbar (New session / Snapshot / Pause / Stop) with a log pane, and a
+  Source panel: SynEdit with C# highlighting, the method's line range washed, fed
+  by the source locations the analysis recorded in the database.
+
+Still to build: Summary, Monitor, memory views, Call Graph.
+
 ## Screens
 
 1. **Start page** - devices, recent sessions, "new session".

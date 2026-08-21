@@ -265,9 +265,11 @@ public sealed class StartRequest
     public bool WeavePropertyAccessors { get; set; }
     public bool WeaveAsyncBodies { get; set; } = true;
     public int MaxTraceMb { get; set; } = 512;
+    /// <summary>Build output with the app's portable .pdb files; lets the GUI show the source.</summary>
+    public string? SymbolsDir { get; set; }
 
     public SessionSpec ToSpec() => SessionSpecFactory.Build(
         DeviceSerial, PackageName, Mode, Launch, DurationSeconds, Callspec, TrackAllocations, SuspendOnStart,
         Name, KeepAppRunning, Engine, WeaveAssemblies, WeaveReferenceDirs, WeaveMapPath,
-        Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb);
+        Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb, SymbolsDir);
 }

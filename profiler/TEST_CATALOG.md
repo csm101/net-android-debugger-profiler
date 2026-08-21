@@ -103,6 +103,11 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] profile_start / profile_stop round trip
 - [ ] profile_annotate_source through MCP on a prepared session
 
+## H3. GUI data layer (gui/tests/StoreTests.dpr, Delphi; run against real session databases)
+- [x] Session identity, report rows, tree roots and expansion, details queries, segment history - `StoreTests`
+- [x] A database written before the current schema still opens read-only (missing tables answer empty)
+- [ ] Automated in CI: today it is built and run by hand (see gui/tests/build-tests.cmd, then run StoreTests.exe with a session database)
+
 ## H2. Control service (Fast/ControlServiceTests, no device)
 - [x] /health reports version, sessions root and port - `Health_reports_the_version_and_where_sessions_live`
 - [x] An empty sessions root lists nothing - `An_empty_sessions_root_lists_no_sessions`

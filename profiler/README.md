@@ -82,6 +82,7 @@ src/NetAndroidProfiler.Mcp        MCP stdio server frontend
 src/NetAndroidProfiler.Collector  tiny runtime library the woven code calls (netstandard2.0)
 src/NetAndroidProfiler.Weave      nap-weave: build-time IL weaver
 src/NetAndroidProfiler.Cli        nap: local control service (nap serve) + one-shot commands
+gui/                              Delphi + DevExpress GUI (build-gui.cmd; reads session.db)
 build/                            MSBuild targets for build-time weaving
 tests/NetAndroidProfiler.Tests    fast (recorded traces) + device tests (xUnit)
 tests/WeaveSample                 assembly used as weaving input in tests

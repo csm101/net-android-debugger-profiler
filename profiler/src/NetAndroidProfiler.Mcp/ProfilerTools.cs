@@ -77,9 +77,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: also instrument property getters/setters (skipped by default: they are trivial and called everywhere)")] bool weavePropertyAccessors = false,
         [Description("Weaver: instrument async state machines too, reported as '<method> (async body)' - their calls are resumptions and their time excludes the awaits. On by default; turn it off to weave only the synchronous stub of async methods")] bool weaveAsyncBodies = true,
         [Description("Stop collecting when the trace reaches this many MB (default 512; 0 = no limit). A real app samples at roughly 1.5 MB/s and instrumenting traces grow faster")] int maxTraceMb = 512,
+        [Description("Build output with the app's portable .pdb files (bin/<Configuration>/<tfm>). Given this, the results record where each method lives, which is what lets a GUI show the source beside the figures")] string? symbolsDir = null,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb, symbolsDir);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -106,9 +107,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: assembly names to weave, comma-separated")] string? weaveAssemblies = null,
         [Description("Weaver: local reference directories (app bin folder)")] string? weaveReferenceDirs = null,
         [Description("Weaver: path of nap-weave.map from a build-time weaving build")] string? weaveMapPath = null,
-        [Description("Stop collecting when the trace reaches this many MB (default 512; 0 = no limit). Sessions without a duration are exactly the ones that can run away")] int maxTraceMb = 512)
+        [Description("Stop collecting when the trace reaches this many MB (default 512; 0 = no limit). Sessions without a duration are exactly the ones that can run away")] int maxTraceMb = 512,
+        [Description("Build output with the app's portable .pdb files, so the results record where each method lives")] string? symbolsDir = null)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, maxTraceMb: maxTraceMb);
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, maxTraceMb: maxTraceMb, symbolsDir: symbolsDir);
         if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
         var live = host.Create(spec);
         live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
@@ -421,14 +423,14 @@ public sealed class ProfilerTools(SessionHost host)
     }
 
     /// <summary>Translate the tool arguments into a spec; Core owns the aliases and the validation.</summary>
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512, string? symbolsDir = null)
     {
         try
         {
             return SessionSpecFactory.Build(deviceSerial, packageName, mode, launch, durationSeconds, callspec,
                 trackAllocations, suspendOnStart, name, keepAppRunning, engine,
                 SessionSpecFactory.SplitList(weaveAssemblies), SessionSpecFactory.SplitList(weaveReferenceDirs),
-                weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb);
+                weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb, symbolsDir);
         }
         catch (ProfilerException e)
         {

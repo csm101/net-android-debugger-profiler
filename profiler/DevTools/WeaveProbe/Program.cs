@@ -4,6 +4,20 @@
 //   WeaveProbe <assembly.dll> <callspec> [searchDir ...]
 using NetAndroidProfiler.Core.Weaving;
 
+if (args.Length >= 2 && args[0] == "--analyze")
+{
+    // Re-run the weaver analysis over a session's event files, off the device: this is
+    // how a suspicious number in the GUI gets traced back to the raw records.
+    var map = args.Length >= 3
+        ? NetAndroidProfiler.Core.Weaving.CecilWeaver.ReadMap(args[2])
+        : new List<NetAndroidProfiler.Core.Weaving.WovenMethod>();
+    var result = new NetAndroidProfiler.Core.Weaving.WeaveAnalyzer().Analyze(args[1], map);
+    Console.WriteLine($"enter={result.EnterEvents} leave={result.LeaveEvents} allocs={result.AllocationEvents} broken={result.BrokenPairs} methods={result.Methods.Count}");
+    foreach (var t in result.Timings.OrderByDescending(t => t.Calls).Take(12))
+        Console.WriteLine($"{t.Calls,10} calls {t.TotalNs,16} total {t.SelfNs,16} self  {result.Method(t.MethodId).FullName}");
+    return 0;
+}
+
 if (args.Length == 2 && args[0] == "--state-machines")
 {
     // Which compiler-generated state machines does a real assembly actually carry?

@@ -168,6 +168,30 @@ public sealed class ResultStore : IDisposable
     }
 
     /// <summary>
+    /// Attach the source location of each method, once the pdbs have been read. Kept apart
+    /// from the method insert because symbols are optional and may only be found later.
+    /// </summary>
+    public void WriteMethodSources(IEnumerable<(int MethodId, string File, int StartLine, int EndLine)> sources)
+    {
+        using var tx = _conn.BeginTransaction();
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "UPDATE method SET source_file = $f, source_start_line = $s, source_end_line = $e WHERE id = $id";
+        var file = cmd.Parameters.Add("$f", Microsoft.Data.Sqlite.SqliteType.Text);
+        var startLine = cmd.Parameters.Add("$s", Microsoft.Data.Sqlite.SqliteType.Integer);
+        var endLine = cmd.Parameters.Add("$e", Microsoft.Data.Sqlite.SqliteType.Integer);
+        var id = cmd.Parameters.Add("$id", Microsoft.Data.Sqlite.SqliteType.Integer);
+        foreach (var s in sources)
+        {
+            file.Value = s.File;
+            startLine.Value = s.StartLine;
+            endLine.Value = s.EndLine;
+            id.Value = s.MethodId;
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    /// <summary>
     /// Empty every result table, keeping the session row and the segment history: this is
     /// "clear results" - the app keeps running (and stays instrumented), only what was
     /// collected so far is discarded.
@@ -480,6 +504,17 @@ public sealed class ResultStore : IDisposable
     }
 
     /// <summary>Methods of a module with their sampling and/or timing figures, keyed by metadata token (for source annotation).</summary>
+    /// <summary>Module, token and id of every method, for resolving source locations.</summary>
+    public IReadOnlyList<(int Id, string Module, int Token)> Methods()
+    {
+        var list = new List<(int, string, int)>();
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT id, module, token FROM method";
+        using var rd = cmd.ExecuteReader();
+        while (rd.Read()) list.Add((rd.GetInt32(0), rd.GetString(1), rd.GetInt32(2)));
+        return list;
+    }
+
     public IReadOnlyList<MethodFigures> MethodFiguresByModule(string module)
     {
         using var cmd = _conn.CreateCommand();

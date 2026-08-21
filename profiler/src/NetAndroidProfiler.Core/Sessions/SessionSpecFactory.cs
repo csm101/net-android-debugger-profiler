@@ -51,7 +51,8 @@ public static class SessionSpecFactory
         int snapshotIntervalSeconds = 30,
         bool weavePropertyAccessors = false,
         bool weaveAsyncBodies = true,
-        int maxTraceMb = 512)
+        int maxTraceMb = 512,
+        string? symbolsDir = null)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new ProfilerException("deviceSerial is required (list the devices first).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new ProfilerException("packageName is required.");
@@ -83,7 +84,8 @@ public static class SessionSpecFactory
             TimeSpan.FromSeconds(Math.Max(1, snapshotIntervalSeconds)),
             weavePropertyAccessors,
             weaveAsyncBodies,
-            maxTraceMb > 0 ? maxTraceMb * 1024L * 1024L : null);
+            maxTraceMb > 0 ? maxTraceMb * 1024L * 1024L : null,
+            string.IsNullOrWhiteSpace(symbolsDir) ? null : symbolsDir.Trim());
     }
 
     /// <summary>Split a comma-separated frontend argument ("A,B") into a list, or null when empty.</summary>

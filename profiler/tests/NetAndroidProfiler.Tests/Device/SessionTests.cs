@@ -329,6 +329,20 @@ public class SessionTests
             await session.ClearAsync();
             Assert.Equal(0, TotalCalls(session.DatabasePath));
 
+            // After a clear the collector must start writing new files: if it kept its old
+            // handles the app would be filling files that no longer have a name, and the
+            // next analysis would pair leaves with enters from another era - which shows up
+            // as negative durations.
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            await session.SnapshotAsync();
+            Assert.True(TotalCalls(session.DatabasePath) > 0, "collection did not restart after clear");
+            using (var afterClear = ResultStore.Open(session.DatabasePath))
+                Assert.All(afterClear.Timings(200), t =>
+                {
+                    Assert.True(t.TotalNs >= 0, $"{t.FullName} has a negative total time");
+                    Assert.True(t.SelfNs >= 0, $"{t.FullName} has a negative self time");
+                });
+
             // The history says what happened, and the app was never restarted.
             using var store = ResultStore.Open(session.DatabasePath);
             var segments = store.Segments();

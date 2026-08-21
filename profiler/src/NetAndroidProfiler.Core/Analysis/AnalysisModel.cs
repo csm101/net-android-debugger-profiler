@@ -78,7 +78,13 @@ public sealed record InstrumentingResult(
     long EnterEvents,
     long LeaveEvents,
     long AllocationEvents,
-    long GcEvents)
+    long GcEvents,
+    /// <summary>
+    /// Enter/leave pairs dropped because the leave predated the enter: the record stream
+    /// was cut (results cleared under a running collector, a truncated pull). They are not
+    /// counted anywhere else - a negative duration would poison a method's totals.
+    /// </summary>
+    long BrokenPairs = 0)
 {
     public MethodRecord Method(int id) => Methods[id];
 }

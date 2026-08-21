@@ -48,7 +48,13 @@ public sealed record SessionSpec(
     TimeSpan? SnapshotInterval = null,
     bool WeavePropertyAccessors = false,
     bool WeaveAsyncBodies = true,
-    long? MaxTraceBytes = SessionSpec.DefaultMaxTraceBytes)
+    long? MaxTraceBytes = SessionSpec.DefaultMaxTraceBytes,
+    /// <summary>
+    /// Build output holding the app's portable .pdb files. When given, the analysis records
+    /// where each method lives, which is what lets a frontend show the source next to the
+    /// figures. The profiler is used by whoever built the app, so asking is legitimate.
+    /// </summary>
+    string? SymbolsDir = null)
 {
     /// <summary>
     /// Default ceiling for a .nettrace: a session left running fills the disk otherwise
@@ -512,7 +518,11 @@ public sealed class ProfilerSession : IAsyncDisposable
                     ? await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false)
                     : await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
                 store.WriteInstrumenting(r);
-                Log($"instrumenting analyzed ({Spec.Engine}): enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}");
+                Log($"instrumenting analyzed ({Spec.Engine}): enter={r.EnterEvents} leave={r.LeaveEvents} allocs={r.AllocationEvents} methods={r.Methods.Count}" +
+                    (r.BrokenPairs > 0 ? $" brokenPairs={r.BrokenPairs}" : ""));
+                if (r.BrokenPairs > 0)
+                    _warnings.Add($"{r.BrokenPairs} enter/leave pairs were dropped because their records were cut " +
+                                  "(results cleared while the app was running, or a truncated read). The remaining timings are consistent.");
                 if (r.EnterEvents == 0) _warnings.Add("No enter/leave events were recorded: check the callspec/assemblies and that the app actually ran the woven methods.");
                 break;
             }
@@ -529,9 +539,47 @@ public sealed class ProfilerSession : IAsyncDisposable
         store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Ready", Spec.Package, Spec.DeviceSerial, _started,
             _started is not null && _ended is not null ? (_ended.Value - _started.Value).TotalMilliseconds : null,
             _traceFile is null ? null : Path.GetFileName(_traceFile), total, withStack, JsonSerializer.Serialize(Spec, JsonOpts), null));
+        WriteMethodSources(store);
         store.AddSegment(DateTimeOffset.UtcNow, "final", total ?? 0);
         store.Dispose();
         _store = ResultStore.Open(DatabasePath);
+    }
+
+    /// <summary>
+    /// Record where each method lives, from the portable pdbs of the build output. Failing
+    /// to read the symbols is a warning, never a failed session: the profile is still valid,
+    /// it just cannot be shown next to the source.
+    /// </summary>
+    private void WriteMethodSources(ResultStore store)
+    {
+        if (string.IsNullOrWhiteSpace(Spec.SymbolsDir)) return;
+        try
+        {
+            if (!System.IO.Directory.Exists(Spec.SymbolsDir))
+            {
+                _warnings.Add($"Symbols directory not found: {Spec.SymbolsDir}");
+                return;
+            }
+            using var pdbs = Symbols.PortablePdbSymbols.LoadDirectory(Spec.SymbolsDir);
+            if (pdbs.Modules.Count == 0)
+            {
+                _warnings.Add($"No portable pdb files in {Spec.SymbolsDir} (DebugType must be portable).");
+                return;
+            }
+            var found = new List<(int, string, int, int)>();
+            foreach (var m in store.Methods())
+            {
+                if (m.Token == 0 || string.IsNullOrEmpty(m.Module)) continue;
+                var range = pdbs.Find(m.Module, m.Token);
+                if (range is not null) found.Add((m.Id, range.Document, range.StartLine, range.EndLine));
+            }
+            store.WriteMethodSources(found);
+            Log($"source locations resolved for {found.Count} methods");
+        }
+        catch (Exception e)
+        {
+            _warnings.Add($"Could not read the symbols in {Spec.SymbolsDir}: {e.Message}");
+        }
     }
 
     /// <summary>The writable store of this session, created on first use (a snapshot or the analysis).</summary>
@@ -557,7 +605,19 @@ public sealed class ProfilerSession : IAsyncDisposable
         RequireLiveWeaverSession("snapshot");
         _weaveEventsDir ??= Path.Combine(Directory, "events");
         int files = await _weaveDeployer!.PullEventsAsync(_weaveDeployer.RemoteEventsDir, _weaveEventsDir, ct).ConfigureAwait(false);
-        var result = await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+        InstrumentingResult result;
+        try
+        {
+            result = await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+        }
+        catch (FileNotFoundException)
+        {
+            // Right after a clear there is nothing yet: an empty snapshot is the truth, not
+            // a failure. The results stay empty until the app produces events again.
+            Log("snapshot: no events collected yet");
+            _writeStore ??= File.Exists(DatabasePath) ? ResultStore.Open(DatabasePath, readOnly: false) : ResultStore.Create(DatabasePath, ToolVersion);
+            return _writeStore.AddSegment(DateTimeOffset.UtcNow, "snapshot", 0, "no events yet");
+        }
 
         _writeStore ??= File.Exists(DatabasePath) ? ResultStore.Open(DatabasePath, readOnly: false) : ResultStore.Create(DatabasePath, ToolVersion);
         _writeStore.WriteInstrumenting(result);

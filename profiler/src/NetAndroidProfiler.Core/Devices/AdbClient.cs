@@ -31,9 +31,12 @@ public sealed class AdbClient
             if (parts.Length < 2) continue;
             string serial = parts[0], state = parts[1];
             if (state != "device") { list.Add(new DeviceInfo(serial, state, serial.StartsWith("emulator-"), null, null, 0, "")); continue; }
-            string model = await GetPropAsync(serial, "ro.product.model", ct).ConfigureAwait(false);
-            string sdk = await GetPropAsync(serial, "ro.build.version.sdk", ct).ConfigureAwait(false);
-            string abi = await GetPropAsync(serial, "ro.product.cpu.abi", ct).ConfigureAwait(false);
+            // One sick device must not hide the others: a phone that just went to sleep or
+            // an emulator being shut down answers "error: closed" to getprop, and listing
+            // the devices is the very first thing every frontend does.
+            string model = await TryGetPropAsync(serial, "ro.product.model", ct).ConfigureAwait(false);
+            string sdk = await TryGetPropAsync(serial, "ro.build.version.sdk", ct).ConfigureAwait(false);
+            string abi = await TryGetPropAsync(serial, "ro.product.cpu.abi", ct).ConfigureAwait(false);
             string? avd = null;
             if (serial.StartsWith("emulator-"))
             {
@@ -76,6 +79,20 @@ public sealed class AdbClient
     }
 
     public Task<string> GetPropAsync(string serial, string name, CancellationToken ct) => ShellAsync(serial, $"getprop {name}", ct);
+
+    /// <summary>getprop that answers an empty string instead of throwing when the device is unusable.</summary>
+    private async Task<string> TryGetPropAsync(string serial, string name, CancellationToken ct)
+    {
+        try
+        {
+            var r = await RunAsync(serial, ["shell", $"getprop {name}"], ct, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+            return r.Success ? r.StdOut.Trim() : "";
+        }
+        catch (Exception e) when (e is ToolException or TimeoutException)
+        {
+            return "";
+        }
+    }
 
     /// <summary>setprop; an empty value clears the property.</summary>
     public Task SetPropAsync(string serial, string name, string value, CancellationToken ct) =>

@@ -4,10 +4,14 @@ namespace NetAndroidProfiler.Core.Store;
 /// SQLite schema of a session database. This is the contract read by the
 /// Delphi GUI; every change bumps <see cref="Version"/> and is documented in
 /// ARCHITECTURE.md in the same change set.
+///
+/// Columns that can exceed 2^31 are declared BIGINT rather than INTEGER. SQLite treats
+/// both as the same affinity, but clients read the declared type: FireDAC maps INTEGER to
+/// a 32-bit field, which silently wrapped nanosecond totals in the GUI.
 /// </summary>
 public static class ResultSchema
 {
-    public const int Version = 2;
+    public const int Version = 4;
 
     public const string CreateScript = """
         PRAGMA journal_mode = WAL;
@@ -42,7 +46,7 @@ public static class ResultSchema
             id        INTEGER PRIMARY KEY,
             taken_utc TEXT    NOT NULL,
             kind      TEXT    NOT NULL,          -- snapshot | final | clear
-            events    INTEGER NOT NULL DEFAULT 0,
+            events    BIGINT  NOT NULL DEFAULT 0,
             note      TEXT
         );
 
@@ -57,7 +61,13 @@ public static class ResultSchema
             full_name         TEXT NOT NULL,
             runtime_method_id INTEGER NOT NULL,
             is_wait_frame     INTEGER NOT NULL DEFAULT 0,
-            token             INTEGER NOT NULL DEFAULT 0   -- metadata token (0x06xxxxxx) for pdb lookup
+            token             INTEGER NOT NULL DEFAULT 0,  -- metadata token (0x06xxxxxx) for pdb lookup
+            -- Where the method lives, resolved from the portable pdbs when the session was
+            -- told where the build output is. MonoVM gives no per-line samples, so the
+            -- mapping is per method: the figures belong on its first line, over its range.
+            source_file       TEXT,
+            source_start_line INTEGER,
+            source_end_line   INTEGER
         );
         CREATE INDEX ix_method_module_token ON method(module, token);
         CREATE INDEX ix_method_full_name ON method(full_name);
@@ -115,11 +125,11 @@ public static class ResultSchema
         -- Units: nanoseconds and call counts.
         CREATE TABLE timing_stat (
             method_id        INTEGER PRIMARY KEY REFERENCES method(id),
-            calls            INTEGER NOT NULL,
-            total_ns         INTEGER NOT NULL,
-            self_ns          INTEGER NOT NULL,
-            min_ns           INTEGER NOT NULL,
-            max_ns           INTEGER NOT NULL,
+            calls            BIGINT  NOT NULL,
+            total_ns         BIGINT  NOT NULL,
+            self_ns          BIGINT  NOT NULL,
+            min_ns           BIGINT  NOT NULL,
+            max_ns           BIGINT  NOT NULL,
             exception_leaves INTEGER NOT NULL
         );
 
@@ -129,9 +139,9 @@ public static class ResultSchema
             method_id INTEGER NOT NULL,
             thread_id INTEGER NOT NULL,
             depth     INTEGER NOT NULL,
-            calls     INTEGER NOT NULL,
-            total_ns  INTEGER NOT NULL,
-            self_ns   INTEGER NOT NULL
+            calls     BIGINT  NOT NULL,
+            total_ns  BIGINT  NOT NULL,
+            self_ns   BIGINT  NOT NULL
         );
         CREATE INDEX ix_timing_tree_parent ON timing_tree(parent_id);
         CREATE INDEX ix_timing_tree_method ON timing_tree(method_id);
@@ -139,16 +149,16 @@ public static class ResultSchema
         -- Allocations (exact, from the runtime provider) -------------------------
         CREATE TABLE alloc_by_type (
             type_id INTEGER PRIMARY KEY REFERENCES type(id),
-            count   INTEGER NOT NULL,
-            bytes   INTEGER NOT NULL
+            count   BIGINT  NOT NULL,
+            bytes   BIGINT  NOT NULL
         );
 
         -- method_id = -1 when no instrumented frame was open on the allocating thread.
         CREATE TABLE alloc_by_site (
             type_id   INTEGER NOT NULL,
             method_id INTEGER NOT NULL,
-            count     INTEGER NOT NULL,
-            bytes     INTEGER NOT NULL,
+            count     BIGINT  NOT NULL,
+            bytes     BIGINT  NOT NULL,
             PRIMARY KEY (type_id, method_id)
         );
 
@@ -156,8 +166,8 @@ public static class ResultSchema
         CREATE TABLE heap_snapshot (
             id            INTEGER PRIMARY KEY,
             taken_utc     TEXT NOT NULL,
-            total_objects INTEGER NOT NULL,
-            total_bytes   INTEGER NOT NULL,
+            total_objects BIGINT  NOT NULL,
+            total_bytes   BIGINT  NOT NULL,
             file          TEXT
         );
 

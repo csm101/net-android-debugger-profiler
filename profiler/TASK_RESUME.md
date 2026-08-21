@@ -1,31 +1,33 @@
 # Task resume
 
 ## Current task
-Delivering the rest of the product on my own judgement (user: "non ti alzi da
-tavola finche non hai finito"). Order: live control -> Delphi GUI -> packaging.
+P4, the Delphi GUI, is under way and already runs. gui/ builds headless with
+build-gui.cmd (DevExpress + SynEdit paths taken from the installed IDE) and has:
+the read layer over session.db, the Report grid with captioned columns and
+formatted times, Details (parents/children), a lazy Call Tree with the critical
+path in bold, the control-service client (starts nap.exe serve, owns it), a Setup
+dialog with the prerequisite check, and the live toolbar
+(New session / Snapshot / Pause / Stop) with a log pane.
 
-Done: live control (U7) works on the weaver engine and is verified on the device.
-Snapshot pulls the collector's files and rewrites the results while the app keeps
-running; pause/resume toggle a control file the collector polls once a second;
-clear wipes the device files and the tables. Schema v2 adds `segment` (the
-history of refreshes) - results stay cumulative, so no segment id on fact tables
-and the GUI contract is unchanged. Exposed over HTTP (nap serve) and as MCP tools.
-
-Two defects found and fixed on the way:
-- A weaver session with no duration stopped after 20 s instead of waiting for
-  Stop(), which made open-ended GUI sessions impossible.
-- Pulling event files assumed they were not growing; a snapshot pulls files the
-  app is still appending to, so a short read is a truncation (retry) but a longer
-  one is just growth (keep).
+Verified by screenshotting the running window, which is how two real defects were
+found:
+- The grid showed negative times. SQLite has no column widths, so FireDAC believed
+  the declared INTEGER and truncated nanosecond totals to 32 bits. Fixed in the
+  schema (v3 declares the wide columns BIGINT) and defensively in the GUI with a
+  FireDAC map rule.
+- A cleared session lost everything afterwards: the collector kept writing to files
+  that had been deleted under it. The control file now carries a generation, and
+  the deployer deletes before bumping it (the other order deletes the fresh files).
+The analyzer now also drops enter/leave pairs whose leave predates the enter and
+reports them as a session warning, instead of letting a negative duration through.
 
 ## Next
-Delphi GUI (P4) per docs/GUI_DESIGN.md, starting with the shell + Setup + Report
-over session.db, then Call Tree with the critical path, Details, Editor (SynEdit),
-Summary, Monitor, memory. Then P5 packaging (bundle dotnet-dsrouter, register
-script, versioning, SynEdit in THIRD-PARTY-NOTICES).
+Editor panel with SynEdit, Summary, Monitor, memory views, then P5 packaging
+(bundle dotnet-dsrouter, register script, versioning, SynEdit in the notices).
 
 ## Substep
-Full suite green: 74 tests, 71 passed, 3 skipped.
+Waiting on the full .NET suite after the schema change; the Delphi side builds and
+its store tests pass against real sessions.
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

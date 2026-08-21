@@ -1,0 +1,10 @@
+dcu/
+NapGui.cfg
+NapGui.exe
+NapGui.map
+*.dcu
+*.~*
+StoreTests.cfg
+StoreTests.exe
+*.error.log
+*.map

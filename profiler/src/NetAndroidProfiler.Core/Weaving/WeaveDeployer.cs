@@ -186,11 +186,31 @@ public sealed class WeaveDeployer
     /// woven methods stay woven (the overhead of the instrumentation remains).
     /// </summary>
     public Task SetCollectingAsync(bool collecting, CancellationToken ct) =>
-        _adb.RunAsAsync(_serial, _package, $"echo {(collecting ? "run" : "pause")} > {ControlPath}", ct);
+        WriteControlAsync(collecting ? "run" : "pause", ct);
 
-    /// <summary>Throw away the events collected so far on the device (clear results).</summary>
-    public Task ClearEventsAsync(CancellationToken ct) =>
-        _adb.RunAsAsync(_serial, _package, $"rm -f {RemoteEventsDir}/*.napw", ct);
+    /// <summary>
+    /// Throw away the events collected so far (clear results). The generation is bumped
+    /// first: a collector that kept writing to its old handles would be filling files that
+    /// no longer have a name, so every thread has to start a new one.
+    /// </summary>
+    public async Task ClearEventsAsync(CancellationToken ct)
+    {
+        // Delete first, bump second. The other order deletes the fresh files the collector
+        // has just started; this way the only loss is the second or so of events that the
+        // old handles still write into files that no longer have a name.
+        await _adb.RunAsAsync(_serial, _package, $"rm -f {RemoteEventsDir}/*.napw", ct).ConfigureAwait(false);
+        _generation++;
+        await WriteControlAsync(_collecting ? "run" : "pause", ct).ConfigureAwait(false);
+    }
+
+    private int _generation;
+    private bool _collecting = true;
+
+    private Task WriteControlAsync(string state, CancellationToken ct)
+    {
+        _collecting = state == "run";
+        return _adb.RunAsAsync(_serial, _package, $"echo '{state} gen={_generation}' > {ControlPath}", ct);
+    }
 
     /// <summary>Remove a stale marker from a previous session.</summary>
     public Task ClearCollectorMarkerAsync(CancellationToken ct) =>

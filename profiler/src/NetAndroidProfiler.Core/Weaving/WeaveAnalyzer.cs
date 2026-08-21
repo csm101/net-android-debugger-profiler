@@ -62,7 +62,7 @@ public sealed class WeaveAnalyzer
         var timings = new Dictionary<int, Acc>();
         var tree = new TreeBuilder();
         var threads = new List<ThreadRecord>();
-        long enters = 0, leaves = 0;
+        long enters = 0, leaves = 0, brokenPairs = 0;
         DateTimeOffset start = DateTimeOffset.MinValue;
         double maxMs = 0;
 
@@ -130,6 +130,16 @@ public sealed class WeaveAnalyzer
                         {
                             var f = stack.Pop();
                             long durTicks = ticks - f.ticks;
+                            // A leave that predates its enter means the record stream was cut
+                            // (files cleared under a running collector, or a truncated pull).
+                            // Dropping the pair is the only honest answer: a negative duration
+                            // would poison the totals for the whole method.
+                            if (durTicks < 0)
+                            {
+                                brokenPairs++;
+                                if (f.idx == idx) break;
+                                continue;
+                            }
                             long selfTicks = Math.Max(0, durTicks - f.childTicks);
                             long durNs = (long)(durTicks * ticksToMs * 1_000_000.0); // ms -> ns
                             long selfNs = (long)(selfTicks * ticksToMs * 1_000_000.0);
@@ -166,7 +176,7 @@ public sealed class WeaveAnalyzer
             types,
             allocByType.Select(a => new AllocByType(a.Key, a.Value, 0)).ToList(),
             allocBySite.Select(a => new AllocBySite(a.Key.type, a.Key.method, a.Value, 0)).ToList(),
-            enters, leaves, allocEvents, 0);
+            enters, leaves, allocEvents, 0, brokenPairs);
     }
 
     private static int ReadI32(byte[] b, int o) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);

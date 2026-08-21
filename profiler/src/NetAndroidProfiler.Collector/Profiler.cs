@@ -53,6 +53,14 @@ public static class Profiler
     private static volatile bool s_paused;
     private static string? s_controlPath;
 
+    /// <summary>
+    /// Bumped when the profiler clears the results: the event files are deleted on the
+    /// device, and a writer that kept appending to its old handle would be writing into a
+    /// file nobody can see any more (a deleted file stays alive for whoever holds it open).
+    /// Every thread notices the change on its next event and starts a fresh file.
+    /// </summary>
+    private static volatile int s_generation;
+
     /// <summary>False while collection is paused; woven methods then return immediately.</summary>
     public static bool Collecting => Enabled && !s_paused;
 
@@ -191,7 +199,9 @@ public static class Profiler
     {
         try
         {
-            var w = t_writer ??= NewWriter();
+            var w = t_writer;
+            if (w is null || w.Generation != s_generation)
+                w = t_writer = NewWriter();
             w?.Write(kind, methodId, Stopwatch.GetTimestamp());
         }
         catch
@@ -202,7 +212,7 @@ public static class Profiler
 
     private static ThreadWriter? NewWriter()
     {
-        var w = ThreadWriter.Open(OutDir!, ProcessToken, Thread.CurrentThread.ManagedThreadId);
+        var w = ThreadWriter.Open(OutDir!, ProcessToken, Thread.CurrentThread.ManagedThreadId, s_generation);
         if (w is null) return ThreadWriter.Broken;
         lock (Writers) Writers.Add(w);
         return w;
@@ -218,8 +228,18 @@ public static class Profiler
         try
         {
             if (!File.Exists(s_controlPath)) { s_paused = false; return; }
-            s_paused = File.ReadAllText(s_controlPath).Trim()
-                .StartsWith("pause", StringComparison.OrdinalIgnoreCase);
+            string text = File.ReadAllText(s_controlPath).Trim();
+            s_paused = text.StartsWith("pause", StringComparison.OrdinalIgnoreCase);
+            int at = text.IndexOf("gen=", StringComparison.OrdinalIgnoreCase);
+            if (at >= 0 && int.TryParse(text.Substring(at + 4).Split(' ')[0], out int generation) && generation != s_generation)
+            {
+                s_generation = generation;
+                lock (Writers)
+                {
+                    foreach (var w in Writers) w.Close();
+                    Writers.Clear();
+                }
+            }
         }
         catch { /* keep the previous state */ }
     }
@@ -238,17 +258,23 @@ public static class Profiler
         /// <summary>Sentinel for a thread whose writer failed: all further writes are dropped.</summary>
         public static readonly ThreadWriter Broken = new ThreadWriter(null);
 
+        /// <summary>Which generation of event files this writer belongs to.</summary>
+        public int Generation;
+
         private readonly FileStream? _stream;
         private readonly byte[] _buffer = new byte[13];
         private readonly object _lock = new object();
 
         private ThreadWriter(FileStream? stream) { _stream = stream; }
 
-        public static ThreadWriter? Open(string dir, string token, int threadId)
+        public static ThreadWriter? Open(string dir, string token, int threadId, int generation)
         {
             try
             {
-                var fs = new FileStream(Path.Combine(dir, $"{token}-t{threadId}.napw"), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 16);
+                // The generation is part of the name so a pull in flight never sees a file
+                // truncated under it: a cleared session simply starts writing new names.
+                string name = generation == 0 ? $"{token}-t{threadId}.napw" : $"{token}-t{threadId}-g{generation}.napw";
+                var fs = new FileStream(Path.Combine(dir, name), FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 16);
                 var header = new byte[4 + 1 + 8 + 4 + 4];
                 header[0] = (byte)'N'; header[1] = (byte)'A'; header[2] = (byte)'P'; header[3] = (byte)'W';
                 header[4] = FormatVersion;
@@ -256,7 +282,7 @@ public static class Profiler
                 WriteInt32(header, 13, 0);
                 WriteInt32(header, 17, threadId);
                 fs.Write(header, 0, header.Length);
-                return new ThreadWriter(fs);
+                return new ThreadWriter(fs) { Generation = generation };
             }
             catch
             {
@@ -280,6 +306,13 @@ public static class Profiler
         {
             if (_stream is null) return;
             try { lock (_lock) _stream.Flush(); } catch { }
+        }
+
+        /// <summary>Flush and release the file: the next event of this thread opens a new one.</summary>
+        public void Close()
+        {
+            if (_stream is null) return;
+            try { lock (_lock) { _stream.Flush(); _stream.Dispose(); } } catch { }
         }
 
         private static void WriteInt32(byte[] b, int o, int v)
