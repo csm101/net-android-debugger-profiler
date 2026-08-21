@@ -31,9 +31,45 @@ and stopping cleanly keeps the names (verified:
 TestTarget.Workloads methods). Live streaming stays reserved for heap snapshots,
 which need no rundown.
 
-## U7 - GUI/Core control contract
-Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
-process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
+## U7 - GUI/Core control contract (decided, not implemented)
+The Delphi GUI is a frontend beside the MCP server, not a viewer of its output:
+both sit on the same Core. The MCP server calls Core in-process (a library
+reference, no IPC); a VCL application cannot, so Core gets a second entry point.
+
+Decided:
+- One executable, `nap.exe`, with two modes over the same Core: one-shot
+  (`nap run ... --json`, for scripts and CI) and `nap serve --port 0` - HTTP +
+  JSON on loopback. HTTP over a named pipe because it is equally easy in Delphi,
+  can be exercised with curl, and leaves the door open to driving a device
+  attached to another machine (U10).
+- The GUI owns the process: it spawns `nap serve` and shuts it down with itself,
+  or attaches to one already listening.
+- **Results do not travel over that channel.** The GUI opens `session.db`
+  directly (FireDAC), which is what makes it useful on sessions produced by
+  anyone, the MCP server included. The schema stays the contract.
+- Progress is polled (`GET /sessions/{id}`, ~500 ms). A session changes state a
+  handful of times; streaming would be complexity for nothing.
+
+Control operations the contract must carry, so P4 does not have to graft them on
+later (AQTime-style live control):
+| operation | weaver engine | provider engine |
+|---|---|---|
+| start / stop | as today | as today |
+| **pause / resume** | real: the collector already has an `Enabled` flag, the channel only has to toggle it - events stop, the app keeps running | no such thing in EventPipe: close the current segment and open another |
+| **snapshot** (partial results while running) | natural: pull the current `.napw` files and analyze them against the weave map, which already holds the names | only per segment: method names arrive in the rundown at session stop (same reason rotation was rejected in U5) |
+| **clear** | delete the `.napw` files on the device and reset | discard the segments collected so far |
+
+Consequence for the model: **a session is a sequence of segments**, and the
+result store must aggregate them. Note that clearing does not remove
+instrumentation - woven IL stays woven and JIT-time instrumentation persists for
+the life of the process - so the overhead stays while collection is paused. AQTime
+has the same property on Win32.
+
+The GUI side of this contract is designed in docs/GUI_DESIGN.md.
+Open: the wire shapes themselves (`POST /sessions`, `POST /sessions/{id}/pause`,
+`.../resume`, `.../snapshot`, `.../clear`, `.../stop`, `GET /devices`), and
+whether segments become rows in the existing tables with a segment id or separate
+databases merged on read.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

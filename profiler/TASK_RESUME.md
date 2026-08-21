@@ -1,27 +1,26 @@
 # Task resume
 
 ## Current task
-U13 and U5, both done.
+P4 groundwork: U7 decided and written (pause / resume / snapshot / clear on top
+of start/stop, `nap serve` on loopback, results read straight from session.db),
+and docs/GUI_DESIGN.md written against the official AQTime documentation.
 
-U13 (allocation type names for pre-session vtables): no path exists with this
-runtime, and the attempts are now recorded so nobody repeats them - the mono
-heap-dump keywords emit nothing even while a real dump walks 104,425 objects,
-and the CLR BulkType events Mono does emit use ids matching neither VTableID
-(0/226) nor ClassID (0/3066). Measured gap: 19 of 226 allocation vtables unnamed,
-~9% of allocation events. Those rows now say what they are
-(MonoProfilerAnalyzer.UnresolvedTypePrefix) and keep exact counts; the TODO-RED
-test became a real test of that contract. The weaver engine is unaffected.
+What the AQTime reading established: its Report panel is one row per routine with
+Sample Count / Time / % Samples for sampling and Hit Count / Time / Time with
+Children / % for performance; the Details panel has a Calls page (Parents and
+Children) and a Lines page; Call Tree, Call Graph, Editor, Summary and Monitor
+are separate docked panels; and its live controls are exactly Get Results,
+Clear Results and Enable/Disable Profiling - which is where pause/resume/snapshot/
+clear come from. DevExpress sources and agent-oriented docs are at
+C:\Athens\DevExpress (DOCS/ per library, Demos/VCL first).
 
-U5 (trace size): collection now stops at SessionSpec.MaxTraceBytes (default
-512 MB, MCP maxTraceMb, 0 = unlimited), warns on the session, and keeps a valid
-analyzable trace - stopping cleanly still produces the rundown, so names resolve.
-Rotation was rejected on purpose: the rundown arrives at session stop, so trace
-parts cannot be symbolicated on their own. Growth measured at ~30 KB/s
-(TestTarget sampling), ~1.5 MB/s (the reference application sampling), ~0.72 MB/s (instrumenting
-N:TestTarget.Workloads).
+Two honest constraints the GUI must show rather than hide: pause is real only on
+the weaver engine (the provider engine closes and reopens a segment), and clearing
+results does not remove instrumentation, so the overhead stays.
 
 ## Substep
-Full suite green (61 tests, 58 passed, 3 skipped). Commit and push.
+Design committed. No GUI code yet: P4 starts with the shell (docking + ribbon),
+the Setup screen and the Report grid over sample_stat/timing_stat.
 
 ## Files in focus
 src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,

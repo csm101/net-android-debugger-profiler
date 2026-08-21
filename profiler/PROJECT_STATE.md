@@ -123,7 +123,11 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   verified on the reference application (net9) and TestTarget (net10).
 - P4 - Delphi GUI (gui/): DevExpress VCL, call tree (cxTreeList), hot lists
   (cxGrid), allocations (PivotGrid), timeline (chart); reads SQLite, drives
-  Core via local control service.
+  Core via the local control service. Designed in docs/GUI_DESIGN.md against the
+  official AQTime documentation (Report / Details / Call Tree / Call Graph /
+  Editor / Summary / Monitor panels, and its Get Results / Clear Results /
+  Enable-Disable Profiling actions, which became the pause/resume/snapshot/clear
+  contract of U7).
 - P5 - Packaging/registration (register-mcp pattern from the debugger
   project).
 
