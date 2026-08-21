@@ -285,6 +285,32 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
         Assert.True(stepped.Location?.Line > afterAwait, $"stepped to line {stepped.Location?.Line}");
     }
 
+
+    /// <summary>
+    /// A pending breakpoint has two possible causes — the path does not match what the app was
+    /// built from, or the type is not loaded yet — and they need different fixes. This is how the
+    /// user tells them apart: the runtime reports the path it actually has.
+    /// </summary>
+    [Fact]
+    public async Task GetSourceFiles_ReportsThePathTheRuntimeWasBuiltWith()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        await using var session = await LaunchAsync(cts.Token, s => s.SetBreakpoint(new BreakpointSpec(Main, TickLine)));
+        Assert.NotNull(await session.WaitForStopAsync(0, StopTimeout, cts.Token));
+
+        // By file name alone, and by full path: both resolve to the path compiled into the PDB.
+        foreach (var query in new[] { Path.GetFileName(Main), Main })
+        {
+            var files = session.GetSourceFiles(query);
+            Assert.NotEmpty(files);
+            Assert.Contains(files, f => string.Equals(f.Path, Main, StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(files, f => f.Types.Any(t => t.Contains("MainActivity", StringComparison.Ordinal)));
+        }
+
+        // A file the app was not built from is reported as unknown rather than guessed at.
+        Assert.Empty(session.GetSourceFiles("NoSuchFileAnywhere.cs"));
+        Assert.Throws<ArgumentException>(() => session.GetSourceFiles("  "));
+    }
     // ------------------------------------------------------------------ exceptions
 
     [Fact]

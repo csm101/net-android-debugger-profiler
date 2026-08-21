@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 55 tests in four files, ~7-10 min on the headless emulator after deploy. Each
+- 56 tests in four files, ~7-10 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -96,7 +96,9 @@ Conventions (mirroring the Delphi project's discipline):
       `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` (waits for the
       engine to announce the refusal — a big foreign app on a cold emulator can
       take a minute to reach agent init; skips when no
-      second .NET app is installed; uses App.Droid when it is)
+      second .NET app is installed; abstains, with a note in the test output,
+      when that app never reaches its Mono agent init — then the guard had
+      nothing to refuse and the run proves nothing)
 
 ## B. Breakpoints
 - [x] Source-line breakpoint hit with locals — `Breakpoint_InMainProcess_IsHit_WithLocals`
@@ -213,6 +215,13 @@ Conventions (mirroring the Delphi project's discipline):
       `AppOutput_TimestampsAreOnTheDeviceClock_WhateverTheChannel`
 - [ ] Attach over `adb connect` (WiFi device) — deferred (U9)
 
+
+## J. Source discovery
+- [x] The runtime's own path for a source file is reported, by file name and by
+      full path, with the types compiled from it; an unknown file comes back
+      empty rather than guessed, and a blank query is rejected. This is how a
+      pending breakpoint is diagnosed (wrong path vs type not loaded yet) —
+      `GetSourceFiles_ReportsThePathTheRuntimeWasBuiltWith`
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →

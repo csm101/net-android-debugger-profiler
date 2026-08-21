@@ -107,6 +107,14 @@ public sealed record VariableSnapshot(
 public sealed record AssemblyInfo(int Pid, string Name, string? Path);
 
 /// <summary>
+/// A source file the debuggee's runtime knows about, with the exact path compiled into the PDB.
+/// </summary>
+/// <param name="Pid">Process whose runtime reported it.</param>
+/// <param name="Path">Path as the runtime has it — this is what a breakpoint must match.</param>
+/// <param name="Types">Types compiled from that file (truncated for very large files).</param>
+public sealed record SourceFileInfo(int Pid, string Path, IReadOnlyList<string> Types);
+
+/// <summary>
 /// One line of debuggee output: a logcat line of one of the app's processes, or text the
 /// debuggee wrote to stdout/stderr (delivered through the debugger, tagged <c>stdout</c>/<c>stderr</c>).
 /// </summary>

@@ -100,6 +100,9 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
 - Inspection calls (`GetLocals`, `GetCallStack`, `Evaluate`) run on the caller's
   thread and call Mono.Debugging directly; they require the target process to
   be stopped (`InvalidSessionStateException` otherwise).
+- `GetSourceFiles` is a metadata query (`VirtualMachine.GetTypesForSourceFile`
+  plus `TypeMirror.GetSourceFiles`), so unlike the inspection calls it works
+  while the process is running and needs no stop.
 - Frontends never see Mono.Debugging types; expansion handles are opaque
   strings (`pid:n`) invalidated when that process resumes.
 - Breakpoint binding is asynchronous, so `SetBreakpointAsync` /

@@ -750,6 +750,60 @@ public sealed class DebugSession : IAsyncDisposable
         }));
     }
 
+
+    /// <summary>
+    /// Source files the debuggee's runtime knows under <paramref name="fileName"/>, with the exact
+    /// paths compiled into the PDB. Answers the question a pending breakpoint raises — "is my path
+    /// the path the app was built with?" — without guessing. Matching is by file name, so both
+    /// <c>MainActivity.cs</c> and a full path work as input. Does not require a stopped process.
+    /// </summary>
+    /// <param name="fileName">File name or path; only the file name part is matched.</param>
+    /// <param name="pid">Restrict to one process; all attached processes otherwise.</param>
+    /// <param name="maxTypesPerFile">Cap on the type names reported per file.</param>
+    public IReadOnlyList<SourceFileInfo> GetSourceFiles(string fileName, int? pid = null, int maxTypesPerFile = 20)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            throw new ArgumentException("a file name is required", nameof(fileName));
+
+        var name = System.IO.Path.GetFileName(fileName);
+        var result = new List<SourceFileInfo>();
+        foreach (var pd in Processes().Where(p => pid is null || p.Pid == pid))
+        {
+            if (!pd.IsConnected) continue;
+            var vm = pd.Session.VirtualMachine;
+            if (vm is null) continue;
+
+            // path (as the runtime has it) -> types compiled from it
+            var byPath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var type in vm.GetTypesForSourceFile(name, ignoreCase: true))
+                {
+                    string[] paths;
+                    try { paths = type.GetSourceFiles(returnFullPaths: true); }
+                    catch (Exception ex) { _log($"source files of {type.FullName}: {ex.Message}"); continue; }
+
+                    foreach (var p in paths)
+                    {
+                        if (!string.Equals(System.IO.Path.GetFileName(p), name, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (!byPath.TryGetValue(p, out var types)) byPath[p] = types = new List<string>();
+                        if (types.Count < maxTypesPerFile) types.Add(type.FullName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // A process that is mid-handshake or gone answers nothing; the others still can.
+                _log($"pid {pd.Pid}: could not look up source file '{name}': {ex.Message}");
+                continue;
+            }
+
+            foreach (var (path, types) in byPath.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+                result.Add(new SourceFileInfo(pd.Pid, path, types));
+        }
+        return result;
+    }
     public IReadOnlyList<AssemblyInfo> GetLoadedAssemblies(int? pid = null)
     {
         var result = new List<AssemblyInfo>();

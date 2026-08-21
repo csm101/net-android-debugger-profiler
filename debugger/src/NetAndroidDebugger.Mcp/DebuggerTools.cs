@@ -272,6 +272,21 @@ public sealed class DebuggerTools(SessionHost host)
         return list.Count == 0 ? "No assemblies reported." : string.Join('\n', list.Select(a => $"pid {a.Pid}  {a.Name}  {a.Path ?? ""}"));
     }
 
+
+    [McpServerTool(Name = "get_source_files", ReadOnly = true), Description(
+        "Paths the debuggee's runtime has for a source file, exactly as compiled into the PDB. " +
+        "Use it when a breakpoint stays pending: set_breakpoint matches the path you give against these, " +
+        "so comparing them says whether the path is wrong or the type has simply not been loaded yet. " +
+        "Pass a file name or a full path; only the file name is matched. Works while the app is running.")]
+    public string GetSourceFiles(
+        [Description("Source file name or path, e.g. MainActivity.cs")] string file,
+        [Description("Restrict to one process")] int? pid = null)
+    {
+        var list = host.Require().GetSourceFiles(file, pid);
+        if (list.Count == 0)
+            return $"No process reports a source file named '{Path.GetFileName(file)}'. Either no type from it is loaded yet, or the app was built from different sources.";
+        return string.Join('\n', list.Select(f => $"pid {f.Pid}  {f.Path}  [{string.Join(", ", f.Types)}]"));
+    }
     [McpServerTool(Name = "get_app_output", ReadOnly = true), Description(
         "Recent output of the app's processes: logcat lines plus anything the debuggee wrote to stdout/stderr " +
         "(tags 'stdout'/'stderr'). Rendered as 'HH:mm:ss.fff LEVEL/Tag(pid): message', oldest first. " +

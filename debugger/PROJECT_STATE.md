@@ -58,7 +58,7 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 55 integration tests; TEST_CATALOG has 2 open gaps left, both waiting
+  mode). 56 integration tests; TEST_CATALOG has 2 open gaps left, both waiting
   on a WiFi device (U9).
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints
@@ -83,12 +83,14 @@ target), list_devices + select_device (new), continue_and_wait,
 wait_until_stopped, pause_execution, step_into/over/out, set_breakpoint(s),
 list_breakpoints, remove_all_breakpoints, set_exception_filters,
 get_call_stack, get_threads, get_locals, get_variable, expand_variable,
-evaluate_expression, get_current_source_location, get_source_files,
-get_loaded_assemblies (was get_loaded_modules), get_app_output (logcat;
+evaluate_expression, get_current_source_location,
+get_loaded_assemblies (was get_loaded_modules), get_source_files (resolves a
+file name to the path compiled into the PDB), get_app_output (logcat;
 replaces get_debuggee_output), get_debugger_output, get_exception_details,
 get_debug_session_status, get_compact_debug_snapshot, detach_debugger,
 stop_debugging, terminate_app. Memory read/write and raw stack scan: not
-applicable to SDB - dropped unless a need appears.
+applicable to SDB - dropped unless a need appears. `select_device` was dropped
+too: every tool that needs a device takes the serial explicitly.
 
 ## Stable commands
 

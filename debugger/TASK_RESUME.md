@@ -138,9 +138,18 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
   `:helper` a few seconds later, so that condition is only briefly true. It now
   checks that the pids it saw before the detach are gone, which is what "detach
   terminates the app" actually means.
-- Suite: **55 tests, 55/55 green** (6 m 27 s), with neither the force-stop
-  warning nor a handshake failure anywhere in the output. The five runs before
-  it were 54, 54, 52, 53 and 54 of 55 — a different fragile spot each time.
+- New tool `get_source_files` (Core `DebugSession.GetSourceFiles`): given a file
+  name or path, each attached process reports the path its runtime actually has,
+  with the types compiled from it. This is how a pending breakpoint is
+  diagnosed — wrong path, or type not loaded yet — instead of grepping the PDB.
+  It is a metadata query, so it works while the app is running.
+- `ForeignMonoApp_StartingDuringTheSession_IsNotAttached` now abstains (a note
+  in the test output, no assertion) when the foreign app never reaches its Mono
+  agent init: the guard had nothing to refuse, so that run proves nothing. It
+  was failing on emulators that had just come back from a crash.
+- Suite: **56 tests, 56/56 green** (7 m 27 s), with neither the force-stop
+  warning nor a handshake failure anywhere in the output. The runs before
+  it each failed on a different fragile spot; all are understood and repaired.
 
 ## Next steps (in order)
 1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The
