@@ -8,7 +8,7 @@ threading model, or external contract changes.
 
 ```
 MCP client (Claude Code) ── MCP / JSON-RPC 2.0 over stdio ── NetAndroidDebugger.Mcp ─┐
-VS Code (future)         ── DAP / JSON over stdio ────────── NetAndroidDebugger.Dap ─┤
+VS Code / nvim-dap       ── DAP / JSON over stdio ────────── NetAndroidDebugger.Dap ─┤
                                                                                      ▼
                                              DebugSession  (NetAndroidDebugger.Core)
                                              JSON-free facade: engine + state machine
@@ -53,7 +53,6 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `Core/Engine/ProcessDebugger.cs` (internal) | One `SoftDebuggerSession` per debuggee pid; connect with retries; event → `Stopped/Resumed/Exited` callbacks; step/continue/pause per process |
 | `Core/Engine/DebugSession.cs` | Facade: aggregates N `ProcessDebugger`s, one shared Mono `BreakpointStore`, state machine, monotonic stop generation + `WaitForStopAsync`, inspection (threads, frames, locals, evaluate, expansion handles), app/debugger output buffers |
 | `Mcp/` | `ModelContextProtocol` 2.2.0 stdio server; `DebuggerTools` (one tool = one or two facade calls), `SessionHost` (single active session, pid/thread defaults from the last stop), `TextFormat` (plain-text rendering) |
-
 | `src/NetAndroidDebugger.Dap/DapConnection.cs` | DAP wire format: `Content-Length` framing over stdin/stdout, one writer at a time |
 | `src/NetAndroidDebugger.Dap/DapIds.cs` | DAP's integer thread/frame/variable ids ↔ the engine's (pid, thread, frame) and expansion handles; frame and variable ids are dropped when a process resumes |
 | `src/NetAndroidDebugger.Dap/DapAdapter.cs` | Request dispatch and event forwarding over one `DebugSession`; translation only |
@@ -96,8 +95,13 @@ no debugging logic of its own. Notes that matter to a client:
   their pid.
 - Frame and variable ids are invalidated on every stop; a stale id is refused
   with a message rather than silently addressing something else.
+- Every event goes through one queue with a single sender. They are raised on
+  engine threads — a stop, a resume, a line of app output — and a client reads
+  them as a sequence: a `continued` delivered after the `stopped` that followed
+  it would leave it showing the wrong state.
 - Step requests are acknowledged before the step runs, so the client sees the
   response before the `stopped` event that follows it.
+
 ## Threading model
 
 - Mono.Debugging raises events on its own event thread, one per

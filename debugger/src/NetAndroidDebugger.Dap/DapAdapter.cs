@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using NetAndroidDebugger.Core;
 
 namespace NetAndroidDebugger.Dap;
@@ -16,6 +17,9 @@ public sealed class DapAdapter : IAsyncDisposable
     private readonly DapIds _ids = new();
     private readonly List<string> _log = new();
     private readonly DebugSession _session;
+    private readonly Channel<(string Event, JsonObject? Body)> _events =
+        Channel.CreateUnbounded<(string, JsonObject?)>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Task _pump;
     private int _terminated;
 
     public DapAdapter(DapConnection conn)
@@ -25,6 +29,7 @@ public sealed class DapAdapter : IAsyncDisposable
         _session.Stopped += OnStopped;
         _session.StateChanged += OnStateChanged;
         _session.AppOutput += OnAppOutput;
+        _pump = Task.Run(PumpEventsAsync);
     }
 
     /// <summary>Reads and serves requests until the client disconnects.</summary>
@@ -146,7 +151,7 @@ public sealed class DapAdapter : IAsyncDisposable
         // leave the client believing the app is still running.
         try { await _session.TerminateAsync(CancellationToken.None); }
         catch (Exception ex) { Log("terminating on disconnect: " + ex.Message); }
-        await RaiseTerminatedAsync(CancellationToken.None);
+        RaiseTerminated();
     }
 
     // ------------------------------------------------------------------ breakpoints
@@ -402,7 +407,7 @@ public sealed class DapAdapter : IAsyncDisposable
     private void OnStateChanged(object? sender, SessionState state)
     {
         if (state == SessionState.Running) Fire("continued", new JsonObject { ["allThreadsContinued"] = true });
-        else if (state == SessionState.Exited) _ = RaiseTerminatedAsync(CancellationToken.None);
+        else if (state == SessionState.Exited) RaiseTerminated();
     }
 
     private void OnAppOutput(object? sender, AppLogLine line)
@@ -411,25 +416,36 @@ public sealed class DapAdapter : IAsyncDisposable
             ["category"] = line.Level is 'E' or 'F' ? "stderr" : "stdout",
             ["output"] = line.ToString() + "\n",
         });
-
-    private async Task RaiseTerminatedAsync(CancellationToken ct)
+    /// <summary>
+    /// The session is over. Both events go through the same queue as the others, so a client that
+    /// is still reading sees them after whatever preceded them, not interleaved with it.
+    /// </summary>
+    private void RaiseTerminated()
     {
         if (Interlocked.Exchange(ref _terminated, 1) != 0) return;
-        try
-        {
-            await _conn.SendEventAsync("terminated", null, ct).ConfigureAwait(false);
-            await _conn.SendEventAsync("exited", new JsonObject { ["exitCode"] = 0 }, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) { Log("sending terminated: " + ex.Message); }
+        Fire("terminated", null);
+        Fire("exited", new JsonObject { ["exitCode"] = 0 });
+    }
+    /// <summary>
+    /// Queues an event for the single sender. Events come from engine threads — a stop, a resume,
+    /// a line of app output — and a client reads them as a sequence: "continued" arriving after the
+    /// "stopped" that followed it would leave it showing the wrong state. One consumer keeps them
+    /// in the order they were raised, and a send that throws never reaches the engine.
+    /// </summary>
+    private void Fire(string @event, JsonObject? body)
+    {
+        if (!_events.Writer.TryWrite((@event, body)))
+            Log("dropped a '" + @event + "' event: the sender is gone");
     }
 
-    /// <summary>Events come from engine threads; a send must never break the engine.</summary>
-    private void Fire(string @event, JsonObject body)
-        => _ = Task.Run(async () =>
+    private async Task PumpEventsAsync()
+    {
+        await foreach (var (name, body) in _events.Reader.ReadAllAsync().ConfigureAwait(false))
         {
-            try { await _conn.SendEventAsync(@event, body, CancellationToken.None).ConfigureAwait(false); }
-            catch (Exception ex) { Log("sending " + @event + ": " + ex.Message); }
-        });
+            try { await _conn.SendEventAsync(name, body, CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) { Log("sending " + name + ": " + ex.Message); }
+        }
+    }
 
     // ------------------------------------------------------------------ helpers
 
@@ -459,5 +475,12 @@ public sealed class DapAdapter : IAsyncDisposable
     private static bool? Bool(JsonObject o, string name)
         => o[name] is JsonValue v && v.TryGetValue<bool>(out var b) ? b : null;
 
-    public async ValueTask DisposeAsync() => await _session.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _session.DisposeAsync();
+        _events.Writer.TryComplete();
+        // Bounded: a client that has already gone away must not keep the process alive.
+        try { await _pump.WaitAsync(TimeSpan.FromSeconds(5)); }
+        catch (Exception ex) { Log("stopping the event sender: " + ex.Message); }
+    }
 }

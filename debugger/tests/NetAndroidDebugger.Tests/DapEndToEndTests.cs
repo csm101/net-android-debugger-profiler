@@ -161,6 +161,48 @@ public sealed class DapEndToEndTests(DeviceFixture device, ITestOutputHelper out
     }
 
 
+
+    [Fact]
+    public async Task Events_ArriveInTheOrderTheyHappened()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        var ct = cts.Token;
+        await using var client = Start();
+
+        await client.ExpectAsync("initialize", new JsonObject { ["adapterID"] = "net-android-debugger" }, ct);
+        Assert.NotNull(await client.WaitForEventAsync("initialized", TimeSpan.FromSeconds(10), ct));
+
+        var tickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        await client.ExpectAsync("setBreakpoints", new JsonObject
+        {
+            ["source"] = new JsonObject { ["path"] = TestEnvironment.MainActivitySource },
+            ["breakpoints"] = new JsonArray(new JsonObject { ["line"] = tickLine }),
+        }, ct);
+        await client.ExpectAsync("launch", LaunchArgs(), ct);
+        await client.ExpectAsync("configurationDone", null, ct);
+
+        // Continue several times over a breakpoint the app hits every second, with app output
+        // flowing the whole while. A client reads events as a sequence: a `continued` delivered
+        // after the `stopped` that followed it would leave it showing the wrong state.
+        var stopped = await client.WaitForEventAsync("stopped", StopTimeout, ct);
+        Assert.NotNull(stopped);
+        var threadId = stopped["body"]!["threadId"]!.GetValue<int>();
+
+        for (var i = 0; i < 3; i++)
+        {
+            await client.ExpectAsync("continue", new JsonObject { ["threadId"] = threadId }, ct);
+            Assert.NotNull(await client.WaitForEventAsync("stopped", StopTimeout, ct));
+        }
+
+        var order = client.EventLog
+            .Where(e => e is "stopped" or "continued")
+            .ToList();
+        // Every stop is preceded by the resume that led to it, and no two of either run together.
+        for (var i = 1; i < order.Count; i++)
+            Assert.True(order[i] != order[i - 1], $"two '{order[i]}' events in a row: {string.Join(" -> ", order)}");
+
+        await client.ExpectAsync("disconnect", new JsonObject { ["terminateDebuggee"] = true }, ct);
+    }
     [Fact]
     public async Task MalformedInput_IsIgnored_AndTheAdapterKeepsServing()
     {

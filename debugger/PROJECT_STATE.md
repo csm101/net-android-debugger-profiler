@@ -58,7 +58,7 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 61 integration tests; TEST_CATALOG has 3 open gaps left: two need a
+  mode). 62 integration tests; TEST_CATALOG has 3 open gaps left: two need a
   WiFi device (U9), one is driving the DAP adapter from a real editor.
   on a WiFi device (U9).
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via

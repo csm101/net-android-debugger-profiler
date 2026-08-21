@@ -17,6 +17,7 @@ public sealed class DapClient : IAsyncDisposable
     private readonly Action<string> _log;
     private readonly SemaphoreSlim _readLock = new(1, 1);
     private readonly List<JsonObject> _events = new();
+    private readonly List<string> _eventLog = new();
     private int _seq;
 
     private DapClient(Process process, Action<string> log)
@@ -43,6 +44,9 @@ public sealed class DapClient : IAsyncDisposable
         return new DapClient(process, log);
     }
 
+    /// <summary>Names of every event seen so far, in arrival order.</summary>
+    public IReadOnlyList<string> EventLog { get { lock (_eventLog) return _eventLog.ToList(); } }
+
     /// <summary>Events received while waiting for responses, oldest first.</summary>
     public IReadOnlyList<JsonObject> Events { get { lock (_events) return _events.ToList(); } }
 
@@ -60,7 +64,7 @@ public sealed class DapClient : IAsyncDisposable
             var type = message["type"]?.GetValue<string>();
             if (type == "event")
             {
-                lock (_events) _events.Add(message);
+                lock (_events) { _events.Add(message); _eventLog.Add(message["event"]?.GetValue<string>() ?? ""); }
                 _log($"[event] {message["event"]?.GetValue<string>()}");
                 continue;
             }
@@ -101,6 +105,7 @@ public sealed class DapClient : IAsyncDisposable
                 if (message is null) return null;
                 if (message["type"]?.GetValue<string>() != "event")
                     continue;
+                lock (_events) _eventLog.Add(message["event"]?.GetValue<string>() ?? "");
                 _log($"[event] {message["event"]?.GetValue<string>()}");
                 if (message["event"]?.GetValue<string>() == name) return message;
                 lock (_events) _events.Add(message);
