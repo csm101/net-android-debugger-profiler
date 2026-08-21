@@ -47,7 +47,7 @@ public sealed record SessionSpec(
     int SnapshotCount = 1,
     TimeSpan? SnapshotInterval = null,
     bool WeavePropertyAccessors = false,
-    bool WeaveAsyncBodies = false);
+    bool WeaveAsyncBodies = true);
 
 /// <summary>Public snapshot of a session.</summary>
 public sealed record SessionInfo(
@@ -258,8 +258,32 @@ public sealed class ProfilerSession : IAsyncDisposable
             _reverseSet = true;
             var pid = await _adb.PidOfAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false)
                 ?? throw new ProfilerException($"Attach requested but {Spec.Package} is not running on {device.Serial}");
+            await EnsureAttachableAsync(device, prereq, ct).ConfigureAwait(false);
             Log($"attaching to pid {pid}");
         }
+    }
+
+    /// <summary>
+    /// Attach profiles a process that is already running, so nothing we do now can give it a
+    /// diagnostics port: it had to be started with one. When it was not, the session would
+    /// otherwise wait for a runtime that is never going to connect and fail with an obscure
+    /// transport error, so check the three places a port can come from and say what to do.
+    /// </summary>
+    private async Task EnsureAttachableAsync(DeviceInfo device, AppPrerequisites prereq, CancellationToken ct)
+    {
+        if (prereq.BakedEnvironmentHints.Any(h => h.Contains("DOTNET_DiagnosticPorts", StringComparison.Ordinal))) return;
+        string prop = await _adb.GetPropAsync(device.Serial, "debug.mono.profile", ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(prop)) return;
+        if (prereq.IsDebuggable && !prereq.HasAssemblyStore)
+        {
+            var current = await _env!.ReadOverrideAsync(ct).ConfigureAwait(false);
+            if (current.Any(kv => kv.Key == "DOTNET_DiagnosticPorts")) return;
+        }
+        throw new ProfilerException(
+            $"{Spec.Package} is running, but nothing configured a diagnostics port for it, so it will never connect to the profiler. " +
+            "Attach only works for an app started with DOTNET_DiagnosticPorts (baked into the build, in the app's override environment, " +
+            "or through the device property debug.mono.profile - see docs/APP_SETUP.md). Use Launch=Restart to have the profiler " +
+            "configure and start the app itself.");
     }
 
     private async Task PrepareWeaverAsync(DeviceInfo device, AppPrerequisites prereq, CancellationToken ct)

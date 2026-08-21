@@ -11,6 +11,7 @@ namespace NetAndroidProfiler.Tests.Device;
 /// </summary>
 [Trait("Category", "Device")]
 [Trait("Category", "the reference application")]
+[Collection("device")]
 public class ReferenceAppTests
 {
     private static bool Enabled => Environment.GetEnvironmentVariable("NAP_REFAPP") == "1";
@@ -111,6 +112,39 @@ public class ReferenceAppTests
         Console.WriteLine(string.Join(Environment.NewLine, timings.Select(t => $"{t.Calls,4} calls {t.TotalNs / 1e6,10:F2} ms {t.SelfNs / 1e6,10:F2} self  {t.FullName}")));
         Assert.NotEmpty(timings);
         Assert.All(timings, t => Assert.StartsWith("App.Droid.", t.FullName));
+        Assert.Contains(timings, t => t.FullName == "App.Droid.AppApplication.OnCreate");
+    }
+
+    /// <summary>
+    /// U8: weaving the compiler-generated MoveNext of async methods was recorded as
+    /// preventing this app from starting at all. It does not - that symptom belonged to
+    /// the launch and override-environment defects fixed since. The async bodies report
+    /// their resumptions as "&lt;Method&gt; (async body)". Needs a build with
+    /// -p:NapWeave=true -p:NapWeaveArgs="--async-bodies".
+    /// </summary>
+    [SkippableFact]
+    public async Task Build_time_weaving_records_async_bodies_on_the reference application()
+    {
+        string map = Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_MAP")
+            ?? Path.Combine(SymbolsDir, "nap-weave.map");
+        Skip.IfNot(Enabled && File.Exists(map) && File.ReadAllText(map).Contains("(async body)"),
+            "build App.Droid with -p:NapWeave=true -p:NapWeaveArgs=\"--async-bodies\" first");
+
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(12),
+            Engine: InstrumentingEngine.Weaver,
+            WeaveMapPath: map));
+        // The app starting at all is half of what this test guards.
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var timings = s.Results.Timings(40);
+        var asyncBodies = timings.Where(t => t.FullName.EndsWith("(async body)", StringComparison.Ordinal)).ToList();
+        Console.WriteLine(string.Join(Environment.NewLine, asyncBodies.Select(t => $"{t.Calls,4} resumptions {t.TotalNs / 1e6,10:F2} ms {t.SelfNs / 1e6,10:F2} self  {t.FullName}")));
+        Assert.NotEmpty(asyncBodies);
+        Assert.Contains(asyncBodies, t => t.FullName == "App.Droid.AppApplication.OnCreate (async body)");
+        // Each resumption is one enter/leave pair, so a woven body always has at least one.
+        Assert.All(asyncBodies, t => Assert.True(t.Calls >= 1, $"{t.FullName} has {t.Calls} calls"));
+        // The awaiting stub is woven too, and its own entry stays separate from the body's.
         Assert.Contains(timings, t => t.FullName == "App.Droid.AppApplication.OnCreate");
     }
 

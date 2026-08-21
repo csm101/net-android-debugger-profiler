@@ -15,6 +15,10 @@ Conventions (mirroring the debugger project's discipline):
   `Skip = "TODO: ..."`.
 - Fast tests run against small recorded trace files checked into the repo;
   device tests are tagged `Category=Device`.
+- Every device test class belongs to the xUnit collection `"device"`
+  (`DisableParallelization`): the emulator, adb and the dsrouter port are
+  single-instance resources, and two classes running at once profile each
+  other's app.
 - Update this catalog in the same change set as the test or fix.
 
 ---
@@ -31,6 +35,10 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
 - [x] Clean teardown: environment restored, no dsrouter left - `Session_restores_app_environment_and_leaves_no_dsrouter`
 - [ ] Stop() on a session without Duration ends collection
+
+- [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
+- [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
+- [x] A port already in use is detected before spawning dsrouter - `Fast/DsRouterTests`
 
 ## B. Sampling analysis (Fast/SamplingAnalyzerTests, recorded testtarget-sampling-jit-20s)
 - [x] Busy method appears in top exclusive CPU hotspots - `Busy_method_is_among_top_exclusive_cpu_hotspots`
@@ -96,6 +104,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
 - [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`
+- [x] Async state machines woven by default report their resumptions - `Build_time_weaving_records_async_bodies_on_the reference application`
 - [ ] Multi-assembly symbolication in one session (App.Core, App.Shared, ...)
 
 ## H. Licensing (Fast/ThirdPartyNoticesTests)

@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.NetworkInformation;
 using NetAndroidProfiler.Core.Devices;
 
 namespace NetAndroidProfiler.Core.Collection;
@@ -17,6 +19,7 @@ public sealed class DsRouterProcess : IAsyncDisposable
 
     private readonly Process _process;
     private readonly List<string> _log = new();
+    private string? _fatal;
 
     private DsRouterProcess(Process p, bool isEmulator) { _process = p; IsEmulator = isEmulator; }
 
@@ -39,6 +42,14 @@ public sealed class DsRouterProcess : IAsyncDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        // dsrouter has no port option, so a second one cannot run, and the one already
+        // holding the port may be a leftover of an interrupted session. Say that here
+        // instead of letting the session fail much later with nothing ever connecting.
+        if (IsPortInUse(AppPort))
+            throw new ToolException(
+                $"Port {AppPort} is already in use, so dotnet-dsrouter cannot start. Another profiling session is running, " +
+                "or a dotnet-dsrouter left over from an interrupted one is still alive - stop it and retry.");
+
         psi.ArgumentList.Add(isEmulator ? "android-emu" : "android");
         var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
         var router = new DsRouterProcess(p, isEmulator);
@@ -49,13 +60,21 @@ public sealed class DsRouterProcess : IAsyncDisposable
         if (!p.Start()) throw new ToolException("dotnet-dsrouter failed to start");
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
-        using var reg = ct.Register(() => started.TrySetCanceled(ct));
-        var timeout = Task.Delay(TimeSpan.FromSeconds(20), ct);
-        var done = await Task.WhenAny(started.Task, timeout).ConfigureAwait(false);
-        if (done != started.Task || !await started.Task.ConfigureAwait(false))
+        try
         {
+            using var reg = ct.Register(() => started.TrySetCanceled(ct));
+            var timeout = Task.Delay(TimeSpan.FromSeconds(20), CancellationToken.None);
+            var done = await Task.WhenAny(started.Task, timeout).ConfigureAwait(false);
+            if (done != started.Task || !await started.Task.ConfigureAwait(false))
+                throw new ToolException("dotnet-dsrouter did not start its IPC server: " +
+                                        (router._fatal ?? string.Join(" | ", router.Log.TakeLast(5))));
+        }
+        catch
+        {
+            // Cancellation included: the process is already running here and would otherwise
+            // keep the port for every later session.
             await router.DisposeAsync().ConfigureAwait(false);
-            throw new ToolException("dotnet-dsrouter did not start its IPC server: " + string.Join(" | ", router.Log.TakeLast(5)));
+            throw;
         }
         return router;
     }
@@ -64,8 +83,28 @@ public sealed class DsRouterProcess : IAsyncDisposable
     {
         if (line is null) return;
         lock (_log) { _log.Add(line); if (_log.Count > 500) _log.RemoveAt(0); }
-        if (line.Contains("Starting IPC server", StringComparison.Ordinal) || line.Contains("<--> TCP server", StringComparison.Ordinal))
+        // A dsrouter that cannot bind its port reports the error and then prints
+        // "Stopping IPC server (...) <--> TCP server (127.0.0.1:9000) router.": matching
+        // "<--> TCP server" takes that dying router for a healthy one, and the session then
+        // fails much later, with nothing ever connecting to it.
+        if (line.Contains("Shutting down due to error", StringComparison.Ordinal))
+        {
+            _fatal = line.Trim();
+            started.TrySetResult(false);
+            return;
+        }
+        if (line.Contains("Starting IPC server", StringComparison.Ordinal))
             started.TrySetResult(true);
+    }
+
+    /// <summary>True when something already listens on <paramref name="port"/>.</summary>
+    public static bool IsPortInUse(int port)
+    {
+        foreach (var endpoint in IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners())
+            if (endpoint.Port == port &&
+                (endpoint.Address.Equals(IPAddress.Loopback) || endpoint.Address.Equals(IPAddress.Any) || endpoint.Address.Equals(IPAddress.IPv6Any)))
+                return true;
+        return false;
     }
 
     public async ValueTask DisposeAsync()

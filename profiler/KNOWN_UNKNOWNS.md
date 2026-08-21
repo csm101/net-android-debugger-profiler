@@ -26,22 +26,20 @@ analysis; rotation strategy.
 Local control service for the Delphi GUI: REST vs JSON-RPC vs command files;
 process lifetime model (GUI spawns Core? separate daemon?). Decide in P4.
 
-## U8 - Async state-machine weaving breaks a real app (opt-in for now)
-Implemented: matching async methods can also have their compiler-generated
-MoveNext woven, reported as "<Type>.<Method> (async body)" - calls are the
-resumptions, time is what the method executed, awaits excluded. It is correct
-on CoreCLR (in-process test: Task.Yield produces exactly 2 resumptions), but a
-the reference application build with 3 such state machines woven **would not start at all**: the
-process is never forked, no crash in logcat, while the same build without
-async bodies runs fine and TestTarget launches normally on the same emulator.
-Therefore the option is **off by default** (WeaveAsyncBodies /
-nap-weave --async-bodies).
-Next steps: weave a single async method to find whether it is one specific
-shape (struct state machine in Release vs class in Debug, awaits inside try
-blocks, `AsyncVoidMethodBuilder`); dump the rewritten MoveNext IL and validate
-it with a verifier; check whether Mono rejects the assembly at load (the
-silence in logcat suggests it dies before any managed logging).
-Also still open: iterator methods (yield return) are not instrumented.
+## U8 - Iterator methods are not instrumented
+Async methods are done: the compiler-generated MoveNext of a matching async
+method is woven and reported as "<Type>.<Method> (async body)" - calls are the
+resumptions, time is what the method executed, awaits excluded. Verified on the
+real net9 app, so it is now **on by default** (`--no-async-bodies` /
+`WeaveAsyncBodies: false` weaves only the synchronous stub).
+Correction: this entry used to say that async bodies stopped the reference application from
+starting. That does not reproduce - see the async-body note in
+ANDROID_PROFILING_NOTES for the evidence and for what really caused it.
+Still open: iterator methods (`yield return`). Their stub is woven, their
+MoveNext is not: the shape differs from an async state machine (no builder, no
+awaits, the state field drives a switch), so it needs its own handling and its
+own notion of what a "call" is - one resumption per MoveNext, i.e. per item
+produced.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

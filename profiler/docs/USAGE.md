@@ -68,11 +68,12 @@ profile_run ... mode=instrumenting engine=weaver weaveMapPath="...\bin\Debug\net
 ```
 
 Notes: property accessors are skipped by default (`weavePropertyAccessors=true`
-to include them). Async methods are woven at their stub, so their time is the
-synchronous part up to the first await. `weaveAsyncBodies=true` also instruments
-the state machine (reported as `<method> (async body)`: calls are resumptions,
-time excludes the awaits) - experimental, it stopped a real net9 app from
-starting, so it is off by default (KNOWN_UNKNOWNS U8).
+to include them). An async method produces two entries: the stub, whose time is
+only the synchronous part up to the first await, and `<method> (async body)`,
+the state machine, whose calls are resumptions and whose time excludes the
+awaits. Both are woven by default; `weaveAsyncBodies=false` (nap-weave:
+`--no-async-bodies`) keeps the stubs only. Iterators (`yield return`) are
+stub-only for now (KNOWN_UNKNOWNS U8).
 
 ## 3. Memory
 

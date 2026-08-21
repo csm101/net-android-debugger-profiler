@@ -331,12 +331,38 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   (2 calls), InizializzaApplicazione 135 ms (30.9 ms self), ..ctor 133 ms,
   OnCreate 95.6 ms, AttendiTermineInizializzazione 3.4 ms.
   **[verified - Build_time_weaving_session_on_the reference application]**
+- **Async bodies are woven by default and work on the real app**: for a matching
+  async method the weaver instruments both the synchronous stub and the
+  compiler-generated `MoveNext`, the second reported as
+  `<Type>.<Method> (async body)` - its calls are resumptions, its time excludes
+  the awaits. Measured on App.Droid (net9, build-time weaving): `OnCreate` 297.6 ms
+  inclusive / 2.2 ms self as a stub, while `OnCreate (async body)` shows 3
+  resumptions and 284.7 ms self - i.e. without the body the async method's own
+  work is invisible. Five consecutive launches of the woven build, no crash.
+  **[verified - Build_time_weaving_records_async_bodies_on_the reference application]**
+- **Correction**: an earlier note claimed a build with woven async bodies would
+  not start at all (process never forked, nothing in logcat). It does start.
+  That symptom is the signature of two defects fixed afterwards - a package left
+  in `stopped=true` by force-stop, which swallows a plain `am start`, and an
+  override environment file written into an app that embeds its assemblies - and
+  the evidence for the async claim was collected before both fixes. Iterators
+  (`yield return`) are still stub-only (KNOWN_UNKNOWNS U8).
 - Two prerequisites for weaving *on the device*, both discovered on the reference application:
   the app must not embed its assemblies (`EmbedAssembliesIntoApk=false`, or
   the woven copies are dead files), and the original `.pdb` next to a
   rewritten assembly must be moved aside or the runtime silently does not use
   the woven copy. **[verified - App.Droid: AppApplication..ctor 8.78 s,
   OnCreate 4.54 s recorded]**
+- **The environment override file is written by rename, and an empty one is
+  tolerated.** Copying onto the live path leaves a truncated or zero-length file
+  if anything dies mid-write (seen after the emulator's qemu process crashed
+  during a suite run: `files/.__override__/x86_64/environment` left at 0 bytes),
+  and the engine then refused every later session on that app with "exists but
+  could not be read" - unrecoverable for anyone who does not know about the file.
+  The engine now stages the file next to the target and renames it into place,
+  compares what it read against `stat -c %s`, and treats an existing empty file
+  as "no variables" while still refusing a short read of a non-empty one.
+  **[verified - Session_runs_when_the_app_has_an_empty_override_environment_file]**
 - The profiler must never delete an app's override environment file it did not
   create: without that file the app does not start, silently. The engine now
   distinguishes "no file" from "file present but unreadable" and refuses to
@@ -396,6 +422,44 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   .NET Android - alternative/legacy collection path worth reading)
 - Fody + MethodTimer.Fody (IL weaving enter/leave pattern for P3)
 
+## Attach mode needs a port the app already has
+
+`LaunchMode.Attach` profiles a process that is already running, so nothing the
+session does can give it a diagnostics port: the app must have been started with
+one (baked `DOTNET_DiagnosticPorts` in the build, the app's override environment
+file, or the device property `debug.mono.profile`). TestTarget bakes none, so an
+attach session against it only works when something configured the environment
+before the app started - for a long time the device tests were passing on
+leftovers of earlier restart sessions, and stopped as soon as those leftovers
+were cleaned up correctly. The engine now checks the three sources up front and
+fails immediately with that guidance instead of waiting for a runtime that will
+never connect. **[verified - the three attach tests now configure the port
+themselves and pass in 18-28 s, against 60-90 s of waiting before]**
+
+## One session at a time per device
+
+dotnet-dsrouter 9.0.x has no port option, so one machine runs one router on
+127.0.0.1:9000. A second one exits immediately with "only one usage of each
+socket address is normally permitted" - and, because it also prints
+`Stopping IPC server (...) <--> TCP server (127.0.0.1:9000) router.`, a startup
+check that matched `<--> TCP server` took the dying router for a healthy one and
+the session failed minutes later with an unrelated transport error. The engine
+now accepts only `Starting IPC server`, reports the router's own error, refuses
+to start when the port is already taken, and kills the process on every failure
+path including cancellation (a leaked router blocked every later session).
+
+A device serves one profiling session at a time. The diagnostics port
+(`DOTNET_DiagnosticPorts`, host side 9000 through dsrouter) is reachable by every
+.NET app on the device, a session force-stops and relaunches the app it profiles,
+and an app profiled earlier keeps reconnecting to that port until it is stopped.
+Two sessions overlapping on one device therefore cross-connect: the engine detects
+it (the session marker in the error names the *other* session) and fails rather
+than analyzing another app's trace. Consequences: the device test classes run
+serialized (xUnit collection `"device"`), and profiling two apps at once needs two
+devices (KNOWN_UNKNOWNS U12b). **[verified - four device tests failed in the
+2026-08-21 suite run with exactly this signature, one of them naming the other
+class's session marker]**
+
 ## This machine
 
 - adb 1.0.41 (36.0.0), on PATH; emulators: emulator-5554 =
@@ -426,15 +490,19 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   callback; confirmed by env bisection - enable and enable+alloc boot fine,
   callspec dies). net10 (TestTarget) is unaffected. See KNOWN_UNKNOWNS U20;
   instrumenting on the reference application goes through the Cecil weaver (P3). **[verified]**
-- **Launching**: a force-stop leaves the package in `stopped=true`, and an
-  explicit `am start -n <component>` is then accepted without ever forking the
-  process - nothing is logged, the session just waits (observed repeatedly with
-  App.Droid; TestTarget unaffected). A launcher-style intent clears that state,
-  so `AdbClient.LaunchAsync` sends `monkey -p <pkg> -c LAUNCHER 1` first and
-  falls back to resolving the activity (`cmd package resolve-activity --brief
-  -c android.intent.category.LAUNCHER <pkg>`) plus `am start -n <component>`
-  when the package has no launcher activity. Do not add `-W`: waiting for the
-  activity to go idle can take minutes on an instrumented app. **[verified]**
+- **Launching is unreliable in both directions and must be verified.** A
+  force-stop leaves the package in `stopped=true` and a plain `am start -n
+  <component>` is then accepted without forking the process; a launcher-style
+  `monkey -p <pkg> -c LAUNCHER 1` clears that state but has been seen doing
+  exactly the same (`ActivityTaskManager: START ...` in logcat, no `Start proc`,
+  no process, nothing else logged). Both were mistaken for "the app will not
+  start" - the wrong conclusion that produced U8. `AdbClient.LaunchAsync` now
+  tries monkey, polls `pidof` for up to 15 s, falls back to the resolved
+  activity with `am start -n`, and repeats the pair once before failing with
+  what it attempted. Do not add `-W`: waiting for the activity to go idle can
+  take minutes on an instrumented app. **[verified 2026-08-21 - App.Droid: a
+  monkey intent that spawned nothing, an explicit start seconds later that
+  worked, same app, same emulator]**
 - A restart session that launched the app leaves the injected
   DOTNET_DiagnosticPorts in the app's process environment, so the app keeps
   reconnecting to any later dsrouter on the same port and would be profiled

@@ -119,32 +119,76 @@ public sealed class AdbClient
     public Task ForceStopAsync(string serial, string package, CancellationToken ct) => ShellAsync(serial, $"am force-stop {package}", ct);
 
     /// <summary>
-    /// Launch the app the way the launcher does.
+    /// Launch the app and wait until its process actually exists.
     ///
-    /// A monkey LAUNCHER intent is used first because it also clears the package's
-    /// "stopped" state, which a force-stop leaves behind: after a profiling session
-    /// some apps refuse to start again from a plain `am start` (the intent is accepted,
-    /// no process is ever forked, nothing is logged) until a launcher-style intent
-    /// arrives. When the package has no launcher activity, the activity is resolved and
-    /// started explicitly instead.
+    /// Neither launch method is reliable on its own. A force-stop leaves the package in
+    /// `stopped=true`, and a plain `am start -n` is then accepted without ever forking the
+    /// process - nothing is logged, the caller just waits. A launcher-style monkey intent
+    /// clears that state, but has been observed doing the same: the START intent appears in
+    /// logcat and no process follows. Both were mistaken for app-level failures in the past
+    /// (an app that "will not start"), so the launch is verified here instead: try one way,
+    /// wait for a pid, try the other, and only then give up with what was attempted.
     /// </summary>
     public async Task LaunchAsync(string serial, string package, CancellationToken ct)
     {
-        var monkey = await RunAsync(serial, ["shell", $"monkey -p {package} -c android.intent.category.LAUNCHER 1"], ct).ConfigureAwait(false);
-        bool monkeyStarted = monkey.Success
-            && !monkey.StdOut.Contains("No activities found", StringComparison.OrdinalIgnoreCase)
-            && monkey.StdOut.Contains("Events injected", StringComparison.OrdinalIgnoreCase);
-        if (monkeyStarted) return;
+        var attempts = new List<string>();
+        for (int round = 0; round < 2; round++)
+        {
+            if (await TryMonkeyAsync(serial, package, attempts, ct).ConfigureAwait(false)) return;
+            if (await TryExplicitStartAsync(serial, package, attempts, ct).ConfigureAwait(false)) return;
+        }
+        throw new ToolException($"{package} did not start on {serial}: " + string.Join("; ", attempts));
+    }
 
+    private async Task<bool> TryMonkeyAsync(string serial, string package, List<string> attempts, CancellationToken ct)
+    {
+        var r = await RunAsync(serial, ["shell", $"monkey -p {package} -c android.intent.category.LAUNCHER 1"], ct).ConfigureAwait(false);
+        if (r.StdOut.Contains("No activities found", StringComparison.OrdinalIgnoreCase))
+        {
+            attempts.Add("monkey: no launcher activity");
+            return false;
+        }
+        if (!r.Success || !r.StdOut.Contains("Events injected", StringComparison.OrdinalIgnoreCase))
+        {
+            attempts.Add("monkey: intent not injected");
+            return false;
+        }
+        if (await WaitForProcessAsync(serial, package, ct).ConfigureAwait(false)) return true;
+        attempts.Add("monkey: intent injected but no process appeared");
+        return false;
+    }
+
+    private async Task<bool> TryExplicitStartAsync(string serial, string package, List<string> attempts, CancellationToken ct)
+    {
         var resolve = await RunAsync(serial, ["shell", $"cmd package resolve-activity --brief -c android.intent.category.LAUNCHER {package}"], ct).ConfigureAwait(false);
         string? component = resolve.StdOut.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.StartsWith(package + "/", StringComparison.Ordinal));
         if (component is null)
-            throw new ToolException($"Package {package} has no LAUNCHER activity (or is not installed) on {serial}");
-
+        {
+            attempts.Add("am start: no launcher activity (is the package installed?)");
+            return false;
+        }
         // No -W: waiting for the activity to go idle can take minutes on an instrumented app.
-        var start = await RunCheckedAsync(serial, ["shell", $"am start -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
-        if (start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
-            throw new ToolException($"am start {component} failed on {serial}: {start.StdOut.Trim()}");
+        var start = await RunAsync(serial, ["shell", $"am start -n {component}"], ct, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+        if (!start.Success || start.StdOut.Contains("Error", StringComparison.OrdinalIgnoreCase))
+        {
+            attempts.Add($"am start {component}: {start.StdOut.Trim()}{start.StdErr.Trim()}");
+            return false;
+        }
+        if (await WaitForProcessAsync(serial, package, ct).ConfigureAwait(false)) return true;
+        attempts.Add($"am start {component}: accepted but no process appeared");
+        return false;
+    }
+
+    /// <summary>Poll for the app's process; a cold start on a loaded emulator takes seconds.</summary>
+    private async Task<bool> WaitForProcessAsync(string serial, string package, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await PidOfAsync(serial, package, ct).ConfigureAwait(false) is not null) return true;
+            await Task.Delay(TimeSpan.FromMilliseconds(500), ct).ConfigureAwait(false);
+        }
+        return false;
     }
 
     public Task ReverseAsync(string serial, int devicePort, int hostPort, CancellationToken ct) =>

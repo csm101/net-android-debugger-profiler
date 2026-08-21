@@ -1,32 +1,56 @@
 # Task resume
 
 ## Current task
-None in progress. THIRD-PARTY-NOTICES is done (commits 5836463, 63c2552, both
-pushed): the notices file, its guard test, the doc wiring, plus doc hygiene
-(U16 retired, U19 narrowed, the stale launching note corrected against
-AdbClient.LaunchAsync, TEST_CATALOG G2 folded into G). Fast suite green:
-38 passed, 1 TODO-RED skip.
+U8. Outcome: the recorded blocker does not exist. A the reference application build with the 3
+async state machines of AppApplication woven starts normally (5 consecutive
+launches) and the bodies report their resumptions - `OnCreate (async body)`
+3 resumptions, 284.7 ms self, against 2.2 ms self for the stub. The old symptom
+(process never forked, nothing in logcat) is the signature of the launch
+(`stopped=true`) and override-environment defects fixed after that evidence was
+collected.
+
+## Substep
+U8 itself is closed (async bodies on by default, verified on the reference application). Fixing the
+suite around it exposed four defects, all now fixed and green individually:
+1. Device test classes ran in parallel on one emulator and one dsrouter port -
+   both now in the xUnit collection "device" (DisableParallelization).
+2. AppEnvironment refused to work when the app was left with a 0-byte override
+   environment file; it now stages+renames the file, compares the read against
+   stat, and treats an empty file as "no variables".
+3. dotnet-dsrouter: a router dying of "port already in use" prints
+   "Stopping IPC server (...) <--> TCP server ..." and the old startup check
+   matched "<--> TCP server", so a dead router passed for healthy; a cancelled
+   start also leaked the process, which then held port 9000 for every later
+   session. Now: port pre-check, only "Starting IPC server" counts, the router's
+   own error is reported, dispose on every failure path.
+4. Launching is unreliable both ways: monkey and am start each silently accept
+   the intent without forking the process. LaunchAsync now verifies a pid
+   appeared and alternates the two methods. This is what U8 originally
+   misdiagnosed as woven async IL stopping the app.
+Also: attach device tests configured no diagnostics port and were passing on
+leftovers from earlier sessions; they now set it up and stop the app afterwards,
+and the engine fails fast in Attach mode when no port is configured anywhere.
+Full suite green: 59 tests, 55 passed, 4 skipped, 0 failed (5.2 min, fast + Device + the reference application with NAP_REFAPP=1). No orphan dsrouter, no app left running.
 
 ## Files in focus
-THIRD-PARTY-NOTICES.txt, tests/NetAndroidProfiler.Tests/Fast/ThirdPartyNoticesTests.cs,
-README.md, PROJECT_STATE.md, TEST_CATALOG.md (new section H).
+src/NetAndroidProfiler.Core/Weaving/CecilWeaver.cs, WeaveDeployer.cs,
+Sessions/ProfilerSession.cs, src/NetAndroidProfiler.Weave/Program.cs,
+src/NetAndroidProfiler.Mcp/ProfilerTools.cs,
+tests/.../Device/ReferenceAppTests.cs (Build_time_weaving_records_async_bodies_on_the reference application),
+tests/.../Fast/WeaverTests.cs.
 
-## Last completed action
-Notices file written from the real dependency closure (dotnet list package
---include-transitive on NetAndroidProfiler.Mcp and NetAndroidProfiler.Weave,
-license expressions read from each .nuspec, verbatim license texts fetched from
-upstream). The new test immediately caught two packages listed only in an
-abbreviated form (Microsoft.Data.Sqlite.Core, ModelContextProtocol.Core) - the
-ids are now spelled out and both tests pass.
+## Next action if interrupted right now
+Read the test-runner report; fix anything red, then commit and push. After that
+U8 keeps only its iterator half (`yield return` bodies are not woven).
 
 ## Traps found here
-- The docs are CRLF; a scripted edit that writes LF corrupts the line endings
-  silently. Normalize lone LF to CRLF after any scripted patch.
-- The notices must match what is *distributed*, not what the solution
-  references: the test reads the .deps.json of the built output, which is why a
-  test-only package does not have to be acknowledged.
+- Evidence collected before a fix stays in the docs and looks authoritative.
+  Re-test a "known" blocker before investigating it: two unrelated defects
+  produced exactly the symptom U8 attributed to woven async IL.
+- V7 rebuild + install is ~4 min; the woven build is left installed on
+  emulator-5556 with its map in the V7 bin folder.
 
-## Done tonight (each committed and pushed)
+## Done earlier (each committed and pushed)
 1. V7 weaver with a narrow callspec: green.
 2. MCP end-to-end tests over stdio (tool surface, read-only tools, error paths).
 3. U22 build-time weaving: nap-weave + build/NetAndroidProfiler.Weaving.targets

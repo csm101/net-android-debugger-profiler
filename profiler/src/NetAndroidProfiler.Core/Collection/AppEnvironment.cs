@@ -29,27 +29,32 @@ public sealed class AppEnvironment
     public async Task<IReadOnlyList<KeyValuePair<string, string>>> ReadOverrideAsync(CancellationToken ct)
     {
         var bytes = await ReadOverrideBytesAsync(ct).ConfigureAwait(false);
-        return bytes is null ? [] : EnvironmentOverrideFile.Parse(bytes);
+        return bytes is null || bytes.Length == 0 ? [] : EnvironmentOverrideFile.Parse(bytes);
     }
 
-    /// <summary>True when the app already has an override environment file.</summary>
-    private async Task<bool> OverrideExistsAsync(CancellationToken ct)
+    /// <summary>Size of the override file in bytes, or null when it does not exist.</summary>
+    private async Task<long?> OverrideSizeAsync(CancellationToken ct)
     {
-        var r = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} ls {OverridePath}"], ct).ConfigureAwait(false);
-        return r.Success && !r.StdOut.Contains("No such", StringComparison.OrdinalIgnoreCase);
+        var r = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} stat -c %s {OverridePath}"], ct).ConfigureAwait(false);
+        return r.Success && long.TryParse(r.StdOut.Trim(), out long size) ? size : null;
     }
 
     /// <summary>
-    /// Read the app's override environment file. Throws when the file exists but cannot
-    /// be read: the caller must not proceed, because a half-known file would be restored
-    /// wrongly - and deleting the app's environment file leaves it unable to start.
+    /// Read the app's override environment file, or null when there is none. An existing
+    /// but empty file is data, not a failure: it carries no variables, and a session that
+    /// refused to run because of one would stay blocked until someone removed the file by
+    /// hand. A short read of a non-empty file is a failure and throws - proceeding on a
+    /// half-known file would restore it wrongly, and an app whose environment file is
+    /// mangled does not start.
     /// </summary>
     private async Task<byte[]?> ReadOverrideBytesAsync(CancellationToken ct)
     {
-        if (!await OverrideExistsAsync(ct).ConfigureAwait(false)) return null;
+        long? size = await OverrideSizeAsync(ct).ConfigureAwait(false);
+        if (size is null) return null;
+        if (size == 0) return [];
         var data = await _adb.ExecOutAsync(_serial, $"run-as {_package} cat {OverridePath}", ct).ConfigureAwait(false);
-        if (data.Length == 0)
-            throw new ToolException($"The app's environment file ({OverridePath}) exists but could not be read; refusing to modify it.");
+        if (data.Length != size)
+            throw new ToolException($"The app's environment file ({OverridePath}) is {size} bytes but only {data.Length} could be read; refusing to modify it.");
         return data;
     }
 
@@ -66,7 +71,7 @@ public sealed class AppEnvironment
             _backupExisted = _backup is not null;
             _applied = true;
         }
-        var current = _backup is null ? [] : EnvironmentOverrideFile.Parse(_backup);
+        var current = _backup is null || _backup.Length == 0 ? [] : EnvironmentOverrideFile.Parse(_backup);
         var merged = EnvironmentOverrideFile.Merge(current, updates);
         await WriteOverrideAsync(EnvironmentOverrideFile.Serialize(merged), ct).ConfigureAwait(false);
     }
@@ -81,7 +86,11 @@ public sealed class AppEnvironment
             await _adb.PushAsync(_serial, local, remoteTmp, ct).ConfigureAwait(false);
             await _adb.ShellAsync(_serial, $"chmod 644 {remoteTmp}", ct).ConfigureAwait(false);
             string dir = Path.GetDirectoryName(OverridePath)!.Replace('\\', '/');
-            await _adb.RunAsAsync(_serial, _package, $"mkdir -p {dir} && rm -f {OverridePath} && cp {remoteTmp} {OverridePath} && chmod 400 {OverridePath}", ct).ConfigureAwait(false);
+            // Stage next to the target and rename over it: copying straight onto the live
+            // path leaves a truncated (or empty) environment file behind if anything
+            // dies mid-write, and the app then starts without its variables - or not at all.
+            string staged = OverridePath + ".napnew";
+            await _adb.RunAsAsync(_serial, _package, $"mkdir -p {dir} && cp {remoteTmp} {staged} && chmod 400 {staged} && mv -f {staged} {OverridePath}", ct).ConfigureAwait(false);
         }
         finally
         {

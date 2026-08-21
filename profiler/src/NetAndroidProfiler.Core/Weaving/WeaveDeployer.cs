@@ -37,7 +37,7 @@ public sealed class WeaveDeployer
     /// <paramref name="filter"/> and deploy them plus the collector. Returns the
     /// weaver id map. The app must be stopped.
     /// </summary>
-    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = false)
+    public async Task<IReadOnlyList<WovenMethod>> WeaveAndDeployAsync(IReadOnlyList<string> assemblies, WeaveFilter filter, string? collectorPath, CancellationToken ct, IReadOnlyList<string>? referenceSearchDirs = null, bool weavePropertyAccessors = false, bool trackAllocations = false, bool weaveAsyncBodies = true)
     {
         string pulled = Path.Combine(_workDir, "pulled");
         string wovenDir = Path.Combine(_workDir, "woven");

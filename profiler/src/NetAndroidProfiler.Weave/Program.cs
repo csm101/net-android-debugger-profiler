@@ -4,6 +4,7 @@
 //
 //   nap-weave --assembly <path> [--assembly <path>...] --callspec <spec> --map <file>
 //             [--reference-dir <dir>...] [--collector-out <dir>] [--first-id <n>] [--quiet]
+//             [--property-accessors] [--allocations] [--no-async-bodies]
 //
 // Each assembly is rewritten in place (a .naporig backup is kept next to it) and the
 // method id map is written to --map, which the profiler reads instead of weaving on
@@ -16,7 +17,7 @@ var assemblies = new List<string>();
 var referenceDirs = new List<string>();
 string? callspec = null, mapPath = null, collectorOut = null;
 int firstId = 1;
-bool quiet = false, weaveAccessors = false, trackAllocations = false, asyncBodies = false;
+bool quiet = false, weaveAccessors = false, trackAllocations = false, asyncBodies = true;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -34,6 +35,7 @@ for (int i = 0; i < args.Length; i++)
         case "--property-accessors": weaveAccessors = true; break;
         case "--allocations": trackAllocations = true; break;
         case "--async-bodies": asyncBodies = true; break;
+        case "--no-async-bodies": asyncBodies = false; break;
         case "-h" or "--help": Usage(); return 0;
         default: Console.Error.WriteLine($"nap-weave: unknown argument '{a}'"); Usage(); return 2;
     }
@@ -121,5 +123,8 @@ static void Usage() => Console.Error.WriteLine("""
       --collector-out  copy NetAndroidProfiler.Collector.dll into this directory.
       --property-accessors  also weave property getters/setters (skipped by default).
       --allocations    also record allocations made by the woven methods.
-      --async-bodies   also instrument async state machines (experimental: see U8).
+      --no-async-bodies  weave only the synchronous stub of async methods. By
+                       default the compiler-generated state machine is woven too,
+                       reported as '<method> (async body)'; without it an async
+                       method only reports its prologue up to the first await.
     """);
