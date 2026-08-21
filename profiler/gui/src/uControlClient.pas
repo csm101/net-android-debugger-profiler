@@ -27,6 +27,15 @@ type
 
   TDeviceInfos = TArray<TDeviceInfo>;
 
+  /// What a running session reports once a second, for the Monitor panel.
+  TSessionCounters = record
+    State: string;
+    ElapsedSeconds: Double;
+    TraceBytes: Int64;
+    EventBytes: Int64;
+    Snapshots: Integer;
+  end;
+
   /// What a session looks like from outside: state, warnings and the tail of its log.
   TSessionStatus = record
     Id: string;
@@ -62,6 +71,7 @@ type
     function StartSession(const ASerial, APackage, AMode, AEngine, ACallspec: string;
       ADurationSeconds: Integer; const ASymbolsDir: string = ''): TSessionStatus;
     function Status(const AId: string): TSessionStatus;
+    function Counters(const AId: string): TSessionCounters;
     function Snapshot(const AId: string): Integer;
     function Pause(const AId: string): TSessionStatus;
     function Resume(const AId: string): TSessionStatus;
@@ -360,6 +370,27 @@ begin
   LValue := Get('sessions/' + AId);
   try
     Result := ReadStatus(LValue);
+  finally
+    LValue.Free;
+  end;
+end;
+
+function TControlClient.Counters(const AId: string): TSessionCounters;
+var
+  LValue: TJSONValue;
+  LObject: TJSONObject;
+begin
+  Result := Default(TSessionCounters);
+  LValue := Get('sessions/' + AId + '/counters');
+  try
+    if not (LValue is TJSONObject) then
+      Exit;
+    LObject := TJSONObject(LValue);
+    Result.State := LObject.GetValue<string>('state', '');
+    Result.ElapsedSeconds := LObject.GetValue<Double>('elapsedSeconds', 0);
+    Result.TraceBytes := LObject.GetValue<Int64>('traceBytes', 0);
+    Result.EventBytes := LObject.GetValue<Int64>('eventBytes', 0);
+    Result.Snapshots := LObject.GetValue<Integer>('snapshots', 0);
   finally
     LValue.Free;
   end;

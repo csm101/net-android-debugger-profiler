@@ -38,6 +38,28 @@ type
     FUnits: TComboBox;
     FSummaryTab: TTabSheet;
     FSummary: TMemo;
+    FMonitorTab: TTabSheet;
+    FMonitor: TPaintBox;
+    FMonitorLabel: TLabel;
+    FMonitorSamples: TArray<Int64>;
+    FMonitorLast: TSessionCounters;
+    FMemoryTab: TTabSheet;
+    FMemoryPages: TPageControl;
+    FAllocTypeGrid: TcxGrid;
+    FAllocTypeView: TcxGridDBTableView;
+    FAllocTypeQuery: TFDQuery;
+    FAllocTypeSource: TDataSource;
+    FAllocSiteGrid: TcxGrid;
+    FAllocSiteView: TcxGridDBTableView;
+    FAllocSiteQuery: TFDQuery;
+    FAllocSiteSource: TDataSource;
+    FHeapGrid: TcxGrid;
+    FHeapView: TcxGridDBTableView;
+    FHeapQuery: TFDQuery;
+    FHeapSource: TDataSource;
+    FHeapFrom: TComboBox;
+    FHeapTo: TComboBox;
+    FHeapGrowth: TCheckBox;
     FExplorer: TcxTreeList;
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
@@ -95,6 +117,14 @@ type
     procedure BuildToolbar;
     procedure BuildExplorer;
     procedure BuildSummaryTab;
+    procedure BuildMemoryTab;
+    procedure BuildMonitorTab;
+    procedure PaintMonitor(Sender: TObject);
+    procedure PollCounters;
+    function BuildBoundGrid(AParent: TWinControl; out AView: TcxGridDBTableView;
+      out ASource: TDataSource): TcxGrid;
+    procedure LoadMemory;
+    procedure HeapSelectionChanged(Sender: TObject);
     procedure UpdateSummary;
     procedure UnitsChanged(Sender: TObject);
     procedure ReloadExplorer;
@@ -126,6 +156,7 @@ type
     procedure LoadTreeChildren(ANode: TcxTreeListNode; AParentId: Integer);
     procedure LoadDetails(AMethodId: Integer);
     procedure DressReportColumns;
+    procedure DressColumns(AView: TcxGridDBTableView);
     procedure StartButtonClick(Sender: TObject);
     procedure SnapshotButtonClick(Sender: TObject);
     procedure PauseButtonClick(Sender: TObject);
@@ -189,6 +220,12 @@ begin
   FEditorTab := TTabSheet.Create(Self);
   FEditorTab.PageControl := FPages;
   FEditorTab.Caption := 'Source';
+  FMemoryTab := TTabSheet.Create(Self);
+  FMemoryTab.PageControl := FPages;
+  FMemoryTab.Caption := 'Memory';
+  FMonitorTab := TTabSheet.Create(Self);
+  FMonitorTab.PageControl := FPages;
+  FMonitorTab.Caption := 'Monitor';
   FSummaryTab := TTabSheet.Create(Self);
   FSummaryTab.PageControl := FPages;
   FSummaryTab.Caption := 'Summary';
@@ -196,6 +233,8 @@ begin
   BuildTreeTab;
   BuildGraphTab;
   BuildEditorTab;
+  BuildMemoryTab;
+  BuildMonitorTab;
   BuildSummaryTab;
 
   FLog := TMemo.Create(Self);
@@ -208,7 +247,7 @@ begin
 
   FClient := TControlClient.Create;
   FPoll := TTimer.Create(Self);
-  FPoll.Interval := 500;
+  FPoll.Interval := 1000;
   FPoll.Enabled := False;
   FPoll.OnTimer := PollTimer;
 
@@ -224,6 +263,8 @@ begin
       else if SameText(LTab, 'graph') then FPages.ActivePage := FGraphTab
       else if SameText(LTab, 'source') then FPages.ActivePage := FEditorTab
       else if SameText(LTab, 'summary') then FPages.ActivePage := FSummaryTab
+      else if SameText(LTab, 'memory') then FPages.ActivePage := FMemoryTab
+      else if SameText(LTab, 'monitor') then FPages.ActivePage := FMonitorTab
       else FPages.ActivePage := FReportTab;
     end;
   UpdateInfo;
@@ -231,6 +272,9 @@ end;
 
 destructor TMainForm.Destroy;
 begin
+  FAllocTypeQuery.Free;
+  FAllocSiteQuery.Free;
+  FHeapQuery.Free;
   FPoll.Enabled := False;
   FClient.Free;               // shuts the control service down with us
   FReportQuery.Free;
@@ -363,7 +407,7 @@ begin
         LChild := LNode.AddChild;
         LChild.Values[0] := 'Modules';
         LChild := LNode.AddChild;
-        LChild.Values[0] := 'Threads';
+        LChild.Values[0] := 'Source files';
         LNode.Expand(True);
       end;
     end;
@@ -377,8 +421,37 @@ procedure TMainForm.ExplorerDblClick(Sender: TObject);
 var
   LSessions: TSessionEntries;
   LIndex: Integer;
+  LCategory: string;
+  LColumn: TcxGridDBColumn;
 begin
-  if (FExplorer.FocusedNode = nil) or (FExplorer.FocusedNode.Level <> 1) then
+  if FExplorer.FocusedNode = nil then
+    Exit;
+  // A category under the open session regroups the Report instead of loading anything.
+  if FExplorer.FocusedNode.Level = 2 then
+  begin
+    LCategory := VarToStr(FExplorer.FocusedNode.Values[0]);
+    FGridView.BeginUpdate;
+    try
+      FGridView.DataController.Groups.ClearGrouping;
+      if SameText(LCategory, 'Modules') then
+        LColumn := FGridView.GetColumnByFieldName('module')
+      else if SameText(LCategory, 'Source files') then
+        LColumn := FGridView.GetColumnByFieldName('source_file')
+      else
+        LColumn := nil;
+      if LColumn <> nil then
+      begin
+        LColumn.GroupIndex := 0;
+        LColumn.Visible := True;
+      end;
+    finally
+      FGridView.EndUpdate;
+    end;
+    FGridView.ViewData.Expand(True);
+    FPages.ActivePage := FReportTab;
+    Exit;
+  end;
+  if FExplorer.FocusedNode.Level <> 1 then
     Exit;
   LSessions := ListSessions(FSessionsRoot);
   LIndex := Integer(NativeInt(FExplorer.FocusedNode.Data));
@@ -740,6 +813,251 @@ begin
   FEditor.Invalidate;
 end;
 
+/// A grid bound to a query, which is what every memory view is.
+function TMainForm.BuildBoundGrid(AParent: TWinControl; out AView: TcxGridDBTableView;
+  out ASource: TDataSource): TcxGrid;
+var
+  LGrid: TcxGrid;
+  LLevel: TcxGridLevel;
+begin
+  LGrid := TcxGrid.Create(Self);
+  LGrid.Parent := AParent;
+  LGrid.Align := alClient;
+  LLevel := LGrid.Levels.Add;
+  AView := LGrid.CreateView(TcxGridDBTableView) as TcxGridDBTableView;
+  LLevel.GridView := AView;
+  AView.OptionsData.Editing := False;
+  AView.OptionsSelection.CellSelect := False;
+  AView.OptionsView.GroupByBox := True;
+  ASource := TDataSource.Create(Self);
+  AView.DataController.DataSource := ASource;
+  Result := LGrid;
+end;
+
+/// Memory, in the three questions the engine can answer: what was allocated, who
+/// allocated it, and what is still alive (with the growth between two snapshots).
+procedure TMainForm.BuildMemoryTab;
+var
+  LByType, LBySite, LHeap: TTabSheet;
+  LHeapTop: TPanel;
+  LLabel: TLabel;
+begin
+  FMemoryPages := TPageControl.Create(Self);
+  FMemoryPages.Parent := FMemoryTab;
+  FMemoryPages.Align := alClient;
+
+  LByType := TTabSheet.Create(Self);
+  LByType.PageControl := FMemoryPages;
+  LByType.Caption := 'Allocations by type';
+  FAllocTypeGrid := BuildBoundGrid(LByType, FAllocTypeView, FAllocTypeSource);
+
+  LBySite := TTabSheet.Create(Self);
+  LBySite.PageControl := FMemoryPages;
+  LBySite.Caption := 'Allocations by method';
+  FAllocSiteGrid := BuildBoundGrid(LBySite, FAllocSiteView, FAllocSiteSource);
+
+  LHeap := TTabSheet.Create(Self);
+  LHeap.PageControl := FMemoryPages;
+  LHeap.Caption := 'Live heap';
+
+  LHeapTop := TPanel.Create(Self);
+  LHeapTop.Parent := LHeap;
+  LHeapTop.Align := alTop;
+  LHeapTop.Height := 36;
+  LHeapTop.BevelOuter := bvNone;
+
+  LLabel := TLabel.Create(Self);
+  LLabel.Parent := LHeapTop;
+  LLabel.SetBounds(8, 10, 60, 16);
+  LLabel.Caption := 'Snapshot';
+
+  FHeapFrom := TComboBox.Create(Self);
+  FHeapFrom.Parent := LHeapTop;
+  FHeapFrom.SetBounds(70, 6, 80, 24);
+  FHeapFrom.Style := csDropDownList;
+  FHeapFrom.OnChange := HeapSelectionChanged;
+
+  FHeapGrowth := TCheckBox.Create(Self);
+  FHeapGrowth.Parent := LHeapTop;
+  FHeapGrowth.SetBounds(160, 8, 140, 20);
+  FHeapGrowth.Caption := 'growth against';
+  FHeapGrowth.OnClick := HeapSelectionChanged;
+
+  FHeapTo := TComboBox.Create(Self);
+  FHeapTo.Parent := LHeapTop;
+  FHeapTo.SetBounds(304, 6, 80, 24);
+  FHeapTo.Style := csDropDownList;
+  FHeapTo.OnChange := HeapSelectionChanged;
+
+  FHeapGrid := BuildBoundGrid(LHeap, FHeapView, FHeapSource);
+end;
+
+procedure TMainForm.LoadMemory;
+var
+  LIds: TArray<Integer>;
+  I: Integer;
+begin
+  FAllocTypeSource.DataSet := nil;
+  FreeAndNil(FAllocTypeQuery);
+  FAllocTypeView.ClearItems;
+  FAllocSiteSource.DataSet := nil;
+  FreeAndNil(FAllocSiteQuery);
+  FAllocSiteView.ClearItems;
+  FHeapSource.DataSet := nil;
+  FreeAndNil(FHeapQuery);
+  FHeapView.ClearItems;
+  FHeapFrom.Items.Clear;
+  FHeapTo.Items.Clear;
+  if not FStore.IsOpen then
+    Exit;
+
+  if FStore.CountOf('alloc_by_type') > 0 then
+  begin
+    FAllocTypeQuery := FStore.OpenAllocationsByType;
+    FAllocTypeSource.DataSet := FAllocTypeQuery;
+    FAllocTypeView.DataController.CreateAllItems;
+    DressColumns(FAllocTypeView);
+  end;
+  if FStore.CountOf('alloc_by_site') > 0 then
+  begin
+    FAllocSiteQuery := FStore.OpenAllocationsBySite;
+    FAllocSiteSource.DataSet := FAllocSiteQuery;
+    FAllocSiteView.DataController.CreateAllItems;
+    DressColumns(FAllocSiteView);
+  end;
+
+  LIds := FStore.HeapSnapshotIds;
+  for I := 0 to High(LIds) do
+  begin
+    FHeapFrom.Items.Add(IntToStr(LIds[I]));
+    FHeapTo.Items.Add(IntToStr(LIds[I]));
+  end;
+  if FHeapFrom.Items.Count > 0 then
+  begin
+    FHeapFrom.ItemIndex := 0;
+    FHeapTo.ItemIndex := FHeapTo.Items.Count - 1;
+    HeapSelectionChanged(nil);
+  end;
+end;
+
+procedure TMainForm.HeapSelectionChanged(Sender: TObject);
+var
+  LFrom, LTo: Integer;
+begin
+  if not FStore.IsOpen or (FHeapFrom.ItemIndex < 0) then
+    Exit;
+  FHeapSource.DataSet := nil;
+  FreeAndNil(FHeapQuery);
+  FHeapView.ClearItems;
+  LFrom := StrToIntDef(FHeapFrom.Text, 0);
+  LTo := StrToIntDef(FHeapTo.Text, LFrom);
+  if FHeapGrowth.Checked and (LTo <> LFrom) then
+    FHeapQuery := FStore.OpenHeapGrowth(LFrom, LTo)
+  else
+    FHeapQuery := FStore.OpenHeapByType(LFrom);
+  FHeapSource.DataSet := FHeapQuery;
+  FHeapView.DataController.CreateAllItems;
+  DressColumns(FHeapView);
+end;
+
+/// AQTime's Monitor: what the run is doing right now. Ours plots how fast the session
+/// is producing data - the trace on the provider engine, the pulled event files on the
+/// weaver - which is the number that tells you whether a session is worth waiting for.
+procedure TMainForm.BuildMonitorTab;
+begin
+  FMonitorLabel := TLabel.Create(Self);
+  FMonitorLabel.Parent := FMonitorTab;
+  FMonitorLabel.Align := alTop;
+  FMonitorLabel.Caption := ' No session running.';
+
+  FMonitor := TPaintBox.Create(Self);
+  FMonitor.Parent := FMonitorTab;
+  FMonitor.Align := alClient;
+  FMonitor.OnPaint := PaintMonitor;
+end;
+
+procedure TMainForm.PaintMonitor(Sender: TObject);
+var
+  LCanvas: TCanvas;
+  LRect: TRect;
+  LMax: Int64;
+  I, LX, LY, LPrevX, LPrevY: Integer;
+  LStep: Double;
+begin
+  LCanvas := FMonitor.Canvas;
+  LRect := FMonitor.ClientRect;
+  LCanvas.Brush.Color := clWindow;
+  LCanvas.FillRect(LRect);
+  LRect.Inflate(-40, -30);
+  if LRect.Width < 40 then
+    Exit;
+
+  LCanvas.Pen.Color := $00D0D0D0;
+  LCanvas.MoveTo(LRect.Left, LRect.Bottom);
+  LCanvas.LineTo(LRect.Right, LRect.Bottom);
+  LCanvas.MoveTo(LRect.Left, LRect.Top);
+  LCanvas.LineTo(LRect.Left, LRect.Bottom);
+
+  if Length(FMonitorSamples) < 2 then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(LRect.Left + 8, LRect.Top + 8, 'Waiting for a running session...');
+    LCanvas.Brush.Style := bsSolid;
+    Exit;
+  end;
+
+  LMax := 1;
+  for I := 0 to High(FMonitorSamples) do
+    if FMonitorSamples[I] > LMax then
+      LMax := FMonitorSamples[I];
+
+  LStep := LRect.Width / (Length(FMonitorSamples) - 1);
+  LPrevX := LRect.Left;
+  LPrevY := LRect.Bottom - Round(LRect.Height * (FMonitorSamples[0] / LMax));
+  LCanvas.Pen.Color := $00C08040;
+  LCanvas.Pen.Width := 2;
+  for I := 1 to High(FMonitorSamples) do
+  begin
+    LX := LRect.Left + Round(I * LStep);
+    LY := LRect.Bottom - Round(LRect.Height * (FMonitorSamples[I] / LMax));
+    LCanvas.MoveTo(LPrevX, LPrevY);
+    LCanvas.LineTo(LX, LY);
+    LPrevX := LX;
+    LPrevY := LY;
+  end;
+  LCanvas.Pen.Width := 1;
+
+  LCanvas.Brush.Style := bsClear;
+  LCanvas.TextOut(LRect.Left + 4, LRect.Top - 18, Format('peak %.1f MB', [LMax / 1048576]));
+  LCanvas.Brush.Style := bsSolid;
+end;
+
+/// Called on the same tick as the status poll while a session is live.
+procedure TMainForm.PollCounters;
+var
+  LCounters: TSessionCounters;
+  LValue: Int64;
+begin
+  if FSessionId = '' then
+    Exit;
+  try
+    LCounters := FClient.Counters(FSessionId);
+  except
+    Exit;      // the monitor is a nicety: never let it break the session view
+  end;
+  FMonitorLast := LCounters;
+  LValue := LCounters.TraceBytes;
+  if LValue = 0 then
+    LValue := LCounters.EventBytes;
+  SetLength(FMonitorSamples, Length(FMonitorSamples) + 1);
+  FMonitorSamples[High(FMonitorSamples)] := LValue;
+  if Length(FMonitorSamples) > 600 then          // ten minutes at one point a second
+    FMonitorSamples := Copy(FMonitorSamples, 1, Length(FMonitorSamples) - 1);
+  FMonitorLabel.Caption := Format(' %s   elapsed %.0f s   collected %.2f MB   snapshots %d',
+    [LCounters.State, LCounters.ElapsedSeconds, LValue / 1048576, LCounters.Snapshots]);
+  FMonitor.Invalidate;
+end;
+
 procedure TMainForm.BuildSummaryTab;
 begin
   FSummary := TMemo.Create(Self);
@@ -883,6 +1201,7 @@ begin
   FStore.Open(APath);
   FSessionsRoot := TDirectory.GetParent(TDirectory.GetParent(APath));
   ReloadExplorer;
+  LoadMemory;
   UpdateSummary;
   LoadReport;
   LoadTreeRoots;
@@ -906,14 +1225,19 @@ end;
 /// Column captions and units: the database speaks in raw nanoseconds and sample counts,
 /// the Report panel should not.
 procedure TMainForm.DressReportColumns;
+begin
+  DressColumns(FGridView);
+end;
+
+procedure TMainForm.DressColumns(AView: TcxGridDBTableView);
 var
   I: Integer;
   LColumn: TcxGridDBColumn;
   LField: string;
 begin
-  for I := 0 to FGridView.ColumnCount - 1 do
+  for I := 0 to AView.ColumnCount - 1 do
   begin
-    LColumn := FGridView.Columns[I];
+    LColumn := AView.Columns[I];
     LField := LowerCase(LColumn.DataBinding.FieldName);
     if LField = 'method_id' then
     begin
@@ -974,6 +1298,30 @@ begin
     else if LField = 'count' then
       LColumn.Caption := 'Objects'
     else if LField = 'bytes' then
+      LColumn.Caption := 'Bytes'
+    else if LField = 'type_name' then
+    begin
+      LColumn.Caption := 'Type';
+      LColumn.Width := 420;
+    end
+    else if LField = 'allocating_method' then
+    begin
+      LColumn.Caption := 'Allocating method';
+      LColumn.Width := 420;
+    end
+    else if LField = 'count_from' then
+      LColumn.Caption := 'Objects before'
+    else if LField = 'count_to' then
+      LColumn.Caption := 'Objects after'
+    else if LField = 'delta_objects' then
+      LColumn.Caption := 'Objects gained'
+    else if LField = 'delta_bytes' then
+      LColumn.Caption := 'Bytes gained'
+    else if LField = 'taken_utc' then
+      LColumn.Caption := 'Taken'
+    else if LField = 'total_objects' then
+      LColumn.Caption := 'Objects'
+    else if LField = 'total_bytes' then
       LColumn.Caption := 'Bytes';
   end;
 end;
@@ -1295,6 +1643,7 @@ begin
   end;
   FSessionId := LStatus.Id;
   FPaused := False;
+  SetLength(FMonitorSamples, 0);
   FLog.Lines.Add('session ' + FSessionId + ' started');
   UpdateButtons(LStatus.State);
   FPoll.Enabled := True;
@@ -1320,6 +1669,7 @@ begin
     end;
   end;
   ShowLog(LStatus.Log);
+  PollCounters;
   UpdateButtons(LStatus.State);
   FInfoLabel.Caption := Format('session %s: %s', [FSessionId, LStatus.State]);
   if (LStatus.State = 'Ready') or (LStatus.State = 'Failed') then

@@ -226,8 +226,18 @@ writing to files that had been deleted under it.
   than a table, and a unit selector (Automatic / s / ms / us / ns) that every panel
   formats with.
 
-Still to build: Monitor (live counters), the memory views, the Details "Lines"
-page, and making the Explorer's categories switch the Report's grouping.
+- A Memory panel with the three questions the engine can answer: allocations by
+  type, allocations by allocating method, and the live heap - with a "growth
+  against" switch that diffs two snapshots.
+- A Monitor panel that plots how fast the session is producing data (the trace on
+  the provider engine, the pulled event files on the weaver) from
+  `GET /sessions/{id}/counters`, polled once a second while a session runs.
+- The Explorer's categories regroup the Report (Routines flat, Modules and Source
+  files grouped by that column).
+
+Deliberately absent: a per-line Details page. MonoVM produces no per-line samples,
+so the honest presentation is the method's range painted in the Source panel, not
+a table of numbers that would all belong to one line.
 
 ## Screens
 

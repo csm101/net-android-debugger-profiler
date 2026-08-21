@@ -35,6 +35,7 @@ stops it.
 | GET | `/sessions` | session directories under the root, newest first, with `ready` |
 | POST | `/sessions` | starts a session in the background, `201` with its id and state |
 | GET | `/sessions/{id}` | state, error, warnings and the last 20 log lines |
+| GET | `/sessions/{id}/counters` | state, elapsed seconds, bytes collected (trace or event files) and how many snapshots were taken - cheap enough to poll once a second, never touches the device |
 | POST | `/sessions/{id}/stop` | ends collection; the session then analyzes and becomes `Ready` |
 | POST | `/sessions/{id}/pause` | stops recording without stopping the app |
 | POST | `/sessions/{id}/resume` | starts recording again |

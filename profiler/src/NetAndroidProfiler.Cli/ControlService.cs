@@ -143,6 +143,9 @@ public sealed class ControlService : IAsyncDisposable
             case ["sessions", var id] when method == "GET":
                 return (200, Describe(LiveOrThrow(id)));
 
+            case ["sessions", var id, "counters"] when method == "GET":
+                return (200, LiveOrThrow(id).Session.Counters());
+
             case ["sessions", var id, "stop"] when method == "POST":
             {
                 var live = LiveOrThrow(id);

@@ -78,6 +78,17 @@ public sealed record SessionInfo(
     string? Error,
     IReadOnlyList<string> Warnings);
 
+/// <summary>
+/// What a running session can report cheaply, once a second, without disturbing it:
+/// enough for a live monitor, and nothing that needs the device.
+/// </summary>
+/// <param name="State">Current state.</param>
+/// <param name="ElapsedSeconds">Since collection started, 0 before that.</param>
+/// <param name="TraceBytes">Size of the trace being written (provider engines).</param>
+/// <param name="EventBytes">Size of the event files pulled so far (weaver engine).</param>
+/// <param name="Snapshots">How many times the results have been refreshed.</param>
+public sealed record SessionCounters(string State, double ElapsedSeconds, long TraceBytes, long EventBytes, int Snapshots);
+
 /// <summary>Thrown for session-level failures (prerequisites, state).</summary>
 public sealed class ProfilerException : Exception
 {
@@ -188,6 +199,33 @@ public sealed class ProfilerSession : IAsyncDisposable
         }
         return Info;
     }
+
+    /// <summary>
+    /// A cheap snapshot of how the session is going, for a monitor that polls: file sizes
+    /// and elapsed time, never a device round trip.
+    /// </summary>
+    public SessionCounters Counters()
+    {
+        long traceBytes = 0;
+        if (_traceFile is not null)
+        {
+            try { traceBytes = new FileInfo(_traceFile).Length; } catch { }
+        }
+        long eventBytes = 0;
+        if (_weaveEventsDir is not null && System.IO.Directory.Exists(_weaveEventsDir))
+        {
+            try
+            {
+                foreach (string f in System.IO.Directory.GetFiles(_weaveEventsDir, "*.napw"))
+                    eventBytes += new FileInfo(f).Length;
+            }
+            catch { }
+        }
+        double elapsed = _started is null ? 0 : ((_ended ?? DateTimeOffset.UtcNow) - _started.Value).TotalSeconds;
+        return new SessionCounters(_state.ToString(), elapsed, traceBytes, eventBytes, _snapshotCount);
+    }
+
+    private int _snapshotCount;
 
     /// <summary>Request the end of collection for a session started without a duration.</summary>
     public void Stop() => _stopRequested.Cancel();
@@ -624,6 +662,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         _writeStore.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), _state.ToString(), Spec.Package, Spec.DeviceSerial,
             _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), null));
         int segment = _writeStore.AddSegment(DateTimeOffset.UtcNow, "snapshot", result.EnterEvents, $"{files} event files");
+        _snapshotCount++;
         Log($"snapshot {segment}: enter={result.EnterEvents} leave={result.LeaveEvents} methods={result.Methods.Count} (session continues)");
         return segment;
     }

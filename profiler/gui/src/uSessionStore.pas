@@ -91,6 +91,15 @@ type
     function OpenReport: TFDQuery;
     /// Allocation rows by type (instrumenting sessions with allocation tracking).
     function OpenAllocationsByType: TFDQuery;
+    /// Allocations per type and allocating method: which code made the objects.
+    function OpenAllocationsBySite: TFDQuery;
+    /// Heap snapshots taken during the session, oldest first.
+    function OpenHeapSnapshots: TFDQuery;
+    /// Live objects per type in one snapshot, or the growth between two.
+    function OpenHeapByType(ASnapshotId: Integer): TFDQuery;
+    function OpenHeapGrowth(AFromId, AToId: Integer): TFDQuery;
+    /// Ids of the heap snapshots, for the pickers.
+    function HeapSnapshotIds: TArray<Integer>;
     /// Children of a call-tree node; pass -1 for the roots.
     function TreeChildren(AParentId: Integer): TTreeNodes;
     /// Immediate callers and callees of a method (Details panel).
@@ -405,6 +414,74 @@ begin
     'FROM alloc_by_type a JOIN type t ON t.id = a.type_id ' +
     'ORDER BY a.bytes DESC');
   Result.Open;
+end;
+
+function TSessionStore.OpenAllocationsBySite: TFDQuery;
+begin
+  Result := CreateQuery(
+    'SELECT COALESCE(m.full_name, ''(no instrumented frame)'') AS allocating_method, ' +
+    '       t.name AS type_name, a.count, a.bytes ' +
+    'FROM alloc_by_site a JOIN type t ON t.id = a.type_id ' +
+    'LEFT JOIN method m ON m.id = a.method_id ' +
+    'ORDER BY a.count DESC');
+  Result.Open;
+end;
+
+function TSessionStore.OpenHeapSnapshots: TFDQuery;
+begin
+  Result := CreateQuery(
+    'SELECT id, taken_utc, total_objects, total_bytes FROM heap_snapshot ORDER BY id');
+  Result.Open;
+end;
+
+function TSessionStore.OpenHeapByType(ASnapshotId: Integer): TFDQuery;
+begin
+  Result := CreateQuery(
+    'SELECT t.name AS type_name, h.count, h.bytes ' +
+    'FROM heap_by_type h JOIN type t ON t.id = h.type_id ' +
+    'WHERE h.snapshot_id = :s ORDER BY h.bytes DESC');
+  Result.ParamByName('s').AsInteger := ASnapshotId;
+  Result.Open;
+end;
+
+function TSessionStore.OpenHeapGrowth(AFromId, AToId: Integer): TFDQuery;
+begin
+  // What grew between two snapshots is the question a leak hunt starts from, so the
+  // difference is computed here rather than eyeballed across two grids.
+  Result := CreateQuery(
+    'SELECT t.name AS type_name, ' +
+    '       COALESCE(a.count, 0) AS count_from, COALESCE(b.count, 0) AS count_to, ' +
+    '       COALESCE(b.count, 0) - COALESCE(a.count, 0) AS delta_objects, ' +
+    '       COALESCE(b.bytes, 0) - COALESCE(a.bytes, 0) AS delta_bytes ' +
+    'FROM type t ' +
+    'LEFT JOIN heap_by_type a ON a.type_id = t.id AND a.snapshot_id = :f ' +
+    'LEFT JOIN heap_by_type b ON b.type_id = t.id AND b.snapshot_id = :t ' +
+    'WHERE a.type_id IS NOT NULL OR b.type_id IS NOT NULL ' +
+    'ORDER BY delta_bytes DESC');
+  Result.ParamByName('f').AsInteger := AFromId;
+  Result.ParamByName('t').AsInteger := AToId;
+  Result.Open;
+end;
+
+function TSessionStore.HeapSnapshotIds: TArray<Integer>;
+var
+  LQuery: TFDQuery;
+  LList: TList<Integer>;
+begin
+  LList := TList<Integer>.Create;
+  LQuery := CreateQuery('SELECT id FROM heap_snapshot ORDER BY id');
+  try
+    LQuery.Open;
+    while not LQuery.Eof do
+    begin
+      LList.Add(LQuery.Fields[0].AsInteger);
+      LQuery.Next;
+    end;
+    Result := LList.ToArray;
+  finally
+    LQuery.Free;
+    LList.Free;
+  end;
 end;
 
 function TSessionStore.TreeChildren(AParentId: Integer): TTreeNodes;
