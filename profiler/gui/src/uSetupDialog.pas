@@ -63,6 +63,7 @@ procedure TSetupDialog.Build;
   function Label_(const AText: string; ATop: Integer): TcxLabel;
   begin
     Result := TcxLabel.Create(Self);
+    Result.Transparent := True;
     Result.Parent := Self;
     Result.Left := 16;
     Result.Top := ATop + 4;
@@ -131,6 +132,7 @@ begin
   FSymbols.TextHint := 'bin\Debug\net9.0-android35.0 - the pdbs, so results carry source locations';
 
   FCheckLabel := TcxLabel.Create(Self);
+  FCheckLabel.Transparent := True;
   FCheckLabel.Parent := Self;
   FCheckLabel.SetBounds(16, 240, 528, 32);
   FCheckLabel.Properties.WordWrap := True;

@@ -29,7 +29,8 @@ uses
   dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
-  uSessionStore, uControlClient, uSetupDialog, uTheme;
+  uSessionStore, uControlClient, uSetupDialog, uTheme, uSettings, uSettingsDialog,
+  uLayouts, uLayoutDialog;
 
 type
   TMainForm = class(TForm)
@@ -41,6 +42,8 @@ type
     FInfoLabel: TcxLabel;
     FUnits: TcxComboBox;
     FThemeBox: TcxComboBox;
+    FSettingsButton: TcxButton;
+    FLayoutButton: TcxButton;
     FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
     FSummary: TcxMemo;
@@ -130,6 +133,7 @@ type
     FPauseButton: TcxButton;
     FStopButton: TcxButton;
     FPaused: Boolean;
+    FPendingDialog: string;
     FLog: TcxMemo;
     procedure BuildToolbar;
     procedure BuildExplorer;
@@ -152,8 +156,10 @@ type
     procedure UnitsChanged(Sender: TObject);
     procedure ThemeChanged(Sender: TObject);
     procedure ApplyTheme;
-    procedure SaveSettings;
-    procedure LoadSettings;
+    procedure SettingsClick(Sender: TObject);
+    procedure LayoutsClick(Sender: TObject);
+    procedure ApplyCodeFont;
+    procedure ShowPendingDialog(Sender: TObject);
     procedure ReloadExplorer;
     procedure ExplorerDblClick(Sender: TObject);
     procedure BuildReportTab;
@@ -286,21 +292,36 @@ begin
   FLog.Properties.ReadOnly := True;
   FLog.Style.Font.Name := 'Consolas';
 
-  // After the panels have their content: the saved layout moves them around.
+  // After the panels have their content: the layout moves them around, and the
+  // preferences decide how everything is drawn.
+  uSettings.LoadSettings;
+  if GSettings.SessionsRoot <> '' then
+  begin
+    FSessionsRoot := GSettings.SessionsRoot;
+    ReloadExplorer;
+  end;
+  FThemeBox.ItemIndex := Ord(GTheme);
+  FUnits.ItemIndex := Ord(GTimeUnit);
   LoadLayout;
-  LoadSettings;
   ApplyTheme;
+  ApplyCodeFont;
 
   FClient := TControlClient.Create;
   FPoll := TTimer.Create(Self);
   FPoll.Interval := 1000;
   FPoll.Enabled := False;
   FPoll.OnTimer := PollTimer;
+  OnShow := ShowPendingDialog;
 
   if (ParamCount >= 1) and not ParamStr(1).StartsWith('--') then
     LoadSession(ParamStr(1));
   // --tab=<report|tree|source> selects the visible panel: handy for a screenshot or a
   // shortcut that always opens where you left off.
+  // --dialog=<settings|layouts> opens one straight away: it is how the dialogs get
+  // exercised without a hand on the mouse.
+  for LIndex := 1 to ParamCount do
+    if ParamStr(LIndex).StartsWith('--dialog=', True) then
+      FPendingDialog := ParamStr(LIndex).Substring(9);
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--tab=', True) then
     begin
@@ -321,7 +342,7 @@ var
   I: Integer;
 begin
   SaveLayout;
-  SaveSettings;
+  uSettings.SaveSettings;
   // Dock panels created at runtime must go before the form takes its own children down,
   // otherwise one of them is destroyed after the window it lives in and VCL complains
   // that it "has no parent window". This is what the DevExpress sample does too.
@@ -397,9 +418,21 @@ begin
   FStopButton.Caption := 'Stop';
   FStopButton.OnClick := StopButtonClick;
 
+  FSettingsButton := TcxButton.Create(Self);
+  FSettingsButton.Parent := FToolbar;
+  FSettingsButton.SetBounds(646, 8, 90, 25);
+  FSettingsButton.Caption := 'Settings...';
+  FSettingsButton.OnClick := SettingsClick;
+
+  FLayoutButton := TcxButton.Create(Self);
+  FLayoutButton.Parent := FToolbar;
+  FLayoutButton.SetBounds(744, 8, 90, 25);
+  FLayoutButton.Caption := 'Layouts...';
+  FLayoutButton.OnClick := LayoutsClick;
+
   FThemeBox := TcxComboBox.Create(Self);
   FThemeBox.Parent := FToolbar;
-  FThemeBox.SetBounds(646, 9, 90, 24);
+  FThemeBox.SetBounds(842, 9, 90, 24);
   FThemeBox.Properties.DropDownListStyle := lsFixedList;
   FThemeBox.Properties.Items.Add(ThemeName(atLight));
   FThemeBox.Properties.Items.Add(ThemeName(atDark));
@@ -408,7 +441,7 @@ begin
 
   FUnits := TcxComboBox.Create(Self);
   FUnits.Parent := FToolbar;
-  FUnits.SetBounds(744, 9, 120, 24);
+  FUnits.SetBounds(940, 9, 120, 24);
   FUnits.Properties.DropDownListStyle := lsFixedList;
   FUnits.Properties.Items.Add(TimeUnitName(tuAuto));
   FUnits.Properties.Items.Add(TimeUnitName(tuSeconds));
@@ -419,8 +452,9 @@ begin
   FUnits.Properties.OnChange := UnitsChanged;
 
   FInfoLabel := TcxLabel.Create(Self);
+  FInfoLabel.Transparent := True;
   FInfoLabel.Parent := FToolbar;
-  FInfoLabel.Left := 876;
+  FInfoLabel.Left := 1072;
   FInfoLabel.Top := 12;
   FInfoLabel.Caption := 'No session open.';
   UpdateButtons('');
@@ -469,6 +503,18 @@ end;
 
 procedure TMainForm.LoadLayout;
 begin
+  // A named layout marked as the one to open with wins; otherwise the window comes
+  // back the way it was closed.
+  if LayoutExists(GSettings.DefaultLayout) then
+  begin
+    try
+      LoadNamedLayout(GSettings.DefaultLayout);
+      Exit;
+    except
+      on E: Exception do
+        FLog.Lines.Add('layout "' + GSettings.DefaultLayout + '" not restored: ' + E.Message);
+    end;
+  end;
   if not TFile.Exists(LayoutFile) then
     Exit;
   try
@@ -630,6 +676,7 @@ begin
   LPanel.BevelOuter := bvNone;
 
   LLabel := TcxLabel.Create(Self);
+  LLabel.Transparent := True;
   LLabel.Parent := LPanel;
   LLabel.Align := alTop;
   LLabel.Caption := '  ' + ACaption;
@@ -866,6 +913,7 @@ end;
 procedure TMainForm.BuildEditorTab;
 begin
   FEditorHeader := TcxLabel.Create(Self);
+  FEditorHeader.Transparent := True;
   FEditorHeader.Parent := FSourcePanel;
   FEditorHeader.Align := alTop;
   FEditorHeader.Caption := ' Pick a method in the Report to see its source.';
@@ -990,6 +1038,7 @@ begin
   LHeapTop.BevelOuter := bvNone;
 
   LLabel := TcxLabel.Create(Self);
+  LLabel.Transparent := True;
   LLabel.Parent := LHeapTop;
   LLabel.SetBounds(8, 10, 60, 16);
   LLabel.Caption := 'Snapshot';
@@ -1089,6 +1138,7 @@ end;
 procedure TMainForm.BuildMonitorTab;
 begin
   FMonitorLabel := TcxLabel.Create(Self);
+  FMonitorLabel.Transparent := True;
   FMonitorLabel.Parent := FMonitorPanel;
   FMonitorLabel.Align := alTop;
   FMonitorLabel.Caption := ' No session running.';
@@ -1309,46 +1359,77 @@ begin
   Invalidate;
 end;
 
-function SettingsFile: string;
+/// The font from the settings, applied where code and logs are read.
+procedure TMainForm.ApplyCodeFont;
 begin
-  Result := TPath.ChangeExtension(ParamStr(0), '.settings.ini');
-end;
-
-procedure TMainForm.SaveSettings;
-var
-  LIni: TIniFile;
-begin
-  try
-    LIni := TIniFile.Create(SettingsFile);
-    try
-      LIni.WriteString('App', 'Theme', ThemeName(GTheme));
-      LIni.WriteInteger('App', 'TimeUnit', Ord(GTimeUnit));
-    finally
-      LIni.Free;
-    end;
-  except
-    // preferences are a convenience, not a reason to fail on the way out
+  if FEditor <> nil then
+  begin
+    FEditor.Font.Name := GSettings.CodeFontName;
+    FEditor.Font.Size := GSettings.CodeFontSize;
+    FEditor.Gutter.Font.Assign(FEditor.Font);
+    FEditor.Gutter.Font.Color := ThemeColors.GutterText;
+  end;
+  if FLog <> nil then
+  begin
+    FLog.Style.Font.Name := GSettings.CodeFontName;
+    FLog.Style.Font.Size := GSettings.CodeFontSize;
+  end;
+  if FSummary <> nil then
+  begin
+    FSummary.Style.Font.Name := GSettings.CodeFontName;
+    FSummary.Style.Font.Size := GSettings.CodeFontSize;
   end;
 end;
 
-procedure TMainForm.LoadSettings;
+procedure TMainForm.ShowPendingDialog(Sender: TObject);
 var
-  LIni: TIniFile;
+  LWhich: string;
 begin
-  if not TFile.Exists(SettingsFile) then
-    Exit;
-  LIni := TIniFile.Create(SettingsFile);
+  LWhich := FPendingDialog;
+  FPendingDialog := '';
+  if SameText(LWhich, 'settings') then
+    SettingsClick(nil)
+  else if SameText(LWhich, 'layouts') then
+    LayoutsClick(nil);
+end;
+
+procedure TMainForm.SettingsClick(Sender: TObject);
+var
+  LDialog: TSettingsDialog;
+begin
+  LDialog := TSettingsDialog.Create(Self);
   try
-    if SameText(LIni.ReadString('App', 'Theme', 'Light'), 'Dark') then
-      GTheme := atDark
-    else
-      GTheme := atLight;
-    GTimeUnit := TTimeUnit(LIni.ReadInteger('App', 'TimeUnit', Ord(tuAuto)));
+    if not LDialog.Execute then
+      Exit;
   finally
-    LIni.Free;
+    LDialog.Free;
   end;
   FThemeBox.ItemIndex := Ord(GTheme);
   FUnits.ItemIndex := Ord(GTimeUnit);
+  ApplyTheme;
+  ApplyCodeFont;
+  UnitsChanged(nil);
+end;
+
+procedure TMainForm.LayoutsClick(Sender: TObject);
+var
+  LDialog: TLayoutDialog;
+  LName: string;
+begin
+  LDialog := TLayoutDialog.Create(Self);
+  try
+    LName := LDialog.Execute;
+  finally
+    LDialog.Free;
+  end;
+  if LName = '' then
+    Exit;
+  try
+    LoadNamedLayout(LName);
+  except
+    on E: Exception do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
 end;
 
 procedure TMainForm.UnitsChanged(Sender: TObject);
@@ -1786,14 +1867,17 @@ begin
   if FClient.IsConnected then
     Exit(True);
   LCandidates := [
+    GSettings.NapExePath,
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'nap.exe'),
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), '..\src\NetAndroidProfiler.Cli\bin\Debug\net10.0\nap.exe'),
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), '..\src\NetAndroidProfiler.Cli\bin\Release\net10.0\nap.exe')];
   for LPath in LCandidates do
-    if TFile.Exists(LPath) then
+    if (LPath <> '') and TFile.Exists(LPath) then
     begin
       try
-        FClient.StartService(TPath.GetFullPath(LPath));
+        // The sessions folder from the settings, so the Explorer and the service agree
+        // on where results live.
+        FClient.StartService(TPath.GetFullPath(LPath), GSettings.SessionsRoot);
         FLog.Lines.Add('control service: ' + FClient.BaseUrl);
         Exit(True);
       except

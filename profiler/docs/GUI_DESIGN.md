@@ -280,6 +280,21 @@ a table of numbers that would all belong to one line.
    below, Call Tree and Editor as dockable panels, Summary as a page.
 5. **Memory** - allocations by type / by site, heap snapshots, growth diff.
 
+## Settings and layouts
+
+A Settings window (theme, the unit times are shown in, the font code and logs are read
+in with a live preview, the sessions folder, and which nap.exe the GUI starts) writes to
+`NapGui.settings.ini` beside the executable - preferences travel with the folder rather
+than living in the registry.
+
+Panel arrangements are saved by name under `layouts\`, and the Saved layouts window
+loads, renames, deletes, saves the current one, and marks the one to open with. The
+docking controller writes a whole ini per layout, so a layout is a file and its name is
+the file name. With no default chosen, the window comes back the way it was closed.
+
+`--dialog=settings` and `--dialog=layouts` open one straight away, which is how the
+dialogs get exercised without a hand on the mouse (the same reason `--tab=` exists).
+
 ## Open questions
 
 - Call Graph: worth drawing at all, or do the two tree views plus the critical

@@ -22,7 +22,11 @@ uses
   uSessionStore in 'src\uSessionStore.pas',
   uControlClient in 'src\uControlClient.pas',
   uSetupDialog in 'src\uSetupDialog.pas',
-  uTheme in 'src\uTheme.pas';
+  uTheme in 'src\uTheme.pas',
+  uSettings in 'src\uSettings.pas',
+  uSettingsDialog in 'src\uSettingsDialog.pas',
+  uLayouts in 'src\uLayouts.pas',
+  uLayoutDialog in 'src\uLayoutDialog.pas';
 
 {$R *.res}
 
