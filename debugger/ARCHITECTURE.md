@@ -78,6 +78,11 @@ free port. Detach == terminate (runtime behavior), hence a single shutdown path.
   (`Stopped`, `StateChanged`) are raised outside the lock on that thread.
 - `AndroidLauncher` runs the logcat reader on a thread-pool task; property
   rotation is synchronous on that thread (blocking adb calls, ~100 ms).
+- `LaunchOptions.KeepPropertyFresh` starts a renewal loop in `AndroidLauncher`
+  that rewrites `debug.mono.extra` (same port, new deadline) every
+  `lifetime/3`, so processes the app starts much later are still attached. All
+  property writes — launch, port rotation on the logcat thread, and this loop —
+  go through one semaphore.
 - Every timestamp the session reports lives on the **device** clock. logcat
   stamps its lines with device local time; output arriving through the SDB
   user-log channel is produced on the host, so it is shifted by

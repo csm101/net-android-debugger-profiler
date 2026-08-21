@@ -42,6 +42,9 @@ public sealed class AndroidLauncher : IAsyncDisposable
     private int _nextPort;
     private bool _propertyOwned;
     private int? _packageUid;
+    private readonly SemaphoreSlim _propertyGate = new(1, 1);
+    private CancellationTokenSource? _renewCts;
+    private Task? _renewTask;
 
     /// <summary>
     /// Device wall clock minus host wall clock, measured once at launch. logcat stamps its lines
@@ -128,6 +131,14 @@ public sealed class AndroidLauncher : IAsyncDisposable
         _logcatTask = Task.Run(() => _adb.StreamLogcatAsync(serial, line => OnLogcatLine(line, logcatCt), logcatCt), CancellationToken.None);
 
         await _adb.StartActivityAsync(serial, component, ct).ConfigureAwait(false);
+        if (_options.KeepPropertyFresh)
+        {
+            _renewCts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken.None);
+            var renewCt = _renewCts.Token;
+            _renewTask = Task.Run(() => RenewPropertyLoopAsync(renewCt), CancellationToken.None);
+            _log($"{DebugProperty} will be kept fresh for the whole session (other Mono apps starting meanwhile are affected)");
+        }
+
 
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeoutCts.CancelAfter(_options.EffectiveConnectTimeout);
@@ -145,6 +156,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     public async Task ShutdownAsync(CancellationToken ct)
     {
         var serial = _options.DeviceSerial;
+        await StopRenewalAsync().ConfigureAwait(false);
         try
         {
             if (_propertyOwned)
@@ -169,8 +181,26 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await StopLogcatAsync().ConfigureAwait(false);
     }
 
+
+    private async Task StopRenewalAsync()
+    {
+        var cts = _renewCts;
+        var task = _renewTask;
+        _renewCts = null;
+        _renewTask = null;
+        if (cts is null) return;
+        try
+        {
+            await cts.CancelAsync().ConfigureAwait(false);
+            if (task is not null) await task.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { _log($"stopping the property refresh: {ex.Message}"); }
+        finally { cts.Dispose(); }
+    }
     public async ValueTask DisposeAsync()
     {
+        await StopRenewalAsync().ConfigureAwait(false);
         await StopLogcatAsync().ConfigureAwait(false);
     }
 
@@ -192,12 +222,46 @@ public sealed class AndroidLauncher : IAsyncDisposable
 
     private async Task WritePropertyAsync(int port, CancellationToken ct)
     {
-        var value = $"debug=127.0.0.1:{port},timeout={_deadline},loglevel={_options.AgentLogLevel},server=y";
-        await _adb.SetPropAsync(_options.DeviceSerial, DebugProperty, value, ct).ConfigureAwait(false);
-        _propertyOwned = true;
-        _log($"{DebugProperty} = {value}");
+        // Rotation (logcat thread), launch and the renewal loop all write this property; keep the
+        // deadline and the value they publish consistent.
+        await _propertyGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var value = $"debug=127.0.0.1:{port},timeout={_deadline},loglevel={_options.AgentLogLevel},server=y";
+            await _adb.SetPropAsync(_options.DeviceSerial, DebugProperty, value, ct).ConfigureAwait(false);
+            _propertyOwned = true;
+            _log($"{DebugProperty} = {value}");
+        }
+        finally { _propertyGate.Release(); }
     }
 
+    /// <summary>
+    /// Keeps the property's deadline in the future for as long as the session lives, so a process
+    /// the app starts much later still finds a debugger waiting. Off by default: the same freshness
+    /// is what lets an unrelated Mono app pick up our port (the launcher refuses it and rotates,
+    /// but that app has still lost 30 seconds waiting for a debugger that never comes).
+    /// </summary>
+    private async Task RenewPropertyLoopAsync(CancellationToken ct)
+    {
+        var lifetime = _options.EffectivePropertyLifetime;
+        var period = TimeSpan.FromSeconds(Math.Max(20, lifetime.TotalSeconds / 3));
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(period, ct).ConfigureAwait(false);
+                var deviceNow = await _adb.GetDeviceEpochSecondsAsync(_options.DeviceSerial, ct).ConfigureAwait(false);
+                _deadline = deviceNow + (long)lifetime.TotalSeconds;
+                await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
+            {
+                // The device may be busy or gone; the next iteration retries.
+                _log($"refreshing {DebugProperty} failed: {ex.Message}");
+            }
+        }
+    }
     private async Task ForwardAsync(int port, CancellationToken ct)
     {
         await _adb.ForwardAsync(_options.DeviceSerial, port, port, ct).ConfigureAwait(false);

@@ -315,6 +315,17 @@ do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
     `[Service(Name="the app's background service", Exported=true, Process="the app's own android:process")]`
     → third, global-named process, on demand.
   - `TTManager` (foreground service) runs in the main process.
+- **Late processes and the deadline (2026-08-21):** the `timeout=` field is a
+  device-epoch instant, and a process reading the property after it has passed
+  starts without a debugger — silently, from the debugger's point of view.
+  Measured with a 25 s lifetime: a process spawned 40 s after launch is running
+  on the device (`ps` shows it) and is simply not attached. `KeepPropertyFresh`
+  rewrites the property every `lifetime/3` (at least every 20 s) for as long as
+  the session lives, and the same process is then attached on its own port.
+  Off by default: the freshness that helps our late processes is the same
+  freshness that makes an unrelated Mono app stall waiting for a debugger on
+  our port. Turn it on for apps with on-demand services (the reference application's
+  `the app's own android:process`, its crash reporter). **[verified]**
 - **Processes of the app are identified by uid, not only by name (2026-08-21):**
   a component declared with a global `android:process` (the reference application's
   `the background service` → `the app's own android:process`) runs in a

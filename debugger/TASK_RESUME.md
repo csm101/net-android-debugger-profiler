@@ -69,8 +69,20 @@ the fixes it turns up. M1/M2 engine work is done; the suite is the safety net.
     helper, which throws once its test is over. An engine log callback from a
     background thread after teardown took the whole test host down mid-run.
     That exception is now ignored (the line is kept in the fixture's own log).
-- Suite: **54 tests, 54/54 green** (5 m 33 s). The run before it was 53/54: the
-  only failure was the foreign-app test above, since repaired.
+- Fifth item, also aimed at the reference application: a process the app starts **after** the
+  debug property's deadline runs without a debugger, silently. Measured with a
+  25 s lifetime: the process is on the device and simply not attached. New
+  `LaunchOptions.KeepPropertyFresh` (MCP: `launch_app(keepPropertyFresh: true)`)
+  rewrites the property every `lifetime/3` for as long as the session lives, and
+  the same process is then attached on its own port. Off by default — the same
+  freshness makes an unrelated Mono app stall on our port. All property writes
+  now go through one semaphore (launch, rotation, renewal). Test
+  `ProcessStartedAfterThePropertyExpired_IsAttached_OnlyWhenTheLifetimeIsKeptFresh`
+  (~2 min on its own).
+  Use it on the reference application: `the app's own android:process` is on-demand, the crash reporter
+  restarts on its own schedule.
+- Suite: **55 tests, 55/55 green** (7 m 54 s — the new test waits ~2 min by
+  design).
 
 ## Next steps (in order)
 1. **User action**: rerun `register-mcp.cmd` with the MCP sessions closed. The

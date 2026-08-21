@@ -43,6 +43,10 @@ public sealed record AppTarget(string PackageName, string? ActivityName = null, 
 /// <param name="PropertyLifetime">Freshness window written into <c>debug.mono.extra</c> (device clock). The property is
 /// device-global: any Mono app process that starts while it is fresh waits for a debugger on our port, so keep this
 /// short (default 3 minutes) unless helper processes of the debuggee are expected to start later.</param>
+/// <param name="KeepPropertyFresh">Rewrite the property periodically so it never expires while the session lives.
+/// Needed when the debuggee starts processes long after launch (an on-demand service, a crash reporter): with the
+/// default they read an expired property and run without a debugger. The cost is that the window in which another
+/// Mono app can pick up our port stays open for the whole session.</param>
 /// <param name="AdbPath">adb executable; defaults to <c>adb</c> on PATH.</param>
 public sealed record LaunchOptions(
     string DeviceSerial,
@@ -52,6 +56,7 @@ public sealed record LaunchOptions(
     TimeSpan? ConnectTimeout = null,
     int AgentLogLevel = 0,
     TimeSpan? PropertyLifetime = null,
+    bool KeepPropertyFresh = false,
     string AdbPath = "adb")
 {
     public TimeSpan EffectiveConnectTimeout => ConnectTimeout ?? TimeSpan.FromSeconds(25);

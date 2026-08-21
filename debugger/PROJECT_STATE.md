@@ -58,7 +58,7 @@ Solution scaffold + vendored debugger-libs (submodule, builds net10.0 unmodified
 - M2 - Inspection depth: DONE (2026-08-21). Evaluate, object/array/dictionary
   expansion, exception filters, threads, structured logcat capture with
   filters, compact snapshot, evaluation options (timeouts, invoke-free safe
-  mode). 54 integration tests; TEST_CATALOG has 2 open gaps left, both waiting
+  mode). 55 integration tests; TEST_CATALOG has 2 open gaps left, both waiting
   on a WiFi device (U9).
 - M3 - the reference application hardening: STARTED 2026-08-20. Verified on the emulator via
   the registered MCP server: attach, helper process auto-attach, breakpoints

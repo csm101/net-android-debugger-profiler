@@ -315,6 +315,55 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         }
     }
 
+
+    /// <summary>
+    /// `debug.mono.extra` carries a deadline and is read at process start, so a process the app
+    /// starts long after launch finds it expired and runs without a debugger. the reference application does exactly
+    /// that with its on-demand service and its crash reporter. `KeepPropertyFresh` rewrites the
+    /// deadline for as long as the session lives; it is off by default because the same freshness
+    /// is what makes an unrelated Mono app wait for a debugger on our port.
+    /// </summary>
+    [Fact]
+    public async Task ProcessStartedAfterThePropertyExpired_IsAttached_OnlyWhenTheLifetimeIsKeptFresh()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(6));
+        var adb = new AdbClient();
+        var pkg = TestEnvironment.TestTargetPackage;
+        var lifetime = TimeSpan.FromSeconds(25);
+
+        async Task<ProcessSnapshot?> SpawnLateAndWatchAsync(DebugSession session)
+        {
+            // Let the property go stale (it would already be renewed at least once if kept fresh).
+            await Task.Delay(lifetime + TimeSpan.FromSeconds(15), cts.Token);
+            await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.SPAWN_LATE -p {pkg}", cts.Token, TimeSpan.FromMinutes(1));
+            return await WaitForAsync(
+                () => session.GetProcesses().FirstOrDefault(p => p.Name.EndsWith(":late", StringComparison.Ordinal)),
+                TimeSpan.FromSeconds(25), cts.Token);
+        }
+
+        // Default: the late process starts, but without a debugger.
+        var plain = device.NewSession(output.WriteLine);
+        await using (plain)
+        {
+            await plain.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options() with { PropertyLifetime = lifetime }, cts.Token);
+            Assert.Null(await SpawnLateAndWatchAsync(plain));
+            // It did run — it is simply not ours to debug.
+            var onDevice = await adb.ListPackageProcessesAsync(device.Serial, pkg, cts.Token);
+            Assert.Contains(onDevice, p => p.Name.EndsWith(":late", StringComparison.Ordinal));
+        }
+
+        // Kept fresh: the same process is attached, on its own port.
+        var fresh = device.NewSession(output.WriteLine);
+        await using (fresh)
+        {
+            await fresh.LaunchAsync(TestEnvironment.TestTargetApp(),
+                device.Options() with { PropertyLifetime = lifetime, KeepPropertyFresh = true }, cts.Token);
+            var late = await SpawnLateAndWatchAsync(fresh);
+            Assert.NotNull(late);
+            var all = fresh.GetProcesses();
+            Assert.Equal(all.Count, all.Select(p => p.SdbPort).Distinct().Count());
+        }
+    }
     private static async Task<T?> WaitForAsync<T>(Func<Task<T?>> probe, TimeSpan timeout, CancellationToken ct) where T : class
     {
         var deadline = DateTime.UtcNow + timeout;

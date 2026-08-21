@@ -27,7 +27,7 @@ Conventions (mirroring the Delphi project's discipline):
 - Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
   the AVD headless (a windowed emulator cannot start while the desktop is
   locked) and clears the locks a crashed qemu leaves behind.
-- 54 tests in four files, ~5 min on the headless emulator after deploy. Each
+- 55 tests in four files, ~5 min on the headless emulator after deploy. Each
   test launches TestTarget afresh through `DebugSession`.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
@@ -76,6 +76,11 @@ Conventions (mirroring the Delphi project's discipline):
       its place is attached on a new port —
       `KilledHelperProcess_IsReportedGone_AndReattachedWhenAndroidRestartsIt`
 - [x] `GetProcesses` reports a helper that died (`HasExited`) — same test
+- [x] A process the app starts after the debug property's deadline runs without
+      a debugger by default, and is attached when the session keeps the property
+      fresh (`KeepPropertyFresh`) —
+      `ProcessStartedAfterThePropertyExpired_IsAttached_OnlyWhenTheLifetimeIsKeptFresh`
+      (~2 min: it waits for the property to go stale twice)
 - [x] A process whose name has nothing to do with the package (component
       declared with a global `android:process`, as the reference application's
       `the app's own android:process` is) is recognised by uid and attached, not

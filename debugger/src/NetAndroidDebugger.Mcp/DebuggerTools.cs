@@ -43,12 +43,14 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("First SDB port; each extra process gets the next one")] int basePort = 10000,
         [Description("msbuild Configuration for deploy")] string configuration = "Debug",
         [Description("How long (seconds) the device-side debug property stays valid after launch (default 180). Helper processes of the app that start later than this run without debugger; any OTHER Mono app starting within this window is disturbed (it waits for a debugger on our port), so keep it short.")] int? propertyLifetimeSeconds = null,
+        [Description("Keep the debug property valid for the whole session, so processes the app starts much later (on-demand services, crash reporters) are still debugged. Leaves the window open for other Mono apps to pick up our port the entire time.")] bool keepPropertyFresh = false,
         CancellationToken ct = default)
     {
         var session = await host.ForLaunchAsync(ct);
         var app = new AppTarget(packageName, activityName, projectPath);
         var options = new LaunchOptions(deviceSerial, basePort, deploy, configuration,
-            PropertyLifetime: propertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(propertyLifetimeSeconds.Value) : null);
+            PropertyLifetime: propertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(propertyLifetimeSeconds.Value) : null,
+            KeepPropertyFresh: keepPropertyFresh);
         await session.LaunchAsync(app, options, ct);
         return "Launched and attached.\n" + TextFormat.Status(session.GetStatus());
     }
@@ -61,7 +63,7 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("Launcher activity pkg/Name; resolved automatically when omitted")] string? activityName = null,
         [Description("First SDB port")] int basePort = 10000,
         CancellationToken ct = default)
-        => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", null, ct);
+        => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", null, false, ct);
 
     [McpServerTool(Name = "get_debug_session_status", ReadOnly = true), Description("Session state, stop generation, last stop, attached processes.")]
     public string GetStatus()
