@@ -75,13 +75,13 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
 - [x] Weaver records allocations by type and by allocating method - `Woven_methods_report_their_allocations_by_type_and_site` (fast) and asserted on device
 - [x] Weaver on device: woven app assembly pushed to the override dir, NAP_PROFILER_OUT, session round trip, timings recorded, originals restored - `Weaver_instrumenting_session_times_woven_methods`
-- [ ] Iterator methods (yield return) instrumented like async bodies (U8 leftover)
+- [x] Iterator methods (yield return) instrumented like async bodies - `Iterator_state_machine_records_every_produced_item`, `Weaver_instruments_iterator_bodies_on_the_device`
 - [x] Weaving targets file is valid XML and scoped to the app project - `Targets_file_is_well_formed_xml`, `Targets_only_weave_the_android_application_project`
 - [x] Build-time weaving: map produced by the build, session consumes it without touching the device - `Build_time_weaving_session_uses_the_build_map` (skips unless TestTarget was installed from a `-p:NapWeave=true` build)
 - [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
 - [x] Async methods woven as stub + state machine - `Async_methods_are_woven_as_stub_and_state_machine`
 - [x] Async state machine records every resumption (opt-in; CoreCLR only so far) - `Async_state_machine_records_every_resumption`
-- [ ] TODO-RED U8: async-body weaving prevents a real net9 app from starting (device)
+- [x] Async-body weaving runs on a real net9 app (the old TODO-RED was a launch defect, not the IL) - `Build_time_weaving_records_async_bodies_on_the reference application`
 - [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the reference application`
 
 - [x] Iterator state machine: one resumption per item plus the terminating one - `Iterator_state_machine_records_every_produced_item`
