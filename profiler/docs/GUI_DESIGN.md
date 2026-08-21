@@ -321,8 +321,12 @@ so a build script can produce the same spreadsheet the Export button produces.
 
 ## Open questions
 
-- Call Graph: worth drawing at all, or do the two tree views plus the critical
-  path cover it? Decide after the trees are usable.
+- (decided) Call Graph: kept. The trees answer "where did the time go"; the graph
+  answers "who is around this method", and it is the panel people point at. It
+  walks on a click, goes back on a right-click, opens the code on a double click,
+  and draws arrowheads so the direction of a call is not a guess. A fan wider than
+  six is cut, and the graph says how many it dropped rather than pretending it is
+  complete.
 - (decided) Sources for the Editor panel: the user points the session at the C#
   project folder, and the tool assumes it is the tree the app was built from. The
   audience is the developer working on that code, not someone profiling an app

@@ -100,6 +100,9 @@ type
     FGraphMethodId: Integer;
     FGraphCentre: string;
     FGraphCentreValue: Int64;
+    FGraphHistory: TArray<Integer>;
+    FGraphParentsHidden: Integer;
+    FGraphChildrenHidden: Integer;
     FGraphParents: TNeighbours;
     FGraphChildren: TNeighbours;
     FGraphBoxes: TArray<TRect>;
@@ -182,6 +185,7 @@ type
     procedure PaintGraph(Sender: TObject);
     procedure GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
     procedure ShowGraphOf(AMethodId: Integer);
+    procedure GraphBack;
     function DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
       AValue: Int64; AIsCentre: Boolean): TRect;
     procedure BuildEditorTab;
@@ -288,7 +292,12 @@ begin
   // Sizes last: a panel resized before its neighbours exist gets squeezed back by the
   // containers created afterwards.
   FExplorerPanel.Width := 280;
-  FDetailsDock.Height := 260;
+  // The bottom strip is a tab container by now, and a panel inside one does not carry
+  // its own height: size the container, or the call views open as a 100px sliver.
+  if FDetailsDock.ParentDockControl <> nil then
+    FDetailsDock.ParentDockControl.Height := 320
+  else
+    FDetailsDock.Height := 320;
 
   BuildExplorer;
   BuildReportTab;
@@ -801,6 +810,23 @@ begin
   FGraphMethodId := -1;
 end;
 
+/// A line with a head on it: without the head the direction of a call is a guess.
+procedure DrawGraphArrow(ACanvas: TCanvas; const AFrom, ATo: TPoint);
+const
+  Head = 7;
+var
+  LAngle: Double;
+begin
+  ACanvas.Pen.Color := ThemeColors.Line;
+  ACanvas.Brush.Color := ThemeColors.Line;
+  ACanvas.MoveTo(AFrom.X, AFrom.Y);
+  ACanvas.LineTo(ATo.X, ATo.Y);
+  LAngle := ArcTan2(ATo.Y - AFrom.Y, ATo.X - AFrom.X);
+  ACanvas.Polygon([ATo,
+    Point(ATo.X - Round(Head * Cos(LAngle - Pi / 7)), ATo.Y - Round(Head * Sin(LAngle - Pi / 7))),
+    Point(ATo.X - Round(Head * Cos(LAngle + Pi / 7)), ATo.Y - Round(Head * Sin(LAngle + Pi / 7)))]);
+end;
+
 /// One box per method: the name on top, the metric underneath, exactly the shape AQTime
 /// draws. Callers sit above the focused method, callees below, arrows follow the calls.
 function TMainForm.DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
@@ -883,12 +909,26 @@ begin
     SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
     FGraphBoxes[High(FGraphBoxes)] := LRect;
     FGraphBoxIds[High(FGraphBoxIds)] := FGraphParents[I].MethodId;
-    LCanvas.Pen.Color := ThemeColors.Line;
-    LCanvas.MoveTo(LRect.CenterPoint.X, LRect.Bottom);
-    LCanvas.LineTo(LCentreRect.CenterPoint.X, LCentreRect.Top);
+    DrawGraphArrow(LCanvas, Point(LRect.CenterPoint.X, LRect.Bottom),
+      Point(LCentreRect.CenterPoint.X, LCentreRect.Top));
+  end;
+  if FGraphParentsHidden > 0 then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(40, LRow - 22, Format('+%d more callers - see the Details panel',
+      [FGraphParentsHidden]));
+    LCanvas.Brush.Style := bsSolid;
   end;
 
   DrawGraphBox(LCanvas, LCentreRect, FGraphCentre, FGraphCentreValue, True);
+  if Length(FGraphHistory) > 0 then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.Font.Color := ThemeColors.Subtle;
+    LCanvas.TextOut(LCentreRect.Right + 16, LCentreRect.Top + 14, 'right-click to go back');
+    LCanvas.Font.Color := ThemeColors.Text;
+    LCanvas.Brush.Style := bsSolid;
+  end;
 
   // Callees, in a row below, with the share of the focused method's time on the arrow.
   LTotal := 0;
@@ -904,9 +944,8 @@ begin
     SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
     FGraphBoxes[High(FGraphBoxes)] := LRect;
     FGraphBoxIds[High(FGraphBoxIds)] := FGraphChildren[I].MethodId;
-    LCanvas.Pen.Color := ThemeColors.Line;
-    LCanvas.MoveTo(LCentreRect.CenterPoint.X, LCentreRect.Bottom);
-    LCanvas.LineTo(LRect.CenterPoint.X, LRect.Top);
+    DrawGraphArrow(LCanvas, Point(LCentreRect.CenterPoint.X, LCentreRect.Bottom),
+      Point(LRect.CenterPoint.X, LRect.Top));
     if LTotal > 0 then
     begin
       LCanvas.Brush.Style := bsClear;
@@ -916,26 +955,62 @@ begin
     end;
   end;
 
+  if FGraphChildrenHidden > 0 then
+  begin
+    LCanvas.Brush.Style := bsClear;
+    LCanvas.TextOut(40, LRow + BoxHeight + 8, Format('+%d more callees - see the Details panel',
+      [FGraphChildrenHidden]));
+    LCanvas.Brush.Style := bsSolid;
+  end;
+
   FGraph.Width := Max(FGraphScroll.ClientWidth,
     40 + (Max(Length(FGraphParents), Length(FGraphChildren)) + 1) * (BoxWidth + Gap));
   FGraph.Height := Max(FGraphScroll.ClientHeight, LRow + BoxHeight + 40);
 end;
 
-/// Clicking a box walks the graph, which is the whole point of having one.
+/// Clicking a box walks the graph, which is the whole point of having one. The right
+/// button walks back - the graph says so on screen - and a double click leaves the graph
+/// for the code.
 procedure TMainForm.GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
   I: Integer;
 begin
+  if Button = mbRight then
+  begin
+    GraphBack;
+    Exit;
+  end;
   for I := 0 to High(FGraphBoxes) do
     if FGraphBoxes[I].Contains(Point(X, Y)) then
     begin
-      ShowGraphOf(FGraphBoxIds[I]);
+      if ssDouble in Shift then
+      begin
+        ShowSourceOf(FGraphBoxIds[I]);
+        FSourcePanel.Activate;
+      end
+      else
+        ShowGraphOf(FGraphBoxIds[I]);
       Exit;
     end;
 end;
 
+/// Walking a graph without a way back means starting from the Report every time.
+procedure TMainForm.GraphBack;
+var
+  LPrevious: Integer;
+begin
+  if Length(FGraphHistory) = 0 then
+    Exit;
+  LPrevious := FGraphHistory[High(FGraphHistory)];
+  SetLength(FGraphHistory, Length(FGraphHistory) - 1);
+  FGraphMethodId := -1;   // stop ShowGraphOf recording where we came from
+  ShowGraphOf(LPrevious);
+end;
+
 procedure TMainForm.ShowGraphOf(AMethodId: Integer);
 begin
+  if (FGraphMethodId >= 0) and (AMethodId <> FGraphMethodId) then
+    FGraphHistory := FGraphHistory + [FGraphMethodId];
   FGraphMethodId := AMethodId;
   if (AMethodId < 0) or not FStore.IsOpen then
   begin
@@ -950,7 +1025,10 @@ begin
     FGraphCentreValue := FStore.MethodInclusive(AMethodId);
     FGraphParents := FStore.Parents(AMethodId);
     FGraphChildren := FStore.Children(AMethodId);
-    // A wide fan is unreadable and slow to draw: the tail is in the Details table.
+    // A wide fan is unreadable and slow to draw: the tail is in the Details table, and
+    // the graph says how much of it is missing rather than pretending it is complete.
+    FGraphParentsHidden := Max(0, Length(FGraphParents) - 6);
+    FGraphChildrenHidden := Max(0, Length(FGraphChildren) - 6);
     if Length(FGraphParents) > 6 then SetLength(FGraphParents, 6);
     if Length(FGraphChildren) > 6 then SetLength(FGraphChildren, 6);
   end;
