@@ -1,10 +1,11 @@
 # Task resume
 
 ## Current task
-THIRD-PARTY-NOTICES (P5 licensing obligation): produce the notices file the
-project must ship with any distributed release, and keep it from drifting.
-Substep: written, test-guarded, wired into README/PROJECT_STATE/TEST_CATALOG;
-fast suite running through the test-runner agent, then commit and push.
+None in progress. THIRD-PARTY-NOTICES is done (commits 5836463, 63c2552, both
+pushed): the notices file, its guard test, the doc wiring, plus doc hygiene
+(U16 retired, U19 narrowed, the stale launching note corrected against
+AdbClient.LaunchAsync, TEST_CATALOG G2 folded into G). Fast suite green:
+38 passed, 1 TODO-RED skip.
 
 ## Files in focus
 THIRD-PARTY-NOTICES.txt, tests/NetAndroidProfiler.Tests/Fast/ThirdPartyNoticesTests.cs,
