@@ -10,6 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The rules-file reader is a frontend concern; the tests exercise it directly. -->
+    <Compile Include="../../src/Shared/ExceptionRuleFile.cs" Link="Harness/ExceptionRuleFile.cs" />
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="ModelContextProtocol" Version="2.2.0" />

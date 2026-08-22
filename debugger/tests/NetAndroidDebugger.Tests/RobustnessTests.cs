@@ -831,4 +831,124 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
             session.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, MessageRegex: "(unclosed")]));
         Assert.Contains("regular expression", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// The shared rules file is a baseline the session's own rules override, and it is re-read on
+    /// resume: the point is being able to edit a rule while the app is stopped and have it govern
+    /// what happens next, without restarting the session.
+    /// </summary>
+    [Fact]
+    public async Task GlobalExceptionRules_AreReReadOnResume()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        var dir = Directory.CreateTempSubdirectory("nad-rules-");
+        var file = Path.Combine(dir.FullName, "exceptionRules.json");
+        try
+        {
+            // Start with a file that breaks on the exception the app raises every fifth tick.
+            await File.WriteAllTextAsync(file, """
+                [{"type":"System.InvalidOperationException","action":"break"}]
+                """, cts.Token);
+
+            await using var session = await LaunchAsync(cts.Token, s =>
+            {
+                s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+                s.SetGlobalExceptionRuleSource(new NetAndroidDebugger.Frontends.ExceptionRuleFile(file));
+            });
+
+            var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(45), cts.Token);
+            Assert.NotNull(stop);
+            Assert.Equal(StopReason.Exception, stop.Reason);
+
+            // Edit the file while the app is stopped: from here on that exception is ignored.
+            await File.WriteAllTextAsync(file, """
+                [{"type":"System.InvalidOperationException","action":"ignore"}]
+                """, cts.Token);
+            // The engine compares the file's timestamp, whose resolution is coarse enough that an
+            // immediate rewrite can look unchanged.
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddSeconds(1));
+
+            session.Continue();
+            // Several more of them go by; none stops the app now.
+            Assert.Null(await session.WaitForStopAsync(stop.Generation, TimeSpan.FromSeconds(25), cts.Token));
+            Assert.Equal(SessionState.Running, session.State);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The session's own rules are consulted before the shared ones, so a project can override the
+    /// machine-wide baseline rather than being stuck with it.
+    /// </summary>
+    [Fact]
+    public async Task SessionRules_WinOverTheSharedFile()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var dir = Directory.CreateTempSubdirectory("nad-rules-");
+        var file = Path.Combine(dir.FullName, "exceptionRules.json");
+        try
+        {
+            // The shared baseline says break...
+            await File.WriteAllTextAsync(file, """
+                [{"action":"break"}]
+                """, cts.Token);
+
+            await using var session = await LaunchAsync(cts.Token, s =>
+            {
+                s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+                s.SetGlobalExceptionRuleSource(new NetAndroidDebugger.Frontends.ExceptionRuleFile(file));
+                // ...and this session says otherwise for this one type.
+                s.SetExceptionRules([new ExceptionRule(ExceptionAction.Ignore, Type: "System.InvalidOperationException")]);
+            });
+
+            Assert.Null(await session.WaitForStopAsync(0, TimeSpan.FromSeconds(25), cts.Token));
+            Assert.Equal(SessionState.Running, session.State);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// A file being edited is half-written for a moment, which must not take a resume down: the
+    /// rules already in force stay, and the engine says what it could not read.
+    /// </summary>
+    [Fact]
+    public async Task GlobalExceptionRules_BrokenFile_KeepsWhatWasInForce()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var dir = Directory.CreateTempSubdirectory("nad-rules-");
+        var file = Path.Combine(dir.FullName, "exceptionRules.json");
+        try
+        {
+            await File.WriteAllTextAsync(file, """
+                [{"type":"System.InvalidOperationException","action":"ignore"}]
+                """, cts.Token);
+
+            await using var session = await LaunchAsync(cts.Token, s =>
+            {
+                s.SetExceptionFilters(new ExceptionFilters(true, ["System.InvalidOperationException"]));
+                s.SetGlobalExceptionRuleSource(new NetAndroidDebugger.Frontends.ExceptionRuleFile(file));
+            });
+
+            // Truncated mid-edit.
+            await File.WriteAllTextAsync(file, "[{\"type\":\"System.Inval", cts.Token);
+            File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddSeconds(1));
+
+            session.Continue();
+            // The ignore rule read earlier is still in force, so the app keeps running...
+            Assert.Null(await session.WaitForStopAsync(0, TimeSpan.FromSeconds(25), cts.Token));
+            // ...and the engine said why it could not re-read the file.
+            var log = session.GetDebuggerOutput(500);
+            Assert.Contains(log, l => l.Contains("could not read", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
 }

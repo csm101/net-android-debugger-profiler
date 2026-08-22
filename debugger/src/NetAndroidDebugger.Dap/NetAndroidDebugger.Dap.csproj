@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!-- One reader, both frontends: the file format is a frontend concern, Core stays JSON-free. -->
+    <Compile Include="../Shared/ExceptionRuleFile.cs" Link="ExceptionRuleFile.cs" />
     <ProjectReference Include="..\NetAndroidDebugger.Core\NetAndroidDebugger.Core.csproj" />
   </ItemGroup>
 

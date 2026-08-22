@@ -196,3 +196,24 @@ public sealed class InvalidSessionStateException(string message) : InvalidOperat
 
 /// <summary>Thrown when adb or the launch orchestration fails.</summary>
 public sealed class LaunchException(string message, Exception? inner = null) : Exception(message, inner);
+
+/// <summary>
+/// A source of exception rules the engine can re-read while a session is live — in practice a file
+/// the user edits. Core owns *when* to reload (on resume, if it changed) and knows nothing about
+/// the format: reading it is the frontend's job, which is what keeps JSON out of the engine.
+/// </summary>
+public interface IExceptionRuleSource
+{
+    /// <summary>Where the rules come from, for log messages. A path, usually.</summary>
+    string Description { get; }
+
+    /// <summary>
+    /// When the source last changed, or null when it does not exist. The engine compares this
+    /// against the value it saw at load time, so a source that cannot tell is simply never
+    /// reloaded rather than reloaded on every resume.
+    /// </summary>
+    DateTime? LastChangedUtc { get; }
+
+    /// <summary>Reads the rules. Throwing here is reported and leaves the previous set in force.</summary>
+    IReadOnlyList<ExceptionRule> Load();
+}

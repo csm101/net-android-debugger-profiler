@@ -546,4 +546,115 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
         // Still serving, and the rules were left alone.
         Assert.Contains("No exception rules", await CallAsync(client, "get_exception_rules", null, ct));
     }
+
+    /// <summary>
+    /// The shared rules file through the server: pointing at one reports what it holds, and
+    /// detaching it says so. The re-read-on-resume behaviour itself is covered in RobustnessTests;
+    /// what matters here is that the tool wires the file to the session at all.
+    /// </summary>
+    [Fact]
+    public async Task GlobalExceptionRulesFile_IsAttachedAndDetached_ThroughTheServer()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var dir = Directory.CreateTempSubdirectory("nad-mcp-rules-");
+        var file = Path.Combine(dir.FullName, "exceptionRules.json");
+        try
+        {
+            await File.WriteAllTextAsync(file, """
+                {"exceptionRules":[{"typeContains":"Mqtt","action":"ignore"}]}
+                """, ct);
+
+            var attached = await CallAsync(client, "use_global_exception_rules", new Dictionary<string, object?>
+            {
+                ["path"] = file,
+            }, ct);
+            Assert.Contains("1 shared rule", attached);
+            Assert.Contains("ignore on typeContains=Mqtt", attached);
+
+            var detached = await CallAsync(client, "use_global_exception_rules", new Dictionary<string, object?>
+            {
+                ["path"] = file,
+                ["enabled"] = false,
+            }, ct);
+            Assert.Contains("no longer consulted", detached);
+
+            // A file that is not JSON is this call's error, not a surprise later on.
+            await File.WriteAllTextAsync(file, "{ not json", ct);
+            var broken = await client.CallToolAsync("use_global_exception_rules",
+                new Dictionary<string, object?> { ["path"] = file }, cancellationToken: ct);
+            Assert.True(broken.IsError);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// The tool surface, spelled out. A tool that disappears is otherwise invisible: the engine
+    /// behind it still works, the build still passes, and only whichever test happened to call it
+    /// fails — with "Unknown tool", which reads like a client problem. That is exactly how
+    /// set_evaluation_options went missing for a while.
+    /// <para>
+    /// Adding a tool means adding it here, which is one line, and the coverage guard then insists
+    /// it is actually called somewhere.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task ToolSurface_IsExactlyThis()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var client = await ConnectAsync(cts.Token);
+
+        string[] expected =
+        [
+            "attach_to_app",
+            "continue_and_wait",
+            "detach_debugger",
+            "evaluate_expression",
+            "expand_variable",
+            "get_app_output",
+            "get_call_stack",
+            "get_compact_debug_snapshot",
+            "get_current_source_location",
+            "get_debug_session_status",
+            "get_debugger_output",
+            "get_exception_details",
+            "get_exception_rules",
+            "get_loaded_assemblies",
+            "get_locals",
+            "get_source_files",
+            "get_threads",
+            "get_variable",
+            "launch_app",
+            "list_breakpoints",
+            "list_devices",
+            "pause_execution",
+            "remove_all_breakpoints",
+            "remove_breakpoint",
+            "set_breakpoint",
+            "set_breakpoints",
+            "set_evaluation_options",
+            "set_exception_filters",
+            "set_exception_rules",
+            "step_into",
+            "step_out",
+            "step_over",
+            "stop_debugging",
+            "terminate_app",
+            "use_global_exception_rules",
+            "wait_until_stopped",
+        ];
+
+        var exposed = (await client.ListToolsAsync(cancellationToken: cts.Token)).Select(t => t.Name).OrderBy(n => n).ToArray();
+
+        var missing = expected.Except(exposed).ToList();
+        var unexpected = exposed.Except(expected).ToList();
+        Assert.True(missing.Count == 0, "tools that vanished from the server: " + string.Join(", ", missing));
+        Assert.True(unexpected.Count == 0,
+            "tools the server exposes that this list does not name (add them here, then cover them): " + string.Join(", ", unexpected));
+    }
 }

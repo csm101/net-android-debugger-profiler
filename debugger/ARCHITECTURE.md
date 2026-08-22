@@ -56,6 +56,7 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `src/NetAndroidDebugger.Dap/DapConnection.cs` | DAP wire format: `Content-Length` framing over stdin/stdout, one writer at a time |
 | `src/NetAndroidDebugger.Dap/DapIds.cs` | DAP's integer thread/frame/variable ids ↔ the engine's (pid, thread, frame) and expansion handles; frame and variable ids are dropped when a process resumes |
 | `src/NetAndroidDebugger.Dap/DapAdapter.cs` | Request dispatch and event forwarding over one `DebugSession`; translation only |
+| `src/Shared/ExceptionRuleFile.cs` | Reads exception rules from a JSON file and stands in as the engine's shared rule source; compiled into both frontends and the tests |
 
 Not yet implemented: `ValueFormatter` (Mono.Debugging's `DisplayValue` is used
 as-is), `SourceResolver` (breakpoint paths must match the PDB paths), logcat
@@ -131,8 +132,17 @@ when one does, the stop is held and decided on a worker, and `ReportStop` is
 called from whichever path wins. Type and raise-site criteria never need the
 debuggee, which is why they are the cheap ones.
 
-Not implemented, and worth having if rules become routine: the machine-wide
-rules file and the hot reload on resume that the Delphi debugger has.
+
+A second, shared source sits behind the session's own rules: a file the user
+edits, consulted after them so a project overrides the machine-wide baseline.
+`Continue` and every step re-read it when it has changed, which is the point —
+edit a rule while the app is stopped and it governs the next resume, with no
+restart. Core owns *when* to reload (`IExceptionRuleSource`), never the format:
+the JSON reader is `src/Shared/ExceptionRuleFile.cs`, compiled into both
+frontends and the tests, so the engine stays JSON-free. A half-written file is
+the normal state while someone is editing, so a failed read keeps the rules
+already in force and says so rather than failing the resume.
+
 ## Threading model
 
 - Mono.Debugging raises events on its own event thread, one per

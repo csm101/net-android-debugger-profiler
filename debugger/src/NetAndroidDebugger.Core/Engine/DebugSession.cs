@@ -23,6 +23,9 @@ public sealed class DebugSession : IAsyncDisposable
     private readonly Dictionary<int, Task> _attaching = new();
     private readonly HashSet<int> _unhandledReported = new();
     private List<ExceptionRule> _exceptionRules = new();
+    private List<ExceptionRule> _globalRules = new();
+    private IExceptionRuleSource? _globalRuleSource;
+    private DateTime? _globalRulesSeenUtc;
     private readonly Dictionary<int, (BreakpointSpec Spec, Breakpoint Bp)> _breakpoints = new();
     private readonly List<AppLogLine> _appOutput = new();
     private readonly List<string> _debuggerOutput = new();
@@ -410,6 +413,9 @@ public sealed class DebugSession : IAsyncDisposable
     /// <summary>Resumes every stopped process without waiting.</summary>
     public void Continue()
     {
+        // Before resuming, not after: the shared rules file is meant to be edited while the app is
+        // stopped, and the whole point is that the edit governs what happens next.
+        ReloadGlobalRulesIfChanged();
         foreach (var pd in StoppedProcesses())
             pd.Continue();
     }
@@ -474,6 +480,8 @@ public sealed class DebugSession : IAsyncDisposable
     private async Task<StopEvent?> StepAsync(int pid, long threadId, TimeSpan timeout, CancellationToken ct, Action<Engine.ProcessDebugger, long> step)
     {
         var pd = RequireStoppedProcess(pid);
+        // A step resumes the app too, so the shared rules get the same chance to be re-read.
+        ReloadGlobalRulesIfChanged();
         var gen = StopGeneration;
         step(pd, threadId);
         return await WaitForStopAsync(gen, timeout, ct).ConfigureAwait(false);
@@ -700,13 +708,71 @@ public sealed class DebugSession : IAsyncDisposable
     public IReadOnlyList<ExceptionRule> GetExceptionRules() { lock (_lock) return _exceptionRules; }
 
     /// <summary>
+    /// Sets the shared rule source consulted after the session's own rules. Project rules win,
+    /// because the general baseline lives in the shared file and the specific case in the session.
+    /// The source is re-read on resume whenever it has changed, so a rule can be edited while the
+    /// app is stopped and take effect on the next continue.
+    /// </summary>
+    /// <param name="source">Null removes the shared source.</param>
+    public void SetGlobalExceptionRuleSource(IExceptionRuleSource? source)
+    {
+        lock (_lock)
+        {
+            _globalRuleSource = source;
+            _globalRulesSeenUtc = null;
+            _globalRules = [];
+        }
+        if (source is null)
+        {
+            _log("no shared exception rules");
+            return;
+        }
+        ReloadGlobalRulesIfChanged(force: true);
+    }
+
+    /// <summary>
+    /// Re-reads the shared rules when the source has changed since they were last read. Called
+    /// before every resume: the point is to let a rule be edited while the app is stopped.
+    /// </summary>
+    private void ReloadGlobalRulesIfChanged(bool force = false)
+    {
+        IExceptionRuleSource? source;
+        DateTime? seen;
+        lock (_lock) { source = _globalRuleSource; seen = _globalRulesSeenUtc; }
+        if (source is null) return;
+
+        DateTime? changed;
+        try { changed = source.LastChangedUtc; }
+        catch (Exception ex) { _log($"could not check {source.Description}: {ex.Message}"); return; }
+
+        if (!force && changed == seen) return;
+
+        IReadOnlyList<ExceptionRule> rules;
+        try { rules = source.Load(); }
+        catch (Exception ex)
+        {
+            // A half-written file while the user is editing is the normal case here, not an error
+            // worth failing a resume over. Keep what we had and say so.
+            _log($"could not read {source.Description}: {ex.Message} - the rules already in force are kept");
+            return;
+        }
+
+        lock (_lock) { _globalRules = rules.ToList(); _globalRulesSeenUtc = changed; }
+        _log($"shared exception rules from {source.Description}: {rules.Count} in force");
+    }
+
+    /// <summary>Session rules first, then the shared ones. First match still wins overall.</summary>
+    private List<ExceptionRule> EffectiveExceptionRulesNoLock()
+        => _globalRules.Count == 0 ? _exceptionRules : [.. _exceptionRules, .. _globalRules];
+
+    /// <summary>
     /// Decides what to do with a first-chance exception. Returns null when no rule matches, which
     /// leaves the filters in charge.
     /// </summary>
     private ExceptionAction? MatchExceptionRules(string type, string? message, string? sourceFile)
     {
         List<ExceptionRule> rules;
-        lock (_lock) rules = _exceptionRules;
+        lock (_lock) rules = EffectiveExceptionRulesNoLock();
         foreach (var rule in rules)
         {
             if (rule.Type is { Length: > 0 } exact && !string.Equals(type, exact, StringComparison.Ordinal)) continue;
@@ -726,7 +792,7 @@ public sealed class DebugSession : IAsyncDisposable
     private bool RulesNeedMessage()
     {
         lock (_lock)
-            return _exceptionRules.Any(r => r.MessageContains is { Length: > 0 } || r.MessageRegex is { Length: > 0 });
+            return EffectiveExceptionRulesNoLock().Any(r => r.MessageContains is { Length: > 0 } || r.MessageRegex is { Length: > 0 });
     }
 
     /// <summary>
@@ -735,7 +801,7 @@ public sealed class DebugSession : IAsyncDisposable
     /// </summary>
     private bool HandledByExceptionRules(Engine.ProcessDebugger pd, (string Type, string Message, string StackTrace)? snapshot)
     {
-        lock (_lock) if (_exceptionRules.Count == 0) return false;
+        lock (_lock) if (EffectiveExceptionRulesNoLock().Count == 0) return false;
 
         var type = snapshot?.Type ?? "";
         var site = TryDescribeLocation(pd.StopBacktrace)?.File;

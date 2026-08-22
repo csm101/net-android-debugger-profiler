@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using NetAndroidDebugger.Core;
+using NetAndroidDebugger.Frontends;
 
 namespace NetAndroidDebugger.Dap;
 
@@ -156,11 +157,39 @@ public sealed class DapAdapter : IAsyncDisposable
             PropertyLifetime: lifetime is > 0 ? TimeSpan.FromSeconds(lifetime.Value) : null,
             KeepPropertyFresh: Bool(args, "keepPropertyFresh") ?? false);
 
+        ApplyExceptionRules(args);
+
         var app = new AppTarget(package, Str(args, "activityName"), Str(args, "projectPath"));
         await _session.LaunchAsync(app, options, ct);
         await _conn.SendResponseAsync(request, null, ct);
     }
 
+    /// <summary>
+    /// Exception rules from the launch configuration, plus the shared file. Rules given here win
+    /// over the shared ones, which are the baseline; the shared file is re-read on resume, so it
+    /// can be edited while the app is stopped.
+    /// </summary>
+    private void ApplyExceptionRules(JsonObject args)
+    {
+        if (args["exceptionRules"] is JsonArray rules)
+        {
+            try { _session.SetExceptionRules(ExceptionRuleFile.Parse(rules.ToJsonString(), "exceptionRules")); }
+            catch (FormatException ex) { throw new ArgumentException(ex.Message); }
+        }
+
+        if (Bool(args, "useGlobalExceptionRules") is false)
+        {
+            _session.SetGlobalExceptionRuleSource(null);
+            return;
+        }
+
+        var path = Str(args, "globalExceptionRulesPath") ?? ExceptionRuleFile.DefaultPath;
+        var file = new ExceptionRuleFile(path);
+        // A broken shared file must not stop a launch: the session is still perfectly usable
+        // without it, and the message says where to look.
+        try { _ = file.Load(); _session.SetGlobalExceptionRuleSource(file); }
+        catch (Exception ex) { Log($"ignoring the shared exception rules: {ex.Message}"); }
+    }
     private async Task DisconnectAsync(JsonObject request, CancellationToken ct)
     {
         // Answer first, tear down after. Terminating means stopping the logcat reader, clearing the

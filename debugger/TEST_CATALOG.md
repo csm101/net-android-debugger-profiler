@@ -30,13 +30,18 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 81 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- 86 tests in five files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
   was lost when the emulator dropped mid-run, which is the environment, not the
   suite. Budget for roughly one lost run in four.
   test launches TestTarget afresh through `DebugSession`.
+- `WaitForCurrentOrNextStop_ReturnsCurrentStop_WhenAlreadyStopped` failed once
+  in a full run (the breakpoint resolved, then the app exited before the stop was
+  reported) and passed in the confirmation run and three times in isolation. Not
+  explained; if it returns, the question is whether the app died on its own or
+  the stop was lost.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
 - TestTarget is shared by every test: a member that is deliberately slow or
@@ -302,8 +307,14 @@ Conventions (mirroring the Delphi project's discipline):
       `ExceptionRules_ParsedAndApplied_ThroughTheServer`
 - [x] Bad rule input is refused naming what was expected, and leaves the rules
       in force alone — `ExceptionRules_BadInput_IsRejectedWithWhatWasExpected`
-- [ ] Rules from a machine-wide file, and hot-reloaded on resume (the Delphi
-      debugger has both; not implemented here)
+- [x] The shared rules file is re-read on resume, so a rule edited while the app
+      is stopped governs what happens next —
+      `GlobalExceptionRules_AreReReadOnResume`
+- [x] Session rules win over the shared file, which is the machine-wide baseline
+      — `SessionRules_WinOverTheSharedFile`
+- [x] A half-written file (the normal state while it is being edited) keeps the
+      rules already in force and says what could not be read —
+      `GlobalExceptionRules_BrokenFile_KeepsWhatWasInForce`
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →
@@ -336,6 +347,15 @@ Conventions (mirroring the Delphi project's discipline):
       `RemoveBreakpointById_AndPause_WorkThroughTheServer`
 - [x] Every way a session ends: attach_to_app, detach_debugger, stop_debugging —
       `LifecycleTools_EndTheSession_HoweverItIsAskedFor`
+- [x] The shared rules file is attached and detached through the server, and a
+      file that is not JSON is that call's error rather than a surprise later —
+      `GlobalExceptionRulesFile_IsAttachedAndDetached_ThroughTheServer`
+- [x] **No tool vanishes either**: the expected tool names are spelled out and
+      compared with what the server exposes. A tool that disappears is otherwise
+      invisible — the build passes and only whichever test happened to call it
+      fails, with "Unknown tool", which reads like a client problem. That is how
+      `set_evaluation_options` went missing for a while —
+      `ToolSurface_IsExactlyThis`
 - [x] **No tool ships uncovered**: the suite lists the server's tools and fails
       if one is never called through it — a wrong parameter name or a rendering
       that throws is invisible to the Core tests —

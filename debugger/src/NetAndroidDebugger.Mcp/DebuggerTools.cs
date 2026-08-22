@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using NetAndroidDebugger.Core;
+using NetAndroidDebugger.Frontends;
 
 
 namespace NetAndroidDebugger.Mcp;
@@ -222,6 +223,40 @@ public sealed class DebuggerTools(SessionHost host)
         return string.Join('\n', parsed.Select((r, i) => $"{i + 1}. {DescribeRule(r)}"));
     }
 
+
+    [McpServerTool(Name = "use_global_exception_rules"), Description(
+        "Points the session at a shared rules file, consulted after the session's own rules. It is re-read on every " +
+        "resume when it has changed, so a rule can be edited while the app is stopped and govern what happens next. " +
+        "Default path: %USERPROFILE%\\.net-android-debugger\\exceptionRules.json. The file is a JSON array of rules, " +
+        "or an object with an 'exceptionRules' array. Call with enabled=false to stop consulting it.")]
+    public string UseGlobalExceptionRules(
+        [Description("Path to the rules file; omit for the default")] string? path = null,
+        [Description("false detaches the shared file")] bool enabled = true)
+    {
+        var session = host.RequireForSetup();
+        if (!enabled)
+        {
+            session.SetGlobalExceptionRuleSource(null);
+            return "The shared rules file is no longer consulted.";
+        }
+
+        var file = new ExceptionRuleFile(path ?? ExceptionRuleFile.DefaultPath);
+        // Read it once here so a broken file is this call's error, rather than a surprise on the
+        // first exception with the app already running.
+        IReadOnlyList<ExceptionRule> rules;
+        try { rules = file.Load(); }
+        catch (Exception ex) { throw new McpException($"{file.Description}: {ex.Message}"); }
+
+        session.SetGlobalExceptionRuleSource(file);
+        if (rules.Count == 0)
+        {
+            return File.Exists(file.Description)
+                ? $"{file.Description} holds no rules yet; it is watched and will be re-read when it changes."
+                : $"{file.Description} does not exist yet; it is watched and will be read as soon as it does.";
+        }
+        return $"{file.Description}: {rules.Count} shared rule(s), after the session's own.\n"
+             + string.Join('\n', rules.Select((r, i) => $"{i + 1}. {DescribeRule(r)}"));
+    }
     [McpServerTool(Name = "get_exception_rules", ReadOnly = true), Description("The exception rules in force, in order.")]
     public string GetExceptionRules()
     {
@@ -244,46 +279,20 @@ public sealed class DebuggerTools(SessionHost host)
     }
 
     /// <summary>
-    /// Parses the rule array. Errors name the rule that is wrong and what was expected: a rule
-    /// silently dropped would look like the engine ignoring it.
+    /// Parses the rule array. The reader is shared with the DAP frontend and with the rules file,
+    /// so one format is described in one place.
     /// </summary>
     private static List<ExceptionRule> ParseExceptionRules(string json)
     {
-        JsonNode? root;
-        try { root = JsonNode.Parse(json); }
-        catch (JsonException ex) { throw new McpException($"rules is not valid JSON: {ex.Message}"); }
-
-        if (root is not JsonArray array)
-            throw new McpException("rules must be a JSON array, e.g. [{\"type\":\"System.TimeoutException\",\"action\":\"ignore\"}]");
-
-        var result = new List<ExceptionRule>();
-        for (var i = 0; i < array.Count; i++)
-        {
-            if (array[i] is not JsonObject o)
-                throw new McpException($"rule {i + 1} is not an object");
-
-            var actionText = Text(o, "action") ?? throw new McpException($"rule {i + 1} has no action (break, log, logStack or ignore)");
-            if (!Enum.TryParse<ExceptionAction>(actionText, ignoreCase: true, out var action))
-                throw new McpException($"rule {i + 1}: '{actionText}' is not an action. Use break, log, logStack or ignore.");
-
-            result.Add(new ExceptionRule(
-                action,
-                Text(o, "type"),
-                Text(o, "typeContains"),
-                Text(o, "messageContains"),
-                Text(o, "messageRegex"),
-                Text(o, "sourceFileContains")));
-        }
-        return result;
-
-        static string? Text(JsonObject o, string name)
-            => o[name] is JsonValue v && v.TryGetValue<string>(out var s) && !string.IsNullOrWhiteSpace(s) ? s : null;
+        try { return ExceptionRuleFile.Parse(json, "rules").ToList(); }
+        catch (FormatException ex) { throw new McpException(ex.Message); }
     }
 
+
     [McpServerTool(Name = "set_evaluation_options"), Description(
-        "Tunes value evaluation in the debuggee (applies to the current/next session). Lower timeouts for fast devices; " +
+        "Tunes how values are read. Timeouts are per expression and per member; " +
         "on very slow emulators set allowToStringCalls=false (or allowTargetInvoke=false) to avoid wedging the stopped thread " +
-        "on a long-running ToString/property getter. Omitted parameters are left unchanged; call without parameters to read the current values.")]
+        "in a debuggee call. Returns the options in force.")]
     public string SetEvaluationOptions(
         [Description("Per-expression timeout in ms (default 6000)")] int? evaluationTimeoutMs = null,
         [Description("Per-member timeout in ms when expanding objects (default 10000)")] int? memberEvaluationTimeoutMs = null,
@@ -298,7 +307,6 @@ public sealed class DebuggerTools(SessionHost host)
         return $"evaluationTimeoutMs={o.EvaluationTimeoutMs} memberEvaluationTimeoutMs={o.MemberEvaluationTimeoutMs} "
              + $"allowToStringCalls={(o.AllowToStringCalls ? "true" : "false")} allowTargetInvoke={(o.AllowTargetInvoke ? "true" : "false")}";
     }
-
     // ------------------------------------------------------------------ inspection
 
     [McpServerTool(Name = "get_threads", ReadOnly = true), Description("Threads of the stopped process(es): pid, thread id, name, location.")]

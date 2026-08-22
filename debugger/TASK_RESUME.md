@@ -7,7 +7,7 @@ committed; the suite is green. Pick the next item from "Next steps".
 
 ## State (2026-08-21, end of day)
 
-- Suite: **81 tests, 81/81 green** (~14 min). Every MCP tool is called through
+- Suite: **86 tests, 86/86 green** (~14 min). Every MCP tool is called through
   the real server, and a guard test fails if one is ever added without that.
   One run in four is lost to the emulator dropping; that is the environment.
 - Frontends: MCP server (registered in Claude Code) and DAP adapter, both over
