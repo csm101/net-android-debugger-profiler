@@ -128,9 +128,14 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Editor / Summary / Monitor panels, and its Get Results / Clear Results /
   Enable-Disable Profiling actions, which became the pause/resume/snapshot/clear
   contract of U7).
-- P5 - Packaging/registration (register-mcp pattern from the debugger project),
-  now also covering `nap` (control service + one-shot commands) and the decision
-  to ship dotnet-dsrouter inside the package instead of requiring the global tool.
+- P5 - Packaging (docs/PACKAGING.md): `build\package.ps1` publishes the MCP
+  server, `nap` and `nap-weave` into one bin\, ships dotnet-dsrouter in tools\
+  (preferred over a globally installed one), carries the weaving targets and the
+  GUI when it has been built, and zips it with install.cmd, the README and the
+  notices. One version in Directory.Build.props feeds the assemblies, the database
+  stamp, /health and the package name. `nap run` profiles once from a script and
+  `nap doctor` reports which adb and dsrouter a machine uses. Native AOT and
+  obfuscation were measured and deferred, with the reasons recorded.
 
 ## MCP tool surface (P1, implemented)
 
@@ -147,6 +152,8 @@ engine=provider|weaver and weaveAssemblies for P3 weaving. Memory sessions take 
 
     dotnet build C:\GitHub\net-android-profiler\NetAndroidProfiler.slnx
     dotnet test  C:\GitHub\net-android-profiler\NetAndroidProfiler.slnx
+    powershell -File build\package.ps1        the redistributable zip, into dist\
+    dist\...\bin\nap.exe doctor          which adb and dsrouter a machine uses
 
 ## Important discoveries
 

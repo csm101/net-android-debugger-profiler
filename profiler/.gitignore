@@ -13,3 +13,4 @@ TestResults/
 !tests/**/recorded/*.gcdump
 *.etlx
 build/tools/
+dist/

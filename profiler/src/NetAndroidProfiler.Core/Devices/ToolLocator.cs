@@ -24,14 +24,38 @@ public static class ToolLocator
         return null;
     }
 
-    /// <summary>dotnet-dsrouter global tool (~/.dotnet/tools) or on PATH.</summary>
+    /// <summary>
+    /// dotnet-dsrouter, from the copy shipped in the package if there is one, otherwise
+    /// from the global tool or PATH.
+    /// </summary>
     public static string? FindDsRouter() => FindDotnetTool("dotnet-dsrouter");
 
-    public static string? FindDotnetTool(string name)
+    /// <summary>
+    /// A .NET tool the profiler drives as a process. Looked up, in order: the explicit
+    /// override, the copy inside the package, the user's global tools, PATH.
+    ///
+    /// The package copy comes first on purpose: an installation that carries its own
+    /// dsrouter must not start behaving differently because the machine happens to have
+    /// another version installed globally.
+    /// </summary>
+    /// <param name="name">Tool name without extension, as in "dotnet-dsrouter".</param>
+    /// <param name="appBase">Where the application lives; defaults to this process's base directory.</param>
+    public static string? FindDotnetTool(string name, string? appBase = null)
     {
         string exe = OperatingSystem.IsWindows() ? name + ".exe" : name;
         string? fromEnv = Environment.GetEnvironmentVariable("NETANDROIDPROFILER_" + name.Replace('-', '_').ToUpperInvariant());
         if (!string.IsNullOrEmpty(fromEnv) && File.Exists(fromEnv)) return fromEnv;
+
+        // The package keeps its tools next to bin/, so the parent is searched as well.
+        string root = appBase ?? AppContext.BaseDirectory;
+        foreach (var candidate in new[]
+        {
+            Path.Combine(root, "tools", exe),
+            Path.Combine(root, exe),
+            Path.Combine(root, "..", "tools", exe),
+        })
+            if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+
         string tools = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "tools", exe);
         if (File.Exists(tools)) return tools;
         return FindOnPath(exe);

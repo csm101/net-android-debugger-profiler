@@ -75,8 +75,30 @@ public class ThirdPartyNoticesTests
         Assert.Contains("Version 2.0, January 2004", notices);
         Assert.Contains("END OF TERMS AND CONDITIONS", notices);
         Assert.Contains("APPENDIX: How to apply the Apache License", notices);
-        // The dependency policy forbids copyleft licenses.
-        foreach (var forbidden in new[] { "GNU GENERAL PUBLIC LICENSE", "GNU LESSER GENERAL PUBLIC" })
-            Assert.DoesNotContain(forbidden, notices, StringComparison.OrdinalIgnoreCase);
+        // The GUI ships SynEdit, so the MPL travels with it, in full.
+        Assert.Contains("MOZILLA PUBLIC LICENSE", notices, StringComparison.Ordinal);
+        Assert.Contains("Version 1.1", notices, StringComparison.Ordinal);
+
+        // The dependency policy forbids copyleft: no GPL/LGPL text may be reproduced here,
+        // because reproducing one is how a product declares it ships under it. The match is
+        // case-sensitive on the licenses' own headings - naming LGPL in prose is allowed and
+        // necessary, since SynEdit is dual-licensed and we have to say which half we take.
+        foreach (var forbidden in new[] { "GNU GENERAL PUBLIC LICENSE", "GNU LESSER GENERAL PUBLIC LICENSE" })
+            Assert.DoesNotContain(forbidden, notices, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Two components are not NuGet packages and so cannot be caught by the deps.json
+    /// sweep: dotnet-dsrouter, which the package carries as an executable, and SynEdit,
+    /// which is compiled into the GUI. Both are distributed, so both need a notice.
+    /// </summary>
+    [Fact]
+    public void The_components_that_are_not_nuget_packages_are_acknowledged_too()
+    {
+        string notices = NoticesText();
+        Assert.Contains("dotnet-dsrouter", notices, StringComparison.Ordinal);
+        Assert.Contains("SynEdit", notices, StringComparison.Ordinal);
+        // Which half of SynEdit's dual license this product takes is the whole point.
+        Assert.Contains("under the MPL", notices, StringComparison.Ordinal);
     }
 }

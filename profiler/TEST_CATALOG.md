@@ -152,6 +152,18 @@ the GUI's own data layer.
 - [x] Async state machines woven by default report their resumptions - `Build_time_weaving_records_async_bodies_on_the reference application`
 - [ ] Multi-assembly symbolication in one session (App.Core, App.Shared, ...)
 
+## H6. Packaging (Fast/PackagingTests)
+- [x] The tool version comes from the build, not a literal, and reaches the database
+  stamp - `The_tool_version_comes_from_the_build_not_from_a_literal`
+- [x] A tool shipped in the package wins over a globally installed one -
+  `A_packaged_tool_wins_over_the_globally_installed_one`
+- [x] bin\ finds the package's tools\ next to it - `The_tool_is_found_next_to_the_bin_directory_too`
+- [x] An empty package directory falls through to the machine's own tools -
+  `Without_a_packaged_copy_the_search_falls_through`
+- [ ] The zip produced by build\package.ps1 is unpacked on a clean machine and profiles
+  an app (manual: verified here by running dist\...in
+ap.exe run against the emulator)
+
 ## H. Licensing (Fast/ThirdPartyNoticesTests)
 - [x] Every package the shipped build depends on is acknowledged in THIRD-PARTY-NOTICES.txt (read from the .deps.json of NetAndroidProfiler.Mcp and nap-weave, so a new dependency fails the test) - `Every_distributed_package_is_acknowledged`
 - [x] The notices carry the full MIT and Apache-2.0 texts and no copyleft license - `Notices_carry_the_full_license_texts`

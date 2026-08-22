@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using NetAndroidProfiler.Core.Analysis;
 using NetAndroidProfiler.Core.Apps;
@@ -103,7 +104,14 @@ public sealed class ProfilerException : Exception
 /// </summary>
 public sealed class ProfilerSession : IAsyncDisposable
 {
-    public const string ToolVersion = "0.1.0";
+    /// <summary>
+    /// Version stamped into every session database and reported by /health and the MCP
+    /// server. It comes from the assembly, which comes from Directory.Build.props: one
+    /// edit per release, and no way for the stamp to drift from what shipped.
+    /// </summary>
+    public static readonly string ToolVersion =
+        typeof(ProfilerSession).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     private readonly AdbClient _adb;
     private readonly List<string> _warnings = new();
