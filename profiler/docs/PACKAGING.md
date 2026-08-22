@@ -54,6 +54,13 @@ the order is for. `nap doctor` prints which one was chosen and whether it came f
 package. The tool store's `.nupkg` archives are deleted after the install: the shim needs
 the extracted files, and the archive is a third of the package for nothing.
 
+## The GUI inside the package
+
+`NapGui.exe` sits in `gui\` and starts `nap serve` for the live controls, so it looks for
+`nap.exe` next to itself, then in `..\bin\` - the package layout - then in the repository's
+build output, and finally wherever Settings points. Keep the package together, or set the
+path in Settings.
+
 ## Installing
 
 `install.cmd` registers `bin\NetAndroidProfiler.Mcp.dll` with Claude Code at user scope,

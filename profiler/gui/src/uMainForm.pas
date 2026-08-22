@@ -2155,7 +2155,9 @@ end;
 
 // ---------------------------------------------------------------- live control
 
-/// The GUI owns the control service: nap.exe next to us, or the development build.
+/// The GUI owns the control service. Where nap.exe is depends on how this copy was
+/// installed: next to the window during development, one directory up in bin\ when
+/// the package put the GUI in gui\, or wherever the settings say.
 function TMainForm.EnsureService: Boolean;
 var
   LCandidates: TArray<string>;
@@ -2166,6 +2168,8 @@ begin
   LCandidates := [
     GSettings.NapExePath,
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'nap.exe'),
+    // The package: gui\NapGui.exe with the tools in bin\ beside it.
+    TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), '..'+PathDelim+'bin'+PathDelim+'nap.exe'),
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), '..\src\NetAndroidProfiler.Cli\bin\Debug\net10.0\nap.exe'),
     TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), '..\src\NetAndroidProfiler.Cli\bin\Release\net10.0\nap.exe')];
   for LPath in LCandidates do
@@ -2185,8 +2189,9 @@ begin
         end;
       end;
     end;
-  MessageDlg('nap.exe was not found next to this application.' + sLineBreak +
-    'Build it (dotnet build src\NetAndroidProfiler.Cli) or copy it here.', mtError, [mbOK], 0);
+  MessageDlg('nap.exe was not found next to this application, nor in a bin folder ' +
+    'beside it.' + sLineBreak +
+    'Point Settings at it, or keep the package together.', mtError, [mbOK], 0);
   Result := False;
 end;
 
