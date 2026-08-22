@@ -87,6 +87,23 @@ Publishing `nap` with `PublishAot=true` on this machine:
   whole product rests on - is reflection-heavy and carries native symbol interop
   (Dia2Lib). It is not documented as AOT-compatible.
 
+Attempted again once the toolchain question came up: the `PublishAot` property is now an
+opt-in per project (`-p:NapAot=true` on nap and the MCP server), which settles the
+NETSDK1207 half. The machine half is not settled: installing the components from the
+command line fails at the elevation prompt, and the VS Installer reports
+`Status changed to UpdateAvailable` - it wants to update itself before it will modify an
+installation, and in `--passive` mode it exits silently instead of saying so. An
+`MSVC\14.51.36231\link.exe` left by another workload is not enough on its own: without a
+registered `VC.Tools.x86.x64` and a Windows SDK carrying its `Lib`/`Include`, ILCompiler
+still reports "Platform linker not found".
+
+To resume: open Visual Studio Installer, let it update itself, Modify the installation and
+add **Desktop development with C++** (or the components `VC.Tools.x86.x64` and
+`Windows11SDK.26100`). Then publish nap with `-p:NapAot=true -r win-x64` and run `nap run`
+against a device: the analysis happens before the command prints anything, so that single
+run answers the TraceEvent question even though the final JSON print will fail until the
+serializers are source-generated.
+
 Conclusion: AOT buys startup time and a single file, and costs a toolchain dependency
 plus a port of the JSON layer and a bet on TraceEvent. Not now. The framework-dependent
 package starts fast enough for a tool that then waits on a device.

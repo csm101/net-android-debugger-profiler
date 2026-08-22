@@ -4,6 +4,7 @@ using System.Text.Json;
 using NetAndroidProfiler.Core.Analysis;
 using NetAndroidProfiler.Core.Sessions;
 using NetAndroidProfiler.Core.Store;
+using NetAndroidProfiler.Tests.Support;
 
 namespace NetAndroidProfiler.Tests.Fast;
 
@@ -103,106 +104,5 @@ public sealed class McpServerTests : IDisposable
         Assert.Contains(PreparedSessionId, _server.CallTool("profile_sessions", new { max = 5 }));
     }
 
-    private static bool IsError(JsonElement response) =>
-        response.TryGetProperty("error", out _) ||
-        (response.TryGetProperty("result", out var result) && result.TryGetProperty("isError", out var flag) && flag.GetBoolean());
-
-    /// <summary>The MCP server process plus a minimal JSON-RPC client over its stdio.</summary>
-    private sealed class McpServerFixture : IDisposable
-    {
-        private readonly Process _process;
-        private int _nextId = 1;
-
-        public McpServerFixture(string sessionsRoot)
-        {
-            string dll = LocateServerDll();
-            var psi = new ProcessStartInfo("dotnet")
-            {
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardInputEncoding = Encoding.UTF8,
-            };
-            psi.ArgumentList.Add(dll);
-            psi.Environment["NAP_SESSIONS_ROOT"] = sessionsRoot;
-            _process = Process.Start(psi) ?? throw new InvalidOperationException("cannot start the MCP server");
-            _process.ErrorDataReceived += (_, _) => { };
-            _process.BeginErrorReadLine();
-        }
-
-        private static string LocateServerDll()
-        {
-            // tests/<proj>/bin/<cfg>/<tfm> -> repository root
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidProfiler.slnx")))
-                dir = dir.Parent;
-            if (dir is null) throw new InvalidOperationException("repository root not found from " + AppContext.BaseDirectory);
-            string configuration = AppContext.BaseDirectory.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}") ? "Release" : "Debug";
-            string dll = Path.Combine(dir.FullName, "src", "NetAndroidProfiler.Mcp", "bin", configuration, "net10.0", "NetAndroidProfiler.Mcp.dll");
-            if (!File.Exists(dll)) throw new FileNotFoundException("MCP server not built", dll);
-            return dll;
-        }
-
-        public void Initialize()
-        {
-            Call("initialize", new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "test", version = "0" } });
-            Notify("notifications/initialized");
-        }
-
-        public JsonElement Call(string method, object parameters)
-        {
-            int id = _nextId++;
-            Send(new { jsonrpc = "2.0", id, method, @params = parameters });
-            return ReadResponse(id);
-        }
-
-        public void Notify(string method) => Send(new { jsonrpc = "2.0", method });
-
-        /// <summary>Call a tool and return its text content (throws when the call reports an error).</summary>
-        public string CallTool(string name, object arguments)
-        {
-            var response = CallToolRaw(name, arguments);
-            if (IsError(response))
-                throw new InvalidOperationException($"tool {name} failed: {response}");
-            return Text(response);
-        }
-
-        public JsonElement CallToolRaw(string name, object arguments) =>
-            Call("tools/call", new { name, arguments });
-
-        private static string Text(JsonElement response) =>
-            string.Concat(response.GetProperty("result").GetProperty("content").EnumerateArray()
-                .Where(c => c.GetProperty("type").GetString() == "text")
-                .Select(c => c.GetProperty("text").GetString()));
-
-        private void Send(object message)
-        {
-            _process.StandardInput.WriteLine(JsonSerializer.Serialize(message));
-            _process.StandardInput.Flush();
-        }
-
-        private JsonElement ReadResponse(int id)
-        {
-            var deadline = DateTime.UtcNow.AddSeconds(60);
-            while (DateTime.UtcNow < deadline)
-            {
-                string? line = _process.StandardOutput.ReadLine();
-                if (line is null) throw new InvalidOperationException("the MCP server closed its output");
-                if (line.Length == 0 || line[0] != '{') continue;
-                var doc = JsonDocument.Parse(line);
-                if (doc.RootElement.TryGetProperty("id", out var responseId) && responseId.TryGetInt32(out int value) && value == id)
-                    return doc.RootElement.Clone();
-            }
-            throw new TimeoutException($"no response for request {id}");
-        }
-
-        public void Dispose()
-        {
-            try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); } catch { }
-            _process.Dispose();
-        }
-    }
+    private static bool IsError(JsonElement response) => McpServerFixture.IsError(response);
 }
