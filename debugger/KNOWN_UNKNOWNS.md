@@ -150,3 +150,30 @@ hanging the debuggee.
 What is still unknown: which property of the V7 frame (async state machine in a
 symbol-less third-party assembly, rethrow through a continuation, or something
 else) makes `GetException()` return nothing. The fallback covers it either way.
+
+Measured on the reference application, 2026-08-23, and it is worse than recorded above. With a
+catch-all `log` rule and a `System.Exception` filter, the debugger output shows
+both halves of the problem:
+
+    [pid 25820] exception rule: Java.Security.Cert.CertificateException (not stopping)
+    capturing exception type failed: Object reference not set to an instance of an object.
+    [pid 25820] exception rule:  (not stopping)
+
+`bt.GetFrame(0).GetException()` throws NullReferenceException from inside
+Mono.Debugging for exceptions raised in an assembly without symbols. The guard
+keeps the stop, but the type stays empty - and **the rules are then matched
+against that empty type**, so `type`/`typeContains` cannot match. the reference application loads
+`MQTTnet` and `MQTTnet.Extensions.ManagedClient` with NO SYMBOLS (confirmed via
+get_loaded_assemblies), which means the rule engine is blind exactly on the
+exceptions that motivated it.
+
+The `$exception` fallback added earlier does not help here: it lives in
+`GetExceptionDetails`, which runs when someone asks for details after a stop.
+By then the rule has already decided.
+
+Fix to make: treat a missing type like a rule that needs the message - hold the
+stop and resolve it on a worker (`ResolveExceptionTypeLive`) before matching,
+since reading it means invoking in the debuggee and that is forbidden on the
+event thread. The machinery for deciding off the event thread already exists
+(`RulesNeedMessage`); the condition needs to grow a "type is missing and some
+rule cares about the type" case.
