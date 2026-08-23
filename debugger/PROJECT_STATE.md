@@ -100,6 +100,10 @@ launch_from_config, which reads the launch parameters and the app's exception
 rules from a VS Code `launch.json` — the same file, and the same field names,
 the DAP frontend reads.
 
+Also list_app_projects, the counterpart of list_devices for choosing which app
+to launch, and the deduction behind it: launch_app reads the package name from
+the project rather than having it restated.
+
 ## Stable commands
 
     dotnet build C:\GitHub\net-android-debugger\NetAndroidDebugger.slnx

@@ -30,7 +30,12 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 99 tests in six files, ~7-10 min on the headless emulator after deploy. Each
+- A qemu instance that never registers with adb is invisible to `adb devices`,
+  so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
+  with "Running multiple emulators with the same AVD". The script now kills it by
+  its qemu PID, matched on the AVD name (2026-08-23).
+- 121 tests in seven files (one skipped: a named gap), ~7-10 min on the headless
+  emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -147,8 +152,17 @@ Conventions (mirroring the Delphi project's discipline):
       `SetBreakpoints_ReplacesAllBreakpointsOfTheFile`
 
 ## C. Stepping
-- [x] Step over to the next line in the same method —
-      `StepOver_AdvancesToNextLine_InSameMethod`
+- [x] Step over advances one line in the same method, on the thread asked for —
+      `StepOver_AdvancesToNextLine_InSameMethod`. The breakpoint is removed
+      before stepping on purpose: `Tick` is called by a `System.Threading.Timer`,
+      which does not serialise its callbacks, so an armed breakpoint there lets a
+      second thread re-enter `Tick` at the resume and report its breakpoint
+      before the step completes. That happened once, under load.
+- [ ] A breakpoint another thread hits *during* a step is still reported (today
+      it works by accident; no deterministic way to provoke it, since everything
+      is suspended while stopped and the race window lasts only as long as the
+      step). Needs a TestTarget method with a deliberately slow line, reachable
+      on its own — `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported`
 - [x] Step into / step out at a plain call site —
       `StepInto_EntersCallee_AndStepOut_ReturnsToCaller`
 - [x] Step through async/await: stop on the line after the await, locals from
@@ -356,6 +370,12 @@ Conventions (mirroring the Delphi project's discipline):
       exist, so the run only succeeds if the override reached the launcher; an
       unknown configName is that call's error before anything is launched —
       `LaunchFromConfig_LaunchesWhatTheProjectDescribes_RulesAndOverrideIncluded`
+- [x] `launch_app` given only where to look deduces the package from the
+      `.csproj`, and `list_app_projects` lists what could be launched —
+      `LaunchApp_DeducesThePackageFromTheProject_AndTheProjectsAreListable`
+- [x] A launch with nothing to deduce from (no project named; a tree with no
+      Android application) is the caller's error, with the fix in the message —
+      `LaunchApp_WithNothingToDeduceFrom_SaysWhatIsMissing`
 - [x] **No tool vanishes either**: the expected tool names are spelled out and
       compared with what the server exposes. A tool that disappears is otherwise
       invisible — the build passes and only whichever test happened to call it
@@ -398,3 +418,40 @@ Conventions (mirroring the Delphi project's discipline):
       `ASingleHandWrittenObject_IsAConfiguration`
 - [x] A missing file says where it looked — `AMissingFile_SaysWhereItLooked`
 - [x] A file that is not JSON names the file — `AFileThatIsNotJson_NamesTheFile`
+
+## N. Choosing what to launch (`AppProjectFinderTests`, `DeviceChoiceTests`, no device)
+- [x] Android libraries are not launchable, only applications are — the filter
+      that turns the reference application's thirty-odd Android projects into two —
+      `AndroidLibraries_AreNotLaunchable_OnlyApplicationsAre`
+- [x] Non-Android projects are not launchable — `NonAndroidProjects_AreNotLaunchable`
+- [x] A multi-targeted project is found by its Android framework —
+      `AProjectTargetingSeveralFrameworks_IsFoundByItsAndroidOne`
+- [x] Several applications fail with the list rather than a guess: launching the
+      wrong app looks exactly like the debugger not working —
+      `SeveralApplications_FailWithTheList_RatherThanAGuess`
+- [x] No application at all says what makes one launchable —
+      `NoApplicationAtAll_SaysWhatMakesOneLaunchable`
+- [x] A solution narrows the search to the projects it names, which is how an
+      ambiguous tree is disambiguated —
+      `ASolution_NarrowsTheSearchToTheProjectsItNames`, `ASlnxSolution_IsReadToo`
+- [x] Projects a solution names are listed first —
+      `ProjectsASolutionNames_ComeFirst`
+- [x] An Exe whose ApplicationId is set outside the project file is still
+      listed, and says the id is missing rather than showing a blank —
+      `AnExeWithoutApplicationId_IsListed_AndSaysTheIdIsMissing`
+- [x] `bin`/`obj` are not walked — `BuildOutputIsNotWalked`
+- [x] A path that is neither solution nor project says so —
+      `APathThatIsNeitherSolutionNorProject_SaysSo`
+- [x] This repository yields exactly TestTarget — a real tree with real noise —
+      `ThisRepository_YieldsTestTarget`
+- [x] One ready device is not a choice — `OneReadyDevice_IsNotAChoice`
+- [x] Two ready devices fail listing them: two emulators online is the normal
+      state on this machine, and one belongs to another tool —
+      `SeveralReadyDevices_FailListingThem`
+- [x] A device that is not ready is not a candidate; nothing ready says what is
+      attached; nothing attached says to start one —
+      `ADeviceThatIsNotReady_IsNotACandidate`, `NothingReady_SaysWhatIsAttached`,
+      `NoDeviceAtAll_SaysToStartOne`
+- [x] A requested serial that is not attached lists what is — the typical stale
+      copy from an earlier session — `ARequestedSerialThatIsNotAttached_ListsWhatIs`
+- [x] A named device is used as given — `ANamedDevice_IsUsedAsGiven`

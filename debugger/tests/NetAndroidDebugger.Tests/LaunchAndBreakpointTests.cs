@@ -119,12 +119,33 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
 
         var stop = await session.WaitForStopAsync(0, StopTimeout, cts.Token);
         Assert.NotNull(stop);
+
+        // The breakpoint is in Tick, which a System.Threading.Timer calls every second without
+        // serialising its callbacks. Left armed, it lets a second thread re-enter Tick the moment
+        // everything resumes for the step and report ITS breakpoint before the step completes -
+        // which is what this test saw once under load. Stepping is what is being tested here.
+        session.RemoveAllBreakpoints();
+
         var after = await session.StepOverAsync(stop.Pid, stop.ThreadId, StopTimeout, cts.Token);
         Assert.NotNull(after);
-        Assert.Equal(StopReason.Step, after.Reason);
+        Assert.True(after.Reason == StopReason.Step,
+            $"expected a step, got {after.Reason} at {after.Location?.File}:{after.Location?.Line} "
+            + $"on thread {after.ThreadId} (the step was asked for on thread {stop.ThreadId})");
         Assert.Equal(stepFromLine + 1, after.Location?.Line);
         Assert.Equal(stop.ThreadId, after.ThreadId);
     }
+
+    /// <summary>
+    /// A breakpoint another thread hits while a step is in flight must still be reported: the user
+    /// is stepping, but a breakpoint they set is a breakpoint. Today that happens by accident - it
+    /// is what made the test above fail once under load - and there is no deterministic way to
+    /// provoke it, because everything is suspended while stopped and the race window is only as
+    /// long as the step itself. Making it real needs a TestTarget method with a deliberately slow
+    /// line, reachable on its own so no other test pays for it.
+    /// </summary>
+    [Fact(Skip = "TODO: needs a TestTarget method with a slow line, so a step lasts long enough to be interrupted")]
+    public void ABreakpointHitByAnotherThread_DuringAStep_IsStillReported()
+        => Assert.Fail("not implemented");
 
     [Fact]
     public async Task Threads_AreListed_WhenStopped()

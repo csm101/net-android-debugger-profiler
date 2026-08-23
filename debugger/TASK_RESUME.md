@@ -2,37 +2,28 @@
 
 ## Current task
 
-Nothing in flight. `launch_from_config` is committed and the suite is green.
-
-Next, decided after looking at what the configuration file actually carries:
-**deduce what the project already declares** instead of restating it. In
-the reference application, 30+ projects target `-android` but only 2 declare an `<ApplicationId>`
-(`App.Droid` and a tool under `ExternalTools/`), and the libraries declare none —
-so "android TFM AND (ApplicationId or OutputType Exe)" is the filter.
-
-1. `list_app_projects(solutionOrFolder)`: the counterpart of `list_devices` —
-   path, ApplicationId, TFM per launchable project, solution members first. The
-   flow becomes list devices → list apps → launch, with nothing guessed.
-2. `launch_app`: `packageName`, `projectPath` and `deviceSerial` become
-   optional. One candidate → use it; several → fail listing them with their
-   ApplicationIds; `projectPath` without `packageName` → read it from the csproj.
-   One device online → use it; more → list them (the test harness already
-   refuses to guess here, and that is the behaviour to mirror).
-
-Not doing `save_launch_config`: it would mostly save deducible values, which is
-the redundant file this is meant to remove.
-
-The `.vscode/launch.json` keeps `packageName` and `projectPath` even though they
-are deducible: VS Code's own schema requires them, and a file that F5 rejects
-would lose half its purpose. What only the file can carry is `exceptionRules`,
-`deploy`, `keepPropertyFresh`, and one configuration per device.
+Nothing in flight. Deduction is committed and the suite is green.
 
 ## State (2026-08-23)
 
-- Suite: **99 tests, 99/99 green** (18m13s, `NAD_DEVICE_SERIAL=emulator-5554`).
-  86 before, plus 12 for the launch-configuration parser and one end-to-end.
-- `NAD_DEVICE_SERIAL` is mandatory again: emulator-5556 (the profiler's AVD) is
+- Suite: **121 tests, 120 green, 1 skipped** (13m37s, `NAD_DEVICE_SERIAL=emulator-5554`).
+  The skip is a named gap, not a failure:
+  `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported`.
+- `NAD_DEVICE_SERIAL` is mandatory: emulator-5556 (another project's AVD) is
   online too, and the harness refuses to guess between two devices.
+- A run was lost to qemu crashing, as usual. The restart then failed with
+  "Running multiple emulators with the same AVD": a qemu instance that never
+  registered with adb is invisible to `adb devices`, so `adb emu kill` could not
+  clear it. `ensure-emulator.sh` now kills it by qemu PID, matched on the AVD
+  name. A non-elevated `Stop-Process -Force` does kill it, contrary to what the
+  script's own comment claimed.
+- `StepOver_AdvancesToNextLine_InSameMethod` failed once under load: expected
+  Step, got Breakpoint. Not a flake — `System.Threading.Timer` does not
+  serialise callbacks, so while stopped inside `Tick` the ticks queue up, and at
+  the resume for the step a second thread re-enters `Tick` and hits the same
+  breakpoint (breakpoints stay armed during a step) before the step completes.
+  The test now removes the breakpoint before stepping; the behaviour it exposed
+  became the named gap above.
 
 ### What today changed, in the order it was found
 
@@ -67,19 +58,20 @@ Every item below came out of driving the real app or re-reading the new code.
 
 ## Next steps
 
-1. Blocked on hardware: attach over `adb connect` and a mid-run debugger
-   disconnect (U9). `adb forward --remove` does *not* simulate the latter — the
-   established connection survives it.
-2. Run the VS Code extension in a real VS Code against a real device. Everything
-   under it is covered; the extension itself has offline checks only.
-3. PR mono/debugger-libs#419: open, CLA signed, no maintainer review since
-   2026-08-20. When merged: point .gitmodules back at upstream, bump the
-   submodule, update ARCHITECTURE.md.
-4. Open questions worth a look if they ever bite: U13 (hit counts — six exact
-   runs, diagnostic in place), U15 (why `GetException()` returns nothing for a
-   throw in a symbol-less assembly), U11, U12.
-5. The emulator is the dominant cost: ten crashes today, about one full run in
-   four lost (measured). A fresh AVD or a different API level is worth trying.
+1. Read `debug.mono.extra` before writing it, and say so when a fresh value that
+   is not ours is already there — two debuggers on one device overwrite each
+   other silently today (see ANDROID_ATTACH_NOTES.md "Sharing a device with
+   another debugger"). Symptom without it: the app hangs ~30 s at startup.
+2. Symbol status in `get_loaded_assemblies` — `AssemblyMirror.HasDebugInfo`
+   (protocol 2.51+, try/catch → null on older runtimes), rendered as `symbols` /
+   `noSymbols`. First thing to check when a breakpoint stays pending: without
+   symbols no line in that assembly can bind, and comparing paths is wasted time.
+3. A compact snapshot folded into step/continue answers, **opt-in**: reading
+   locals means invoking code in the debuggee, and breakpoints are disarmed
+   during any evaluation. The Delphi debugger returns one always; here that is
+   not the same trade.
+4. The named gap needs a TestTarget method with a deliberately slow line,
+   reachable on its own so no other test pays for it.
 
 ## Environment rules
 

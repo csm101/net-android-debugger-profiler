@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using NetAndroidDebugger.Core;
+using NetAndroidDebugger.Core.Launch;
 using NetAndroidDebugger.Frontends;
 
 
@@ -35,15 +36,37 @@ public sealed class DebuggerTools(SessionHost host)
         return sb.ToString();
     }
 
+    [McpServerTool(Name = "list_app_projects", ReadOnly = true), Description(
+        "Lists the .NET for Android application projects a solution or folder holds, with the ApplicationId each one " +
+        "declares: the counterpart of list_devices for choosing what to launch. Libraries are not listed even though " +
+        "they target Android too - an application declares an ApplicationId, or is an Exe. Projects named by a solution " +
+        "beside them come first, since a project merely sitting in the tree is usually not the one meant.")]
+    public string ListAppProjects(
+        [Description("Solution (.sln/.slnx), .csproj, or folder to search")] string solutionOrFolder)
+    {
+        IReadOnlyList<AppProjectInfo> found;
+        try { found = AppProjectFinder.Find(solutionOrFolder); }
+        catch (LaunchException ex) { throw new McpException(ex.Message); }
+
+        return found.Count == 0
+            ? $"No .NET for Android application project under {Path.GetFullPath(solutionOrFolder)}. "
+              + "Libraries that target Android are not launchable."
+            : string.Join('\n', found.Select(AppProjectFinder.Line));
+    }
+
     [McpServerTool(Name = "launch_app"), Description(
         "Starts (optionally deploys) a .NET Android app with the Mono debugger agent enabled and attaches to it. " +
+        "What the project already declares need not be restated: given projectPath or solutionOrFolder, the package " +
+        "name is read from the project file, and a single ready device is used as it is. Nothing ambiguous is ever " +
+        "guessed - several candidate projects or several ready devices fail listing them. " +
         "Any previous session is closed. The app is restarted: there is no attach to an already-running process on Mono. " +
         "Helper processes of the package are attached automatically as they start.")]
     public async Task<string> LaunchApp(
-        [Description("adb serial of the target device (from list_devices). Mandatory.")] string deviceSerial,
-        [Description("Android package name (ApplicationId), e.g. com.company.app")] string packageName,
-        [Description("Path to the Android .csproj; required only when deploy=true")] string? projectPath = null,
+        [Description("adb serial of the target device (from list_devices). Omit when exactly one device is ready.")] string? deviceSerial = null,
+        [Description("Android package name (ApplicationId), e.g. com.company.app. Omit to read it from the project file.")] string? packageName = null,
+        [Description("Path to the Android .csproj; required for deploy=true, and enough to deduce packageName")] string? projectPath = null,
         [Description("Run `dotnet build -t:Install` for projectPath before launching")] bool deploy = false,
+        [Description("Solution (.sln/.slnx) or folder holding the app project, when neither packageName nor projectPath is given (see list_app_projects)")] string? solutionOrFolder = null,
         [Description("Launcher activity as pkg/fully.qualified.Name; resolved automatically when omitted")] string? activityName = null,
         [Description("First SDB port; each extra process gets the next one")] int basePort = 10000,
         [Description("msbuild Configuration for deploy")] string configuration = "Debug",
@@ -51,24 +74,69 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("Keep the debug property valid for the whole session, so processes the app starts much later (on-demand services, crash reporters) are still debugged. Leaves the window open for other Mono apps to pick up our port the entire time.")] bool keepPropertyFresh = false,
         CancellationToken ct = default)
     {
+        var deduced = new StringBuilder();
+
+        // The package name is in the .csproj. Copying it into every call is not merely tedious: a
+        // copy can contradict the project, and then the debugger launches an app nobody is building.
+        if (packageName is null || (deploy && projectPath is null))
+        {
+            AppProjectInfo project;
+            try
+            {
+                project = projectPath is not null
+                    ? AppProjectFinder.Describe(projectPath) ?? throw new McpException(
+                        $"{projectPath} is not a .NET for Android application project: one targets an -android framework " +
+                        "and declares an ApplicationId (or is an Exe).")
+                    : solutionOrFolder is not null
+                        ? AppProjectFinder.Single(solutionOrFolder)
+                        : throw new McpException(
+                            "Nothing to launch. Give packageName, or projectPath, or solutionOrFolder to find the project in "
+                            + "(list_app_projects lists them).");
+            }
+            catch (LaunchException ex) { throw new McpException(ex.Message); }
+
+            projectPath ??= project.ProjectPath;
+            if (packageName is null)
+            {
+                packageName = project.ApplicationId ?? throw new McpException(
+                    $"{project.ProjectPath} declares no ApplicationId - it is probably set in a props file. Pass packageName.");
+                deduced.AppendLine($"{packageName} from {project.ProjectPath}");
+            }
+        }
+
+        // Resolved before the session exists, so a device that cannot be chosen leaves nothing behind.
+        string serial;
+        try { serial = await new DebugSession().ResolveDeviceSerialAsync(deviceSerial, ct); }
+        catch (LaunchException ex) { throw new McpException(ex.Message); }
+        if (deviceSerial is null) deduced.AppendLine($"device {serial}, the only one ready");
+
         var session = await host.ForLaunchAsync(ct);
         var app = new AppTarget(packageName, activityName, projectPath);
-        var options = new LaunchOptions(deviceSerial, basePort, deploy, configuration,
+        var options = new LaunchOptions(serial, basePort, deploy, configuration,
             PropertyLifetime: propertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(propertyLifetimeSeconds.Value) : null,
             KeepPropertyFresh: keepPropertyFresh);
         await session.LaunchAsync(app, options, ct);
-        return "Launched and attached.\n" + TextFormat.Status(session.GetStatus());
+
+        return "Launched and attached.\n"
+             + (deduced.Length > 0 ? "Deduced: " + string.Join("; ", DeducedLines(deduced)) + "\n" : "")
+             + TextFormat.Status(session.GetStatus());
     }
+
+    /// <summary>What was deduced rather than given, one item per line.</summary>
+    private static IEnumerable<string> DeducedLines(StringBuilder deduced) =>
+        deduced.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     [McpServerTool(Name = "attach_to_app"), Description(
         "Alias of launch_app without deploy: on Mono Android attaching means restarting the app with the debugger agent enabled.")]
     public Task<string> AttachToApp(
-        [Description("adb serial of the target device")] string deviceSerial,
-        [Description("Android package name")] string packageName,
+        [Description("adb serial of the target device; omit when exactly one device is ready")] string? deviceSerial = null,
+        [Description("Android package name; omit to read it from the project file")] string? packageName = null,
         [Description("Launcher activity pkg/Name; resolved automatically when omitted")] string? activityName = null,
         [Description("First SDB port")] int basePort = 10000,
+        [Description("Solution or folder holding the app project, when packageName is not given")] string? solutionOrFolder = null,
         CancellationToken ct = default)
-        => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", null, false, ct);
+        => LaunchApp(deviceSerial, packageName, projectPath: null, deploy: false, solutionOrFolder: solutionOrFolder,
+                     activityName: activityName, basePort: basePort, ct: ct);
 
     [McpServerTool(Name = "launch_from_config"), Description(
         "Launches from a VS Code launch.json - the same file, and the same field names, the DAP frontend reads - so " +

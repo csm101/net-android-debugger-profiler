@@ -10,8 +10,10 @@
 #
 # Notes:
 # - Only ever touches the serial it is given; other emulators are left alone.
-# - Kills a half-dead instance with `adb emu kill` (killing the qemu PID from a
-#   non-elevated shell silently fails and blocks the next launch of the same AVD).
+# - Kills a half-dead instance with `adb emu kill`, and an instance that never registered
+#   with adb by its qemu PID - that one is invisible to `adb devices`, so nothing else would
+#   clear it, and it blocks the next launch of the same AVD. A non-elevated Stop-Process does
+#   kill it, despite what an earlier note here claimed.
 # - Defaults to HEADLESS=1 with the hardware GPU. Headless is required once the
 #   desktop session is locked or the display sleeps: a windowed emulator then
 #   logs "Unable to open monitor interface to \\.\DISPLAY1" and never registers
@@ -47,6 +49,18 @@ if adb devices | grep -q "^$SERIAL"; then
   echo "$SERIAL present but not booted/healthy - killing it"
   adb -s "$SERIAL" emu kill >/dev/null 2>&1
   for _ in $(seq 1 15); do adb devices | grep -q "^$SERIAL" || break; sleep 2; done
+fi
+
+# An instance that never registered with adb is invisible to the check above, and the next launch
+# then dies with "Running multiple emulators with the same AVD". Matched on the AVD name, so other
+# emulators are still left alone.
+if command -v powershell.exe >/dev/null 2>&1; then
+  STALE=$(powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name LIKE 'qemu%'\" | Where-Object CommandLine -Match '-avd +$AVD' | Select-Object -ExpandProperty ProcessId" 2>/dev/null | tr -d '\r')
+  for stale_pid in $STALE; do
+    echo "killing stale qemu $stale_pid for $AVD (it never registered with adb)"
+    powershell.exe -NoProfile -Command "Stop-Process -Id $stale_pid -Force" >/dev/null 2>&1
+  done
+  [ -n "$STALE" ] && sleep 3
 fi
 
 AVD_DIR="$HOME/.android/avd/$AVD.avd"

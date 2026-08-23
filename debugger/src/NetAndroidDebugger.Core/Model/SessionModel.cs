@@ -33,6 +33,13 @@ public sealed record DeviceInfo(string Serial, string State, string? Model, bool
 /// <param name="ProjectPath">Android csproj used for deployment (<c>-t:Install</c>); optional.</param>
 public sealed record AppTarget(string PackageName, string? ActivityName = null, string? ProjectPath = null);
 
+/// <summary>A .NET for Android application project that can be launched.</summary>
+/// <param name="ProjectPath">Absolute path to the <c>.csproj</c>.</param>
+/// <param name="ApplicationId">The package name the project declares, or null when it is set outside the project file.</param>
+/// <param name="TargetFramework">The Android framework it targets, e.g. <c>net9.0-android35.0</c>.</param>
+/// <param name="InSolution">Whether a solution beside it names it. A project that merely sits in the tree is usually not the one meant.</param>
+public sealed record AppProjectInfo(string ProjectPath, string? ApplicationId, string TargetFramework, bool InSolution);
+
 /// <summary>Launch parameters.</summary>
 /// <param name="DeviceSerial">Mandatory adb serial. The engine never relies on the adb default device.</param>
 /// <param name="BaseSdbPort">First TCP port; each additional debuggee process gets the next one (port rotation).</param>

@@ -35,12 +35,19 @@ Publishes both frontends (Release) to `%LOCALAPPDATA%\net-android-debugger`
 (`claude mcp add --scope user net-android-debugger -- dotnet <dir>\NetAndroidDebugger.Mcp.dll`).
 Re-run after changes to republish; stop running sessions first (the dll is locked).
 
-Then: `list_devices` → `launch_app(deviceSerial, packageName[, projectPath, deploy])`
+Then: `list_devices` and `list_app_projects` → `launch_app(...)`
 → `set_breakpoint(file, line)` → `wait_until_stopped` / `continue_and_wait` →
 `get_locals`, `get_call_stack`, `evaluate_expression`, `step_*` → `terminate_app`.
 Breakpoint file paths must be the absolute paths compiled into the app's PDB —
 `get_source_files(file)` reports the paths the running app was actually built
 with, which is how a breakpoint that stays pending is diagnosed.
+
+Nothing that the project already declares needs to be restated:
+`launch_app(solutionOrFolder: "C:\path\to\repo")` finds the Android application
+project, reads its `ApplicationId`, and uses the only ready device. Libraries
+that target Android are not offered — an application declares an `ApplicationId`
+or is an `Exe` — and anything ambiguous fails listing the candidates rather than
+guessing. `list_app_projects` is the counterpart of `list_devices` for choosing.
 
 A project that keeps a `.vscode/launch.json` can skip the arguments:
 `launch_from_config()` reads the same file, and the same fields, the DAP

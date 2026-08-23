@@ -122,6 +122,43 @@ public sealed class DebugSession : IAsyncDisposable
         => new AdbClient(adbPath).ListDevicesAsync(ct);
 
     /// <summary>
+    /// The device to work with when the caller named none, or the named one checked against what is
+    /// actually attached. One ready device is not a choice; several are, and guessing between them
+    /// is how a session ends up on the emulator somebody else is using.
+    /// </summary>
+    /// <param name="devices">What adb reports.</param>
+    /// <param name="requested">The serial the caller asked for, or null to deduce one.</param>
+    public static DeviceInfo ChooseDevice(IReadOnlyList<DeviceInfo> devices, string? requested = null)
+    {
+        if (!string.IsNullOrWhiteSpace(requested))
+        {
+            return devices.FirstOrDefault(d => string.Equals(d.Serial, requested, StringComparison.OrdinalIgnoreCase))
+                ?? throw new LaunchException(devices.Count == 0
+                    ? $"No device is attached, so '{requested}' cannot be used. Start the emulator, or plug the device in."
+                    : $"No attached device has the serial '{requested}'. Attached:\n" + DeviceLines(devices));
+        }
+
+        var ready = devices.Where(d => string.Equals(d.State, "device", StringComparison.OrdinalIgnoreCase)).ToList();
+        return ready.Count switch
+        {
+            1 => ready[0],
+            0 => throw new LaunchException(devices.Count == 0
+                ? "No device is attached. Start the emulator, or plug the device in."
+                : "No attached device is ready:\n" + DeviceLines(devices)),
+            _ => throw new LaunchException(
+                $"{ready.Count} devices are ready, so there is nothing to deduce - pass the serial explicitly:\n"
+                + DeviceLines(ready)),
+        };
+    }
+
+    private static string DeviceLines(IEnumerable<DeviceInfo> devices) =>
+        string.Join('\n', devices.Select(d => $"  {d.Serial}  state={d.State}  model={d.Model ?? "?"}"));
+
+    /// <summary><see cref="ChooseDevice"/> applied to the devices adb reports right now.</summary>
+    public async Task<string> ResolveDeviceSerialAsync(string? requested, CancellationToken ct, string adbPath = "adb")
+        => ChooseDevice(await ListDevicesAsync(ct, adbPath), requested).Serial;
+
+    /// <summary>
     /// Deploys (optionally), starts the app with the debugger agent enabled and attaches
     /// to its main process. Helper processes are attached automatically as they appear.
     /// </summary>

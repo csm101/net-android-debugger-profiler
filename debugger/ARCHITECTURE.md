@@ -50,6 +50,7 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `Core/Model/SessionModel.cs` | Public records/enums: `SessionState`, `StopEvent`, `BreakpointSpec/Info`, `ProcessSnapshot`, `ThreadSnapshot`, `FrameSnapshot`, `VariableSnapshot`, `LaunchOptions`, `AppTarget`, exceptions |
 | `Core/Adb/AdbClient.cs` | adb wrapper; every device call takes an explicit serial; `StreamLogcatAsync` |
 | `Core/Launch/AndroidLauncher.cs` | Deploy (`dotnet build -t:Install -p:AdbTarget=-s <serial>`), `debug.mono.extra` + forward, `am start`, logcat watcher → `AgentDetected(pid, port, name)` with **port rotation**, `ShutdownAsync` (clear property, remove forwards, force-stop) |
+| `Core/Launch/AppProjectFinder.cs` | Finds the launchable Android application projects in a solution or folder (android TFM **and** an `ApplicationId` or `Exe`, which is what separates an app from the libraries around it); reads `.sln` and `.slnx` |
 | `Core/Engine/ProcessDebugger.cs` (internal) | One `SoftDebuggerSession` per debuggee pid; connect with retries; event → `Stopped/Resumed/Exited` callbacks; step/continue/pause per process |
 | `Core/Engine/DebugSession.cs` | Facade: aggregates N `ProcessDebugger`s, one shared Mono `BreakpointStore`, state machine, monotonic stop generation + `WaitForStopAsync`, inspection (threads, frames, locals, evaluate, expansion handles), app/debugger output buffers |
 | `Mcp/` | `ModelContextProtocol` 2.2.0 stdio server; `DebuggerTools` (one tool = one or two facade calls), `SessionHost` (single active session, pid/thread defaults from the last stop), `TextFormat` (plain-text rendering) |
@@ -144,15 +145,29 @@ frontends and the tests, so the engine stays JSON-free. A half-written file is
 the normal state while someone is editing, so a failed read keeps the rules
 already in force and says so rather than failing the resume.
 
+## Launch target and launch configuration
 
-## Launch configuration
+Two different questions: what the project already declares, and what only a
+person can decide.
 
-Nine parameters describe how an app is launched, and eight of them are the same
-on every run of the same project. `launch_from_config` reads them from a VS Code
-`launch.json` instead, and `src/Shared/LaunchConfigFile.cs` deliberately reads
-**the field names the DAP adapter already takes from its launch request**: one
-file describes the app for both frontends, so pressing F5 and launching through
-MCP cannot drift apart.
+**Deduced** — `Core/Launch/AppProjectFinder.cs`. The package name lives in the
+`.csproj` as `<ApplicationId>`, so `launch_app` reads it rather than having it
+restated: a copy can contradict the project, and then the debugger launches an
+app nobody is building. Targeting an `-android` framework is *not* the test for
+launchable, because libraries target it too — in the reference application thirty-odd projects do,
+and two are applications. An application declares an `ApplicationId`, or is an
+`Exe`. `list_app_projects` is the counterpart of `list_devices` for choosing
+between them, and pointing at a solution narrows the search to the projects it
+names. The device follows the same rule: one ready device is not a choice,
+several are. Nothing ambiguous is ever guessed — the failure lists the
+candidates, which is also how the test harness has always behaved.
+
+**Chosen** — `launch_from_config`, over `src/Shared/LaunchConfigFile.cs`. What
+is left after deduction is real decisions: which exceptions matter, whether to
+deploy, whether to keep the debug property fresh, one configuration per device.
+The reader deliberately takes **the field names the DAP adapter already reads
+from its launch request**, so one file describes the app for both frontends and
+pressing F5 cannot drift away from launching through MCP.
 
 What the reader handles, because real files contain it: JSONC (VS Code writes
 comments into the file it generates, and people comment configurations out

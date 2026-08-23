@@ -245,6 +245,29 @@ C# Dev Kit family (license bound to VS Code). Do not drive it from our code and
 do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
 `microsoft/vscode-mono-debug` (both MIT). **[verified — C# Dev Kit FAQ]**
 
+## Sharing a device with another debugger
+
+`debug.mono.extra` is device-global, so two debuggers on one device overwrite
+each other's attach settings. Having the VS Code C# Dev Kit / .NET MAUI
+extension installed alongside this one is harmless - different debug types, and
+adb serves many clients - but debugging the same device from both at once is
+not:
+
+- whoever writes the property last decides the port that every Mono process
+  started from then on waits on;
+- `keepPropertyFresh` rewrites the property for the whole session, so it can
+  change it *under* a session the other debugger started meanwhile;
+- the SDB agent accepts one connection per process, so the second debugger to
+  arrive stays out.
+
+The symptom is recognisable: the app hangs for about 30 s at startup - the agent
+waiting for a debugger that never connects on the port it read - and the process
+then dies. Different devices are fine: the property is per-device.
+
+**[inference - the property's scope and the agent timeout are verified above;
+that the C# Dev Kit adapter uses the same mechanism is not observed here, though
+it is the only way to attach to MonoVM on Android.]**
+
 ## This machine
 
 - adb 1.0.41 (36.0.0) at `C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe` (on PATH)

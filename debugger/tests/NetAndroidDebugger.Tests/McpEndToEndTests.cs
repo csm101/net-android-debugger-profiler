@@ -631,6 +631,7 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
             "get_variable",
             "launch_app",
             "launch_from_config",
+            "list_app_projects",
             "list_breakpoints",
             "list_devices",
             "pause_execution",
@@ -720,5 +721,62 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
         {
             workspace.Delete(recursive: true);
         }
+    }
+
+    /// <summary>
+    /// Launching without restating what the project already declares: given only where to look, the
+    /// package name comes from the .csproj. Plus the listing that makes the choice possible when a
+    /// tree holds more than one app — in a real product most Android projects are libraries, and
+    /// only the applications are worth offering.
+    /// </summary>
+    [Fact]
+    public async Task LaunchApp_DeducesThePackageFromTheProject_AndTheProjectsAreListable()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var projects = await CallAsync(client, "list_app_projects", new Dictionary<string, object?>
+        {
+            ["solutionOrFolder"] = TestEnvironment.RepoRoot,
+        }, ct);
+        Assert.Contains(TestEnvironment.TestTargetPackage, projects);
+        Assert.Contains("TestTarget.csproj", projects);
+
+        // No packageName and no projectPath: only where to look for the project.
+        var launched = await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["solutionOrFolder"] = TestEnvironment.RepoRoot,
+        }, ct);
+
+        Assert.Contains($"Deduced: {TestEnvironment.TestTargetPackage} from", launched);
+        Assert.Contains($"package={TestEnvironment.TestTargetPackage}", launched);
+        Assert.Contains("state=Running", launched);
+
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+    }
+
+    /// <summary>
+    /// The two ways a launch has nothing to deduce from: no project at all, and a tree with no
+    /// Android application in it. Both are the caller's error, with the fix in the message.
+    /// </summary>
+    [Fact]
+    public async Task LaunchApp_WithNothingToDeduceFrom_SaysWhatIsMissing()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var nothing = await client.CallToolAsync("launch_app",
+            new Dictionary<string, object?> { ["deviceSerial"] = device.Serial }, cancellationToken: ct);
+        Assert.True(nothing.IsError);
+
+        var noApp = await client.CallToolAsync("launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["solutionOrFolder"] = Path.Combine(TestEnvironment.RepoRoot, "src"),
+        }, cancellationToken: ct);
+        Assert.True(noApp.IsError);
     }
 }
