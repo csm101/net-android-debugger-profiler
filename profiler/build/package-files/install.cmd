@@ -5,16 +5,28 @@ rem Registers this copy of the profiler's MCP server with Claude Code, at user s
 rem Nothing is copied anywhere: the package runs from where you unpacked it, so keep
 rem this folder where it is (or re-run install.cmd after moving it).
 rem
-rem   install.cmd            register the MCP server
-rem   install.cmd /remove    unregister it
+rem   install.cmd                  register the MCP server
+rem   install.cmd /remove          unregister it
+rem   install.cmd /name <name>     register under another name, so this copy can sit
+rem                                beside an existing installation (/remove takes it too)
 rem
 rem Requires: .NET 10 runtime, adb on PATH (or ANDROID_HOME/ANDROID_SDK_ROOT).
 
 set "HERE=%~dp0"
 set "DLL=%HERE%bin\NetAndroidProfiler.Mcp.dll"
 set "NAME=net-android-profiler"
+set "ACTION=add"
 
-if /i "%~1"=="/remove" (
+:args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="/remove" (set "ACTION=remove" & shift & goto :args)
+if /i "%~1"=="/name" (set "NAME=%~2" & shift & shift & goto :args)
+echo Unknown option: %~1
+echo Usage: install.cmd [/name ^<name^>] [/remove]
+exit /b 2
+
+:args_done
+if /i "%ACTION%"=="remove" (
     claude mcp remove --scope user %NAME%
     exit /b %errorlevel%
 )

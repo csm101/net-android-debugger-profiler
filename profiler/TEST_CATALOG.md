@@ -170,8 +170,11 @@ the GUI's own data layer.
 - [x] bin\ finds the package's tools\ next to it - `The_tool_is_found_next_to_the_bin_directory_too`
 - [x] An empty package directory falls through to the machine's own tools -
   `Without_a_packaged_copy_the_search_falls_through`
-- [ ] The zip produced by build\package.ps1 is unpacked on a clean machine and profiles
-  an app (manual: verified here by running dist\...in
+- [x] The zip is unpacked outside the repository and profiles from there: `nap doctor`
+  reports the packaged dsrouter, `nap run` writes a session, `install.cmd /name <n>`
+  registers and `/remove` unregisters it, and the packaged GUI opens a session from
+  the package (manual, 2026-08-23; the run needs a device)
+- [ ] The same on a machine without the .NET SDK and without this repository
 ap.exe run against the emulator)
 
 ## H. Licensing (Fast/ThirdPartyNoticesTests)
