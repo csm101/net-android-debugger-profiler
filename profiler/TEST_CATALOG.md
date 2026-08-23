@@ -25,7 +25,11 @@ Conventions (mirroring the debugger project's discipline):
 
 ## A. Collection orchestration (Device/SessionTests, Category=Device, TestTarget Debug build on emulator-5556)
 - [x] Sampling restart session -> parseable trace, Busy in hotspots - `Sampling_restart_session_finds_busy_method`
-- [x] Instrumenting restart session (suspend, env injection, callspec) - `Instrumenting_restart_session_times_methods_and_counts_allocations`
+- [x] Instrumenting restart session (suspend, env injection, callspec honoured) -
+  `Instrumenting_restart_session_times_methods` (trackAllocations off: see below)
+- [x] The provider engine serves allocations or enter/leave, never both, and the session
+  says so - `Instrumenting_provider_serves_allocations_or_timings_not_both`. Characterization:
+  it fails the day a runtime restores the combination (KNOWN_UNKNOWNS U23)
 - [x] Heap snapshot of running app - `Heap_snapshot_of_running_app_shows_retained_records`
 - [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`
 - [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`

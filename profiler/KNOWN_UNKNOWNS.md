@@ -213,3 +213,40 @@ the path for apps that keep EmbedAssembliesIntoApk=true, such as the reference a
 Open follow-ups: exercise it on the reference application itself; decide whether to ship the
 tool as a NuGet package with the targets file instead of a published folder.
 
+
+## U23 - Provider instrumenting sometimes records nothing, and never records both
+
+Two separate observations about the runtime-provider instrumenting engine, both
+measured on 2026-08-23 (net10 workload, emulator-5556, TestTarget):
+
+1. **Allocations and enter/leave are mutually exclusive.** With the GCAllocation
+   keyword in the session the trace carries allocations and not one MethodEnter;
+   without it, enter/leave arrive normally. The full table, with the trace decoded
+   by hand rather than read through our analyzer, is in ANDROID_PROFILING_NOTES.
+   This is settled behaviour, not an open question: the session warns, the
+   characterization test `Instrumenting_provider_serves_allocations_or_timings_not_both`
+   pins it, and engine=weaver is the answer when a run needs both. It is listed
+   here because the same notes recorded the combination as working in August, so
+   the runtime moved: worth re-testing on the next workload update.
+
+2. **Open: the runtime sometimes instruments nothing, in runs.** Sessions with a
+   correct MONO_DIAGNOSTICS, a correct callspec and no error anywhere come back
+   `enter=0 leave=0 allocs=0`. Measured over an afternoon of runs against the same
+   app: three consecutive good runs (223, 2811, 2823 enter events), then three
+   consecutive empty ones, then good again. What was ruled out:
+
+   - not the process: the app is force-stopped and relaunched between sessions, and
+     the empty runs survive the restart;
+   - not leftover state we write: no override environment file and no `debug.mono.*`
+     property remain between runs, and the failing session's own log shows the
+     right variable applied;
+   - not our analyzer: the empty traces contain no MethodEnter when decoded by hand;
+   - not the preceding allocations session on its own: an empty run repeats even
+     when the run before it was also allocation-free.
+
+   Still open. The suspend handshake releasing the app before the session's
+   MethodInstrumentation keyword is live remains the best guess, but nothing has
+   been shown. The session says "No enter/leave events were recorded" when it
+   happens, so it is visible rather than silent, the weaver engine never shows it,
+   and `Instrumenting_restart_session_times_methods` repeats the session once
+   before failing so the suite reports our pipeline, not the runtime's mood.

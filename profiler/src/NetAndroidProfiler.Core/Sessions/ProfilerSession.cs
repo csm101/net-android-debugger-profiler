@@ -569,7 +569,14 @@ public sealed class ProfilerSession : IAsyncDisposable
                 if (r.BrokenPairs > 0)
                     _warnings.Add($"{r.BrokenPairs} enter/leave pairs were dropped because their records were cut " +
                                   "(results cleared while the app was running, or a truncated read). The remaining timings are consistent.");
-                if (r.EnterEvents == 0) _warnings.Add("No enter/leave events were recorded: check the callspec/assemblies and that the app actually ran the woven methods.");
+                if (r.EnterEvents == 0 && r.AllocationEvents > 0 && Spec.Engine == InstrumentingEngine.RuntimeProvider && Spec.TrackAllocations)
+                    _warnings.Add(
+                        "No enter/leave events were recorded, only allocations: on this runtime the Mono profiler serves one or " +
+                        "the other. Measured on the net10 workload (2026-08-23): with the GCAllocation keyword the runtime emits " +
+                        "allocations and no MethodEnter/Leave at all; without it, enter/leave arrive normally. Re-run with " +
+                        "trackAllocations=false for timings, or use engine=weaver, which records both.");
+                else if (r.EnterEvents == 0)
+                    _warnings.Add("No enter/leave events were recorded: check the callspec/assemblies and that the app actually ran the woven methods.");
                 break;
             }
             case ProfilingMode.HeapSnapshot:
@@ -775,6 +782,12 @@ public sealed class ProfilerSession : IAsyncDisposable
         try { await File.WriteAllLinesAsync(LogPath, _log, ct).ConfigureAwait(false); } catch { }
     }
 
+    /// <summary>
+    /// MONO_DIAGNOSTICS for the runtime-provider engine. Note that asking for allocations
+    /// here costs the enter/leave events entirely - see the warning raised after analysis
+    /// and ANDROID_PROFILING_NOTES; the option is still honoured because an
+    /// allocations-only provider session is a legitimate thing to want.
+    /// </summary>
     private string BuildMonoDiagnostics()
     {
         var parts = new List<string> { "--diagnostic-mono-profiler=enable" };

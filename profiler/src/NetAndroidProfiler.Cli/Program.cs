@@ -65,6 +65,7 @@ switch (command)
               --launch <l>             restart (default) | attach
               --engine <e>             instrumenting only: provider (default) | weaver
               --callspec <spec>        instrumenting only, required: N:Ns, T:Type, M:Type:Method
+              --no-allocations         instrumenting only: time methods without recording allocations
               --assemblies <a,b>       weaver only: assemblies to weave; default inferred
               --snapshots <n>          heap only: how many, --snapshot-interval <seconds> apart
               --symbols <dir>          build output, so results carry source locations
@@ -144,6 +145,7 @@ static async Task<int> RunAsync(string[] args)
         Option(args, "--launch") ?? "restart",
         int.TryParse(Option(args, "--duration"), out int seconds) ? seconds : (mode == "heap" ? null : 20),
         Option(args, "--callspec"),
+        trackAllocations: !args.Contains("--no-allocations", StringComparer.OrdinalIgnoreCase),
         name: Option(args, "--name"),
         engine: Option(args, "--engine") ?? "provider",
         weaveAssemblies: Split(Option(args, "--assemblies")),
