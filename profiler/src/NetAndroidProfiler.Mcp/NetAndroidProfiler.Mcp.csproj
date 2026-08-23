@@ -21,6 +21,13 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- TraceEvent reads traces through reflection the trimmer cannot see: see nap's copy of
+       this comment and docs/PACKAGING.md. -->
+  <ItemGroup Condition="'$(NapAot)' == 'true'">
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.FastSerialization" />
+  </ItemGroup>
+
 
   <ItemGroup>
     <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />

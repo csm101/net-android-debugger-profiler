@@ -122,11 +122,20 @@ Three things had to be true, and none of them is optional:
    `Microsoft.Diagnostics.Tracing.TraceEvent` and `Microsoft.Diagnostics.FastSerialization`
    fixes it and costs about 7 MB - most of the difference in the table above.
 
-Not done yet: the **MCP server** is still framework-dependent (its SDK and
-Microsoft.Extensions.AI carry their own reflection; nobody has tried), and **heap mode**
-was not verified under AOT because the emulator refused heap dumps that afternoon on the
-framework-dependent build too. The package therefore still ships framework-dependent
-binaries; `-p:NapAot=true` is a per-project opt-in that works for nap today.
+The **MCP server** takes AOT as well, and needed no code of its own: ModelContextProtocol
+2.2.0 published with zero trim warnings, and the resulting 29.4 MB executable does the
+whole job over stdio - handshake, 24 tools listed, list_devices, a real profile_run
+against the emulator and profile_hotspots on what it collected. Driving it end to end
+(start, handshake, tools/list, adb) takes 739 ms against 1,079 ms framework-dependent.
+
+All four collection paths are verified natively: sampling, heap, provider instrumenting
+and weaver instrumenting - the last one rewriting IL with Mono.Cecil, 288,875 calls
+recorded.
+
+The package still ships framework-dependent binaries: `-p:NapAot=true` is a per-project
+opt-in, and switching the package over means shipping one executable per platform
+instead of one folder that runs anywhere with .NET 10. That is a distribution decision,
+not a technical blocker any more.
 
 ## Obfuscation (deferred)
 
