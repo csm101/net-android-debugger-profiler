@@ -971,16 +971,26 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         await adb.SetPropAsync(device.Serial, "debug.mono.extra",
             $"debug=127.0.0.1:10999,timeout={deviceNow + 120},loglevel=0,server=y", ct);
 
-        var lines = new List<string>();
-        await using var session = device.NewSession(line => { lock (lines) lines.Add(line); output.WriteLine(line); });
-        await session.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options(), ct);
+        try
+        {
+            var lines = new List<string>();
+            await using var session = device.NewSession(line => { lock (lines) lines.Add(line); output.WriteLine(line); });
+            await session.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options(), ct);
 
-        string log;
-        lock (lines) log = string.Join("\n", lines);
-        Assert.Contains("10999", log);
-        Assert.Contains("device-global", log);
+            string log;
+            lock (lines) log = string.Join("\n", lines);
+            Assert.Contains("10999", log);
+            Assert.Contains("device-global", log);
 
-        // And the launch still succeeds: the warning informs, it does not block.
-        Assert.Equal(SessionState.Running, session.State);
+            // And the launch still succeeds: the warning informs, it does not block.
+            Assert.Equal(SessionState.Running, session.State);
+        }
+        finally
+        {
+            // This property is device-global and valid for two minutes. If the launch above threw,
+            // nothing else would clear it, and every app started on this emulator meanwhile - the
+            // next test's included - would wait for a debugger on port 10999.
+            await adb.SetPropAsync(device.Serial, "debug.mono.extra", "", CancellationToken.None);
+        }
     }
 }

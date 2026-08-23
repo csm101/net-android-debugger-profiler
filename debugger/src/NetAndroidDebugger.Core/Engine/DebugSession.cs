@@ -806,10 +806,8 @@ public sealed class DebugSession : IAsyncDisposable
     /// Decides what to do with a first-chance exception. Returns null when no rule matches, which
     /// leaves the filters in charge.
     /// </summary>
-    private ExceptionAction? MatchExceptionRules(string type, string? message, string? sourceFile)
+    private ExceptionAction? MatchExceptionRules(IReadOnlyList<ExceptionRule> rules, string type, string? message, string? sourceFile)
     {
-        List<ExceptionRule> rules;
-        lock (_lock) rules = EffectiveExceptionRulesNoLock();
         foreach (var rule in rules)
         {
             if (rule.Type is { Length: > 0 } exact && !string.Equals(type, exact, StringComparison.Ordinal)) continue;
@@ -870,7 +868,7 @@ public sealed class DebugSession : IAsyncDisposable
         // decided from what the stop already carries, that happens here; otherwise on a worker.
         if (!RulesNeedTheDebuggee(rules, type))
         {
-            var decided = MatchExceptionRules(type, null, site);
+            var decided = MatchExceptionRules(rules, type, null, site);
             return decided is not null && ActOnRule(pd, decided.Value, type, null, snapshot);
         }
 
@@ -879,6 +877,12 @@ public sealed class DebugSession : IAsyncDisposable
         var needsMessage = RulesNeedMessage(rules);
         Task.Run(() =>
         {
+          // Nothing observes this task. Whatever goes wrong in here, the app is currently suspended
+          // and only this path can resume or report it - so a throw that escaped would leave the
+          // debuggee frozen with the session still saying Running, and no error anywhere. Report the
+          // stop instead: worse information, but the app is usable and the reason is in the log.
+          try
+          {
             // An empty type means the throw site had no debug info, not that the exception has no
             // type. Recovering it here is what keeps a `type` rule working on third-party code.
             var resolvedType = type;
@@ -901,7 +905,7 @@ public sealed class DebugSession : IAsyncDisposable
                 ? (resolvedType, s.Message, s.StackTrace)
                 : snapshot;
 
-            var decided = MatchExceptionRules(resolvedType, message, site);
+            var decided = MatchExceptionRules(rules, resolvedType, message, site);
             if (decided is not null && decided.Value != ExceptionAction.Break)
             {
                 ActOnRule(pd, decided.Value, resolvedType, message, recovered);
@@ -909,6 +913,13 @@ public sealed class DebugSession : IAsyncDisposable
             }
             // No rule, or one that says break: report it as an ordinary exception stop.
             ReportStop(pd, recovered, message);
+          }
+          catch (Exception ex)
+          {
+              _log($"pid {pid}: deciding the exception rules failed ({ex.GetType().Name}: {ex.Message}); reporting the stop instead");
+              try { ReportStop(pd, snapshot, snapshot?.Message); }
+              catch (Exception second) { _log($"pid {pid}: reporting that stop failed too: {second.Message}"); }
+          }
         });
         return true;
     }

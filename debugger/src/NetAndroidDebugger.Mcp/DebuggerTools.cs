@@ -85,13 +85,18 @@ public sealed class DebuggerTools(SessionHost host)
             {
                 project = projectPath is not null
                     ? AppProjectFinder.Describe(projectPath) ?? throw new McpException(
-                        $"{projectPath} is not a .NET for Android application project: one targets an -android framework " +
-                        "and declares an ApplicationId (or is an Exe).")
+                        File.Exists(projectPath)
+                            ? $"{projectPath} is not a .NET for Android application project: one targets an -android " +
+                              "framework and declares an ApplicationId (or is an Exe). It may also simply not be readable XML."
+                            : $"{projectPath} does not exist.")
                     : solutionOrFolder is not null
                         ? AppProjectFinder.Single(solutionOrFolder)
-                        : throw new McpException(
-                            "Nothing to launch. Give packageName, or projectPath, or solutionOrFolder to find the project in "
-                            + "(list_app_projects lists them).");
+                        // Naming the argument that is actually missing: with deploy the caller has usually
+                        // given packageName already, and telling them to give it again wastes a round trip.
+                        : throw new McpException(packageName is not null
+                            ? "deploy needs the project to build: give projectPath, or solutionOrFolder to find it in."
+                            : "Nothing to launch. Give packageName, or projectPath, or solutionOrFolder to find the project in "
+                              + "(list_app_projects lists them).");
             }
             catch (LaunchException ex) { throw new McpException(ex.Message); }
 
@@ -101,6 +106,16 @@ public sealed class DebuggerTools(SessionHost host)
                 packageName = project.ApplicationId ?? throw new McpException(
                     $"{project.ProjectPath} declares no ApplicationId - it is probably set in a props file. Pass packageName.");
                 deduced.AppendLine($"{packageName} from {project.ProjectPath}");
+            }
+            else if (project.ApplicationId is { Length: > 0 } declared
+                     && !string.Equals(declared, packageName, StringComparison.Ordinal))
+            {
+                // The contradiction this deduction exists to prevent. Fatal when deploying, because
+                // installing one app and starting another fails as "no debugger agent within Ns",
+                // which sends the reader looking anywhere but here.
+                var mismatch = $"packageName '{packageName}' contradicts the ApplicationId '{declared}' declared by {project.ProjectPath}";
+                if (deploy) throw new McpException($"{mismatch}. Deploying would install one app and launch the other.");
+                deduced.AppendLine($"WARNING: {mismatch}; launching '{packageName}' as asked");
             }
         }
 

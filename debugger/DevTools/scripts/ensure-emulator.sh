@@ -55,7 +55,10 @@ fi
 # then dies with "Running multiple emulators with the same AVD". Matched on the AVD name, so other
 # emulators are still left alone.
 if command -v powershell.exe >/dev/null 2>&1; then
-  STALE=$(powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name LIKE 'qemu%'\" | Where-Object CommandLine -Match '-avd +$AVD' | Select-Object -ExpandProperty ProcessId" 2>/dev/null | tr -d '\r')
+  # The AVD name is escaped and anchored: an unanchored match would kill an emulator whose AVD
+  # merely starts with this one's name, and the promise at the top of this file is that other
+  # emulators are left alone. Passed through the environment to keep the quoting readable.
+  STALE=$(NAD_AVD="$AVD" powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.Name -like "qemu*" -and $_.CommandLine -match ("-avd\s+" + [regex]::Escape($env:NAD_AVD) + "(\s|$)") } | Select-Object -ExpandProperty ProcessId' 2>/dev/null | tr -d '\r')
   for stale_pid in $STALE; do
     echo "killing stale qemu $stale_pid for $AVD (it never registered with adb)"
     powershell.exe -NoProfile -Command "Stop-Process -Id $stale_pid -Force" >/dev/null 2>&1

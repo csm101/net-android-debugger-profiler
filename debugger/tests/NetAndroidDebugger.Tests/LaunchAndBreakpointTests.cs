@@ -174,9 +174,19 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
 
         // Either the step returns that breakpoint, or it arrives as the very next stop. What must
         // not happen is losing it: whoever is stepping still set that breakpoint on purpose.
-        var reported = stepped.Reason == StopReason.Breakpoint
-            ? stepped
-            : await session.WaitForStopAsync(stepped.Generation, TimeSpan.FromSeconds(40), cts.Token);
+        // If the step won the race there is no pending stop to wait for - everything is suspended
+        // and nothing would ever resume it, so waiting here would just burn the timeout and then
+        // blame a breakpoint that was never hit. Resume first, then look.
+        StopEvent? reported;
+        if (stepped.Reason == StopReason.Breakpoint)
+        {
+            reported = stepped;
+        }
+        else
+        {
+            output.WriteLine($"the step won the race (reason {stepped.Reason}); continuing to let the timer hit the breakpoint");
+            reported = await session.ContinueAndWaitAsync(TimeSpan.FromSeconds(40), cts.Token);
+        }
 
         output.WriteLine($"step returned {stepped.Reason}; the breakpoint came back as {reported?.Reason} on thread {reported?.ThreadId}, stepped thread was {stop.ThreadId}");
 
