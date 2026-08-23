@@ -66,7 +66,17 @@ path in Settings.
 `install.cmd` registers `bin\NetAndroidProfiler.Mcp.dll` with Claude Code at user scope,
 pointing at wherever the package was unpacked - no repository, no publish step, and
 `install.cmd /remove` undoes it. It warns when adb is missing and says which dsrouter
-will be used.
+will be used. `install.cmd /name <name>` registers under another name, so a
+package can be tried beside an existing installation instead of replacing it - which is
+also how the install path gets tested without touching the developer's own
+registration.
+
+Verified by unpacking the zip outside the repository (2026-08-23): `nap doctor` reports
+the packaged dsrouter as the one in use, `nap run` profiles the emulator and writes a
+session, `install.cmd /name` registers and `/remove` removes it, and `gui\NapGui.exe`
+opens a session from the package - the path that needed the fix for the GUI to find
+`..\bin\nap.exe`. Still untested: a machine without the .NET SDK and without this
+repository.
 
 `register-mcp.cmd` in the repository root is the development counterpart: it publishes
 from source into `%LOCALAPPDATA%` and registers that. Same registration, different
