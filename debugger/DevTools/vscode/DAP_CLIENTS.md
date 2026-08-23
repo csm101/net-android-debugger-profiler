@@ -25,6 +25,9 @@ attach to an already-running process.
 | `basePort` | no | First SDB port, default 10000; each further process takes the next one. |
 | `propertyLifetimeSeconds` | no | How long the device-side debug property stays valid, default 180. |
 | `keepPropertyFresh` | no | Keep it valid for the whole session, so processes the app starts much later are still debugged. Costs: any other Mono app starting meanwhile stalls waiting for a debugger on our port. |
+| `exceptionRules` | no | Per-exception rules, in order; the first match decides (`break`, `log`, `logStack`, `ignore`). Criteria (`type`, `typeContains`, `messageContains`, `messageRegex`, `sourceFileContains`) are AND-ed, an unset one matches anything. Belongs in the project: it describes the app, not the person debugging it. |
+| `useGlobalExceptionRules` | no | Also consult the shared rules file after the rules above, default true. |
+| `globalExceptionRulesPath` | no | The shared rules file, default `%USERPROFILE%\.net-android-debugger\exceptionRules.json`. Re-read whenever it changes, so a rule edited while the app is stopped governs the next resume. |
 
 ## Behaviour worth knowing before you wire a client
 

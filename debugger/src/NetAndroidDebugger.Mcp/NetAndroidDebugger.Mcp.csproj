@@ -3,6 +3,7 @@
   <ItemGroup>
     <!-- One reader, both frontends: the file format is a frontend concern, Core stays JSON-free. -->
     <Compile Include="../Shared/ExceptionRuleFile.cs" Link="ExceptionRuleFile.cs" />
+    <Compile Include="../Shared/LaunchConfigFile.cs" Link="LaunchConfigFile.cs" />
     <ProjectReference Include="..\NetAndroidDebugger.Core\NetAndroidDebugger.Core.csproj" />
   </ItemGroup>
 

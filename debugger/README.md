@@ -42,6 +42,13 @@ Breakpoint file paths must be the absolute paths compiled into the app's PDB —
 `get_source_files(file)` reports the paths the running app was actually built
 with, which is how a breakpoint that stays pending is diagnosed.
 
+A project that keeps a `.vscode/launch.json` can skip the arguments:
+`launch_from_config()` reads the same file, and the same fields, the DAP
+frontend reads, so pressing F5 and launching through MCP cannot drift apart.
+Exception rules given in the configuration are applied to the session, which is
+where "this app throws these on purpose" belongs — with the app, rather than in
+one person's profile. This repository's own `.vscode/launch.json` is an example.
+
 ## Using the DAP adapter from an editor
 
 The same engine is also exposed as a Debug Adapter Protocol adapter, published

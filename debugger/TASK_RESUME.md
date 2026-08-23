@@ -2,20 +2,37 @@
 
 ## Current task
 
-Nothing in flight. The engine, both frontends and the packaging are done and
-committed; the suite is green. Pick the next item from "Next steps".
+Nothing in flight. `launch_from_config` is committed and the suite is green.
 
-## State (2026-08-21, end of day)
+Next, decided after looking at what the configuration file actually carries:
+**deduce what the project already declares** instead of restating it. In
+the reference application, 30+ projects target `-android` but only 2 declare an `<ApplicationId>`
+(`App.Droid` and a tool under `ExternalTools/`), and the libraries declare none —
+so "android TFM AND (ApplicationId or OutputType Exe)" is the filter.
 
-- Suite: **86 tests, 86/86 green** (~14 min). Every MCP tool is called through
-  the real server, and a guard test fails if one is ever added without that.
-  One run in four is lost to the emulator dropping; that is the environment.
-- Frontends: MCP server (registered in Claude Code) and DAP adapter, both over
-  the same `DebugSession`. `register-mcp.cmd` publishes both.
-- the reference application: driven live through MCP and through the DAP adapter, including the
-  third process (`the app's own android:process`) that Visual Studio cannot debug.
-- TEST_CATALOG: 3 open gaps — two need a WiFi handheld (U9), one is running the
-  VS Code extension inside a real VS Code.
+1. `list_app_projects(solutionOrFolder)`: the counterpart of `list_devices` —
+   path, ApplicationId, TFM per launchable project, solution members first. The
+   flow becomes list devices → list apps → launch, with nothing guessed.
+2. `launch_app`: `packageName`, `projectPath` and `deviceSerial` become
+   optional. One candidate → use it; several → fail listing them with their
+   ApplicationIds; `projectPath` without `packageName` → read it from the csproj.
+   One device online → use it; more → list them (the test harness already
+   refuses to guess here, and that is the behaviour to mirror).
+
+Not doing `save_launch_config`: it would mostly save deducible values, which is
+the redundant file this is meant to remove.
+
+The `.vscode/launch.json` keeps `packageName` and `projectPath` even though they
+are deducible: VS Code's own schema requires them, and a file that F5 rejects
+would lose half its purpose. What only the file can carry is `exceptionRules`,
+`deploy`, `keepPropertyFresh`, and one configuration per device.
+
+## State (2026-08-23)
+
+- Suite: **99 tests, 99/99 green** (18m13s, `NAD_DEVICE_SERIAL=emulator-5554`).
+  86 before, plus 12 for the launch-configuration parser and one end-to-end.
+- `NAD_DEVICE_SERIAL` is mandatory again: emulator-5556 (the profiler's AVD) is
+  online too, and the harness refuses to guess between two devices.
 
 ### What today changed, in the order it was found
 

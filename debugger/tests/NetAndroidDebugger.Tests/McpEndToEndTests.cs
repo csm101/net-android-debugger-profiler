@@ -630,6 +630,7 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
             "get_threads",
             "get_variable",
             "launch_app",
+            "launch_from_config",
             "list_breakpoints",
             "list_devices",
             "pause_execution",
@@ -656,5 +657,68 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
         Assert.True(missing.Count == 0, "tools that vanished from the server: " + string.Join(", ", missing));
         Assert.True(unexpected.Count == 0,
             "tools the server exposes that this list does not name (add them here, then cover them): " + string.Join(", ", unexpected));
+    }
+
+    /// <summary>
+    /// Launching the app a project describes rather than the app whoever is calling remembers.
+    /// The configuration deliberately names a device that does not exist, so the run only succeeds
+    /// if the override reached the launcher: the serial is the one field that legitimately changes
+    /// per run, and everything else has to come from the file.
+    /// </summary>
+    [Fact]
+    public async Task LaunchFromConfig_LaunchesWhatTheProjectDescribes_RulesAndOverrideIncluded()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var workspace = Directory.CreateTempSubdirectory("nad-e2e-cfg-");
+        var file = Path.Combine(workspace.FullName, ".vscode", "launch.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        try
+        {
+            await File.WriteAllTextAsync(file, $$"""
+                {
+                  // As a project would keep it, comments and all.
+                  "version": "0.2.0",
+                  "configurations": [
+                    {
+                      "type": "net-android",
+                      "request": "launch",
+                      "name": "TestTarget",
+                      "deviceSerial": "no-such-device",
+                      "packageName": "{{TestEnvironment.TestTargetPackage}}",
+                      "exceptionRules": [ { "typeContains": "Mqtt", "action": "ignore" } ],
+                    }
+                  ]
+                }
+                """, ct);
+
+            // A name that is not in the file fails before anything is launched, and says what is.
+            var wrong = await client.CallToolAsync("launch_from_config",
+                new Dictionary<string, object?> { ["configFile"] = file, ["configName"] = "nope" }, cancellationToken: ct);
+            Assert.True(wrong.IsError);
+
+            var launched = await CallAsync(client, "launch_from_config", new Dictionary<string, object?>
+            {
+                ["configFile"] = file,
+                ["deviceSerial"] = device.Serial,
+            }, ct);
+
+            Assert.Contains("Launched 'TestTarget'", launched);
+            Assert.Contains("1 exception rule(s) from the configuration", launched);
+            Assert.Contains($"Device {device.Serial} overrides no-such-device", launched);
+            Assert.Contains("state=Running", launched);
+            Assert.Contains($"package={TestEnvironment.TestTargetPackage}", launched);
+
+            // The rules in the file govern the session, not just the launch message.
+            Assert.Contains("Mqtt", await CallAsync(client, "get_exception_rules", null, ct));
+
+            Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+        }
+        finally
+        {
+            workspace.Delete(recursive: true);
+        }
     }
 }

@@ -91,6 +91,57 @@
                 "type": "boolean",
                 "default": false,
                 "description": "Keep the property valid for the whole session, so processes the app starts much later are debugged too. While it is on, any other Mono app starting on the device stalls waiting for a debugger on our port."
+              },
+              "exceptionRules": {
+                "type": "array",
+                "description": "Per-exception rules, in order; the first one that matches decides. The criteria that are set are AND-ed, an unset one matches anything. These rules belong to the app, so they live with the project.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "action"
+                  ],
+                  "properties": {
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "break",
+                        "log",
+                        "logStack",
+                        "ignore"
+                      ],
+                      "description": "What to do with an exception this rule matches. Only break suspends the app."
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "Exact exception type name, e.g. System.InvalidOperationException."
+                    },
+                    "typeContains": {
+                      "type": "string",
+                      "description": "Substring of the exception type name."
+                    },
+                    "messageContains": {
+                      "type": "string",
+                      "description": "Substring of the exception message. Reading a message means running code in the app, so it happens only when a rule asks for it."
+                    },
+                    "messageRegex": {
+                      "type": "string",
+                      "description": "Regular expression matched against the exception message."
+                    },
+                    "sourceFileContains": {
+                      "type": "string",
+                      "description": "Substring of the source file the exception was thrown from."
+                    }
+                  }
+                }
+              },
+              "useGlobalExceptionRules": {
+                "type": "boolean",
+                "default": true,
+                "description": "Also consult the shared rules file, after the rules given here."
+              },
+              "globalExceptionRulesPath": {
+                "type": "string",
+                "description": "The shared rules file, defaulting to the one in your home directory. It is re-read whenever it changes, so a rule can be edited while the app is stopped and govern what happens next."
               }
             }
           },
@@ -119,6 +170,57 @@
               "keepPropertyFresh": {
                 "type": "boolean",
                 "default": false
+              },
+              "exceptionRules": {
+                "type": "array",
+                "description": "Per-exception rules, in order; the first one that matches decides. The criteria that are set are AND-ed, an unset one matches anything. These rules belong to the app, so they live with the project.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "action"
+                  ],
+                  "properties": {
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "break",
+                        "log",
+                        "logStack",
+                        "ignore"
+                      ],
+                      "description": "What to do with an exception this rule matches. Only break suspends the app."
+                    },
+                    "type": {
+                      "type": "string",
+                      "description": "Exact exception type name, e.g. System.InvalidOperationException."
+                    },
+                    "typeContains": {
+                      "type": "string",
+                      "description": "Substring of the exception type name."
+                    },
+                    "messageContains": {
+                      "type": "string",
+                      "description": "Substring of the exception message. Reading a message means running code in the app, so it happens only when a rule asks for it."
+                    },
+                    "messageRegex": {
+                      "type": "string",
+                      "description": "Regular expression matched against the exception message."
+                    },
+                    "sourceFileContains": {
+                      "type": "string",
+                      "description": "Substring of the source file the exception was thrown from."
+                    }
+                  }
+                }
+              },
+              "useGlobalExceptionRules": {
+                "type": "boolean",
+                "default": true,
+                "description": "Also consult the shared rules file, after the rules given here."
+              },
+              "globalExceptionRulesPath": {
+                "type": "string",
+                "description": "The shared rules file, defaulting to the one in your home directory. It is re-read whenever it changes, so a rule can be edited while the app is stopped and govern what happens next."
               }
             }
           }

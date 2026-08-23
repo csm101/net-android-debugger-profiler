@@ -94,6 +94,12 @@ stop_debugging, terminate_app. Memory read/write and raw stack scan: not
 applicable to SDB - dropped unless a need appears. `select_device` was dropped
 too: every tool that needs a device takes the serial explicitly.
 
+Beyond the mirror: set_exception_rules / get_exception_rules /
+use_global_exception_rules (the per-exception engine and its shared file), and
+launch_from_config, which reads the launch parameters and the app's exception
+rules from a VS Code `launch.json` — the same file, and the same field names,
+the DAP frontend reads.
+
 ## Stable commands
 
     dotnet build C:\GitHub\net-android-debugger\NetAndroidDebugger.slnx

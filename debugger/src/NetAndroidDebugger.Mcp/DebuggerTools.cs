@@ -70,6 +70,67 @@ public sealed class DebuggerTools(SessionHost host)
         CancellationToken ct = default)
         => LaunchApp(deviceSerial, packageName, null, false, activityName, basePort, "Debug", null, false, ct);
 
+    [McpServerTool(Name = "launch_from_config"), Description(
+        "Launches from a VS Code launch.json - the same file, and the same field names, the DAP frontend reads - so " +
+        "how an app is launched lives with the project instead of being restated on every call. Takes the first " +
+        "'net-android' configuration unless configName says otherwise; JSONC, ${workspaceFolder} and ${env:VAR} are " +
+        "handled, and relative paths resolve against the project. exceptionRules in the configuration are applied to " +
+        "the session, so an app's own noisy exceptions travel with its repository.")]
+    public async Task<string> LaunchFromConfig(
+        [Description("Path to launch.json; defaults to .vscode/launch.json under workspaceFolder")] string? configFile = null,
+        [Description("Which configuration, by its \"name\"; defaults to the first net-android one")] string? configName = null,
+        [Description("Base for ${workspaceFolder} and relative paths; defaults to the folder holding the file, or its parent when that folder is .vscode")] string? workspaceFolder = null,
+        [Description("Overrides the configuration's deviceSerial, for a one-off run on another device")] string? deviceSerial = null,
+        [Description("Overrides the configuration's deploy, to relaunch without rebuilding")] bool? deploy = null,
+        CancellationToken ct = default)
+    {
+        LaunchConfig config;
+        try
+        {
+            config = LaunchConfigFile.Read(configFile, configName, workspaceFolder);
+        }
+        catch (Exception ex) when (ex is FormatException or FileNotFoundException or IOException or UnauthorizedAccessException)
+        {
+            // Reading the file is the caller's mistake to fix, and the message already names the file
+            // and lists what it offers; an MCP error keeps it out of the debugger log.
+            throw new McpException(ex.Message);
+        }
+
+        var session = await host.ForLaunchAsync(ct);
+        var notes = new StringBuilder();
+
+        if (config.Rules.Count > 0)
+        {
+            session.SetExceptionRules(config.Rules);
+            notes.AppendLine($"{config.Rules.Count} exception rule(s) from the configuration.");
+        }
+
+        if (config.UseGlobalExceptionRules)
+        {
+            var shared = new ExceptionRuleFile(config.GlobalExceptionRulesPath ?? ExceptionRuleFile.DefaultPath);
+            // A broken shared file must not stop a launch: the session is perfectly usable without it,
+            // and this line says where to look.
+            try { _ = shared.Load(); session.SetGlobalExceptionRuleSource(shared); }
+            catch (Exception ex) { notes.AppendLine($"Ignoring the shared exception rules: {ex.Message}"); }
+        }
+
+        var serial = deviceSerial ?? config.DeviceSerial;
+        if (serial != config.DeviceSerial)
+            notes.AppendLine($"Device {serial} overrides {config.DeviceSerial} from the configuration.");
+
+        var app = new AppTarget(config.PackageName, config.ActivityName, config.ProjectPath);
+        var options = new LaunchOptions(
+            serial,
+            BaseSdbPort: config.BasePort,
+            Deploy: deploy ?? config.Deploy,
+            Configuration: config.Configuration,
+            PropertyLifetime: config.PropertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(config.PropertyLifetimeSeconds.Value) : null,
+            KeepPropertyFresh: config.KeepPropertyFresh);
+        await session.LaunchAsync(app, options, ct);
+
+        return $"Launched '{config.Name}' from {config.Origin}.\n{notes}{TextFormat.Status(session.GetStatus())}";
+    }
+
     [McpServerTool(Name = "get_debug_session_status", ReadOnly = true), Description("Session state, stop generation, last stop, attached processes.")]
     public string GetStatus()
     {

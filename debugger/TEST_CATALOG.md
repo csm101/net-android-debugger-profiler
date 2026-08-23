@@ -30,7 +30,7 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
-- 86 tests in five files, ~7-10 min on the headless emulator after deploy. Each
+- 99 tests in six files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -350,6 +350,12 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] The shared rules file is attached and detached through the server, and a
       file that is not JSON is that call's error rather than a surprise later —
       `GlobalExceptionRulesFile_IsAttachedAndDetached_ThroughTheServer`
+- [x] `launch_from_config` launches what the project describes, applies the
+      exception rules the configuration carries, and honours the deviceSerial
+      override — the configuration deliberately names a device that does not
+      exist, so the run only succeeds if the override reached the launcher; an
+      unknown configName is that call's error before anything is launched —
+      `LaunchFromConfig_LaunchesWhatTheProjectDescribes_RulesAndOverrideIncluded`
 - [x] **No tool vanishes either**: the expected tool names are spelled out and
       compared with what the server exposes. A tool that disappears is otherwise
       invisible — the build passes and only whichever test happened to call it
@@ -360,3 +366,35 @@ Conventions (mirroring the Delphi project's discipline):
       if one is never called through it — a wrong parameter name or a rendering
       that throws is invisible to the Core tests —
       `EveryTool_IsExercisedSomewhereInThisSuite`
+
+## M. Launch configuration (`LaunchConfigTests`, no device)
+- [x] A file as VS Code writes it — comment header, trailing comma,
+      `${workspaceFolder}` in a path — is read, and what it does not state keeps
+      the same defaults as `launch_app` rather than a second set —
+      `AFileAsVsCodeWritesIt_IsRead_CommentsTrailingCommasAndVariablesIncluded`
+- [x] `${workspaceFolder}` is the project root, not the `.vscode` folder holding
+      the file: otherwise every relative path resolves one level too deep and
+      surfaces as a missing `.csproj` much later —
+      `WorkspaceFolder_IsTheProjectRoot_NotTheDotVscodeFolderHoldingTheFile`
+- [x] `configName` picks a configuration, and an unknown one lists what the file
+      actually holds —
+      `ConfigName_PicksTheConfiguration_AndAnUnknownOneListsWhatTheFileHolds`
+- [x] Another debugger's configurations are skipped, and named with their type
+      when asked for explicitly —
+      `ConfigurationsOfAnotherDebugger_AreSkipped_AndNamedIfAskedForByName`
+- [x] `${command:...}` is refused by name: only VS Code can answer it, and a
+      device picker reaching adb as a serial would fail far from its cause —
+      `VariablesOnlyVsCodeCanAnswer_AreRefusedByName`
+- [x] `${env:VAR}` is expanded — `EnvironmentVariables_AreExpanded`
+- [x] A configuration missing `deviceSerial` says which configuration and what is
+      missing — `AConfigurationMissingWhatIsMandatory_SaysWhichOneAndWhatIsMissing`
+- [x] Exception rules travel with the configuration, and a relative
+      `globalExceptionRulesPath` resolves against the project —
+      `ExceptionRules_TravelWithTheConfiguration`
+- [x] A bad rule names the configuration holding it, not just "rule 2" —
+      `ABadExceptionRule_NamesTheConfigurationItIsIn`
+- [x] A single hand-written object is a configuration, so using this outside VS
+      Code does not mean writing the launch.json envelope —
+      `ASingleHandWrittenObject_IsAConfiguration`
+- [x] A missing file says where it looked — `AMissingFile_SaysWhereItLooked`
+- [x] A file that is not JSON names the file — `AFileThatIsNotJson_NamesTheFile`

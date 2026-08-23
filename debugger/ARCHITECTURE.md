@@ -57,6 +57,7 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `src/NetAndroidDebugger.Dap/DapIds.cs` | DAP's integer thread/frame/variable ids ↔ the engine's (pid, thread, frame) and expansion handles; frame and variable ids are dropped when a process resumes |
 | `src/NetAndroidDebugger.Dap/DapAdapter.cs` | Request dispatch and event forwarding over one `DebugSession`; translation only |
 | `src/Shared/ExceptionRuleFile.cs` | Reads exception rules from a JSON file and stands in as the engine's shared rule source; compiled into both frontends and the tests |
+| `src/Shared/LaunchConfigFile.cs` | Reads a VS Code `launch.json` (JSONC, `${workspaceFolder}`, `${env:}`) into launch parameters and exception rules; compiled into the MCP frontend and the tests |
 
 Not yet implemented: `ValueFormatter` (Mono.Debugging's `DisplayValue` is used
 as-is), `SourceResolver` (breakpoint paths must match the PDB paths), logcat
@@ -142,6 +143,39 @@ the JSON reader is `src/Shared/ExceptionRuleFile.cs`, compiled into both
 frontends and the tests, so the engine stays JSON-free. A half-written file is
 the normal state while someone is editing, so a failed read keeps the rules
 already in force and says so rather than failing the resume.
+
+
+## Launch configuration
+
+Nine parameters describe how an app is launched, and eight of them are the same
+on every run of the same project. `launch_from_config` reads them from a VS Code
+`launch.json` instead, and `src/Shared/LaunchConfigFile.cs` deliberately reads
+**the field names the DAP adapter already takes from its launch request**: one
+file describes the app for both frontends, so pressing F5 and launching through
+MCP cannot drift apart.
+
+What the reader handles, because real files contain it: JSONC (VS Code writes
+comments into the file it generates, and people comment configurations out
+rather than deleting them), `${workspaceFolder}`, `${env:VAR}`, and paths
+relative to the project. `${workspaceFolder}` is the folder *holding* `.vscode`,
+not `.vscode` itself — getting that wrong resolves every relative path one level
+too deep and surfaces as a missing `.csproj` much later. Variables only VS Code
+can answer, `${command:...}` and `${input:...}`, are refused by name rather than
+passed through: a device picker reaching adb as a serial fails far from its
+cause.
+
+A bare array of configurations, or a single configuration object, is accepted
+too, so using this outside VS Code does not mean writing the launch.json
+envelope.
+
+`exceptionRules` may be given in the configuration itself, and that is the point
+of the file rather than a convenience: "this app throws these on purpose" is a
+fact about the app, so it belongs in the app's repository, while the shared file
+above stays the machine-wide baseline of one person's preferences.
+
+Only `deviceSerial` and `deploy` can be overridden per call — the serial because
+it genuinely changes per run, `deploy` to relaunch without rebuilding. Anything
+else that changes per call means the configuration is wrong.
 
 ## Threading model
 
