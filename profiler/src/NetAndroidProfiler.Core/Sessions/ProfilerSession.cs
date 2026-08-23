@@ -290,7 +290,15 @@ public sealed class ProfilerSession : IAsyncDisposable
         if (Spec.Launch == LaunchMode.Restart)
         {
             await _adb.ForceStopAsync(device.Serial, Spec.Package, ct).ConfigureAwait(false);
-            string ports = $"{_dsrouter.AppAddress},{(Spec.SuspendOnStart ? "suspend" : "nosuspend")},connect";
+            // Suspending holds the runtime at startup until a session resumes it. Sampling
+            // and instrumenting do resume it - that is how they catch app init - but a heap
+            // dump never does: the app would sit frozen through the warm-up and the dump
+            // would find an empty heap. Measured: with suspend the session ends with "no
+            // objects" however long the warm-up is; without it, the same command works.
+            bool suspend = Spec.SuspendOnStart && Spec.Mode != ProfilingMode.HeapSnapshot;
+            if (Spec.SuspendOnStart && !suspend)
+                Log("heap snapshot: launching without suspend (a suspended app allocates nothing)");
+            string ports = $"{_dsrouter.AppAddress},{(suspend ? "suspend" : "nosuspend")},connect";
             // The per-app override environment file is only safe for fast-deployed apps:
             // creating files/.__override__/ for an app that carries its assemblies inside
             // the APK makes the runtime look for them there and the app stops starting.

@@ -203,6 +203,23 @@ public class SessionTests
         Assert.Contains(s.Results.HeapByType(1, 20), r => r.typeName == "TestTarget.Workloads.AllocHeavyRecord");
     }
 
+    /// <summary>
+    /// A heap session with nothing configured - what `nap run --mode heap` and the MCP
+    /// profile_run send. SuspendOnStart defaults to true and used to be honoured here,
+    /// which held the runtime at startup: the app allocated nothing, the warm-up ticked
+    /// against a frozen process and the session ended with "Heap snapshot produced no
+    /// objects", however long the warm-up was. A heap session never suspends now.
+    /// </summary>
+    [Fact]
+    public async Task Heap_snapshot_with_default_settings_captures_objects()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.HeapSnapshot));
+        Assert.Equal(SessionState.Ready, s.State);
+        var byType = s.Results.HeapByType(1, 20);
+        Assert.NotEmpty(byType);
+        Assert.Contains(byType, r => r.count > 0);
+    }
+
     [Fact]
     public async Task Two_heap_snapshots_support_a_growth_diff()
     {

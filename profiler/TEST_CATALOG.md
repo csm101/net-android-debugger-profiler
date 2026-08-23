@@ -32,6 +32,8 @@ Conventions (mirroring the debugger project's discipline):
   has stopped instrumenting (KNOWN_UNKNOWNS U23: restart the emulator), which is the state
   that briefly looked like the two being mutually exclusive
 - [x] Heap snapshot of running app - `Heap_snapshot_of_running_app_shows_retained_records`
+- [x] A heap session with default settings captures objects (it must not suspend the app) -
+  `Heap_snapshot_with_default_settings_captures_objects`
 - [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`
 - [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`
 - [ ] Missing diagnostics component fails with guidance (needs a TestTarget build without EnableDiagnostics)

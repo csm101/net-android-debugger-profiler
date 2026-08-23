@@ -188,6 +188,20 @@ parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
   `Busy`). Sampling of AOT code loses leaf frames: for precise attribution
   profile JIT builds, or document the caveat for AOT builds. **[verified]**
 
+## A heap snapshot must not suspend the app
+
+Suspending holds the runtime at startup until a session resumes it, which is how sampling
+and instrumenting catch app init. A heap dump never resumes it: the app sits frozen, the
+warm-up ticks against a process that has allocated nothing, and the session ends with
+"Heap snapshot produced no objects" - the same message it gives for an app that is genuinely
+still starting, which is what made this look like a timing problem. A longer warm-up does
+not help; measured on 2026-08-23 at 5 and 12 seconds, both empty.
+
+Heap sessions therefore launch with `nosuspend` whatever the caller asked for, and say so in
+the log. It reached both frontends' defaults - `nap run --mode heap` and the MCP
+`profile_run(mode: "heap")` both send SuspendOnStart=true - so the first heap snapshot a new
+user took came back empty. Cover: `Heap_snapshot_with_default_settings_captures_objects`.
+
 ## Memory: gcdump
 
 - `dotnet-gcdump collect -p <dsrouter pid>` works against MonoVM through
