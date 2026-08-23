@@ -137,6 +137,15 @@ when one does, the stop is held and decided on a worker, and `ReportStop` is
 called from whichever path wins. Type and raise-site criteria never need the
 debuggee, which is why they are the cheap ones.
 
+A rule that names a type has a wrinkle worth knowing: a throw site in an
+assembly without debug info reaches the stop with **no type at all**
+(`GetException()` throws inside Mono.Debugging - KNOWN_UNKNOWNS U15), and those
+are precisely the third-party exceptions a rule wants to silence. So when the
+stop carries no type and some rule cares about the type, the decision moves to
+the worker as well and the type is recovered there through `$exception`, which
+also repairs the reported stop. A rule that names no type is unaffected and
+still decides on the event thread.
+
 
 A second, shared source sits behind the session's own rules: a file the user
 edits, consulted after them so a project overrides the machine-wide baseline.

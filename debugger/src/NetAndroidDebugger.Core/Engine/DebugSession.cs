@@ -826,10 +826,29 @@ public sealed class DebugSession : IAsyncDisposable
     }
 
     /// <summary>True when some rule can only be decided once the message is known.</summary>
-    private bool RulesNeedMessage()
+    private static bool RulesNeedMessage(IEnumerable<ExceptionRule> rules)
+        => rules.Any(r => r.MessageContains is { Length: > 0 } || r.MessageRegex is { Length: > 0 });
+
+    /// <summary>
+    /// Whether deciding these rules needs something only a call into the debuggee can provide, which
+    /// is what moves the decision off the event thread: the message, always; and the type when the
+    /// stop did not carry one.
+    /// <para>
+    /// A throw site in an assembly without debug info leaves the type empty (KNOWN_UNKNOWNS U15),
+    /// and matching a type criterion against "" silently ignores it - which is exactly wrong on an
+    /// app whose noisy exceptions come out of third-party code, since those are the ones with no
+    /// symbols. A rule that names no type is unaffected and still decides on the event thread.
+    /// </para>
+    /// </summary>
+    /// <param name="rules">The rules in force, session ones first.</param>
+    /// <param name="capturedType">The type the stop carried; empty when the throw site has no debug info.</param>
+    public static bool RulesNeedTheDebuggee(IReadOnlyList<ExceptionRule> rules, string? capturedType)
     {
-        lock (_lock)
-            return EffectiveExceptionRulesNoLock().Any(r => r.MessageContains is { Length: > 0 } || r.MessageRegex is { Length: > 0 });
+        var typeIsMissing = string.IsNullOrEmpty(capturedType);
+        return rules.Any(r =>
+            r.MessageContains is { Length: > 0 }
+            || r.MessageRegex is { Length: > 0 }
+            || (typeIsMissing && (r.Type is { Length: > 0 } || r.TypeContains is { Length: > 0 })));
     }
 
     /// <summary>
@@ -843,10 +862,13 @@ public sealed class DebugSession : IAsyncDisposable
         var type = snapshot?.Type ?? "";
         var site = TryDescribeLocation(pd.StopBacktrace)?.File;
 
-        // The message needs a call into the debuggee, which is not allowed on this thread - it is
-        // the event thread and the VM is not "suspended" from its point of view. When no rule asks
-        // for the message the decision is made here; when one does, it moves to a worker.
-        if (!RulesNeedMessage())
+        List<ExceptionRule> rules;
+        lock (_lock) rules = EffectiveExceptionRulesNoLock();
+
+        // Reading anything out of the debuggee is not allowed on this thread - it is the event
+        // thread, and from the VM's point of view it is not suspended. When the rules can be
+        // decided from what the stop already carries, that happens here; otherwise on a worker.
+        if (!RulesNeedTheDebuggee(rules, type))
         {
             var decided = MatchExceptionRules(type, null, site);
             return decided is not null && ActOnRule(pd, decided.Value, type, null, snapshot);
@@ -854,20 +876,39 @@ public sealed class DebugSession : IAsyncDisposable
 
         var pid = pd.Pid;
         var threadId = pd.StopThread?.Id ?? 0;
+        var needsMessage = RulesNeedMessage(rules);
         Task.Run(() =>
         {
-            string? message = null;
-            try { message = ResolveExceptionMessageLive(pid, threadId); }
-            catch (Exception ex) { _log($"pid {pid}: reading the exception message for the rules failed: {ex.Message}"); }
+            // An empty type means the throw site had no debug info, not that the exception has no
+            // type. Recovering it here is what keeps a `type` rule working on third-party code.
+            var resolvedType = type;
+            if (string.IsNullOrEmpty(resolvedType))
+            {
+                try { resolvedType = ResolveExceptionTypeLive(pid, threadId); }
+                catch (Exception ex) { _log($"pid {pid}: reading the exception type for the rules failed: {ex.Message}"); }
+            }
 
-            var decided = MatchExceptionRules(type, message, site);
+            string? message = null;
+            if (needsMessage)
+            {
+                try { message = ResolveExceptionMessageLive(pid, threadId); }
+                catch (Exception ex) { _log($"pid {pid}: reading the exception message for the rules failed: {ex.Message}"); }
+            }
+
+            // Whatever was recovered belongs to the stop as well, so a reported one no longer reads
+            // "exception= message=" for want of symbols at the throw site.
+            var recovered = snapshot is { } s && string.IsNullOrEmpty(s.Type) && !string.IsNullOrEmpty(resolvedType)
+                ? (resolvedType, s.Message, s.StackTrace)
+                : snapshot;
+
+            var decided = MatchExceptionRules(resolvedType, message, site);
             if (decided is not null && decided.Value != ExceptionAction.Break)
             {
-                ActOnRule(pd, decided.Value, type, message, snapshot);
+                ActOnRule(pd, decided.Value, resolvedType, message, recovered);
                 return;
             }
             // No rule, or one that says break: report it as an ordinary exception stop.
-            ReportStop(pd, snapshot, message);
+            ReportStop(pd, recovered, message);
         });
         return true;
     }

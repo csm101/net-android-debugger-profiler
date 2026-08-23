@@ -34,7 +34,7 @@ Conventions (mirroring the Delphi project's discipline):
   so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
   with "Running multiple emulators with the same AVD". The script now kills it by
   its qemu PID, matched on the AVD name (2026-08-23).
-- 130 tests in nine files, ~7-10 min on the headless emulator after deploy. Each
+- 136 tests in ten files, ~15 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -497,3 +497,25 @@ on — a symptom nowhere near its cause.
 - [x] The licence texts the file refers to are reproduced in full, Apache-2.0
       included (the short header most packages carry is not the licence) —
       `TheLicenceTextsReferredTo_AreReproducedInFull`
+
+## Q. Where an exception rule gets decided (`ExceptionRuleDecisionTests`, no device)
+Reading anything out of the debuggee is forbidden on Mono's event thread, so this
+predicate is what sends a decision to a worker. Getting it wrong either wedges
+the event thread or matches rules against data that is not there.
+- [x] A catch-all rule decides on the event thread, with or without a type —
+      `ACatchAllRule_DecidesOnTheEventThread`
+- [x] A rule on the message always needs the debuggee —
+      `ARuleOnTheMessage_AlwaysNeedsTheDebuggee`
+- [x] A rule on the type needs it **only** when the stop carried no type — the
+      fix for U15: a throw site without symbols leaves the type empty, and
+      matching "Mqtt" against "" silently ignores the rule, on exactly the
+      third-party exceptions rules exist to silence —
+      `ARuleOnTheType_NeedsTheDebuggee_OnlyWhenTheStopCarriedNoType`
+- [x] A rule on the raise site never needs it (the file comes from the backtrace
+      the stop already carries) — `ARuleOnTheSourceFile_NeverNeedsTheDebuggee`
+- [x] One rule needing it is enough, wherever it sits — `OneRuleThatNeedsIt_IsEnough`
+- [x] No rules need nothing — `NoRulesAtAll_NeedNothing`
+
+Verified end to end on the reference application with `DevTools/ExceptionTypeProbe`, not in this
+suite: it needs a real app whose exceptions come out of an assembly without
+symbols, which TestTarget cannot provide. See KNOWN_UNKNOWNS U15.

@@ -41,3 +41,17 @@ dotnet run --project DevTools/DapSmoke -- emulator-5554 App.Droid \
 ```
 
 Exit code 0 when every step answered.
+
+## ExceptionTypeProbe
+
+Answers whether a rule that names a type still matches when the throw site has
+no debug info (KNOWN_UNKNOWNS U15). Drives a real app with `ignore *Mqtt*` plus
+a catch-all `log`, and prints what the rules decided.
+
+```
+dotnet run --project DevTools/ExceptionTypeProbe -- <serial> <package> [suspendSeconds] [watchSeconds]
+```
+
+It waits for the app to load its MQTT client before suspending it. Suspending
+during startup proves nothing: there is no connection yet to time out, which is
+how the first two runs of this probe came back empty.

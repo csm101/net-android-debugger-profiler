@@ -177,3 +177,31 @@ since reading it means invoking in the debuggee and that is forbidden on the
 event thread. The machinery for deciding off the event thread already exists
 (`RulesNeedMessage`); the condition needs to grow a "type is missing and some
 rule cares about the type" case.
+
+**Fixed for the rules, 2026-08-23.** `RulesNeedTheDebuggee` now sends the
+decision to a worker when the stop carried no type *and* some rule cares about
+the type; the worker recovers it through `ResolveExceptionTypeLive` before
+matching, and puts it back into the reported stop. Verified on the reference application with
+`DevTools/ExceptionTypeProbe` - the same log point that used to read
+
+    capturing exception type failed: Object reference not set to an instance of an object.
+    [pid 25820] exception rule:  (not stopping)
+
+now reads
+
+    capturing exception type failed: Object reference not set to an instance of an object.
+    [pid 28511] exception rule: System.Threading.Tasks.TaskCanceledException (not stopping)
+
+Still unknown, and still worth this entry: *why* `GetException()` throws a
+NullReferenceException inside Mono.Debugging for a throw site without debug
+info. The engine now works around it rather than through it, and a rule that
+names no type still decides on the event thread, so the workaround costs
+nothing when it is not needed.
+
+Also learned while measuring: the reference application's recurring first-chance exceptions are
+`Java.Security.Cert.CertificateException` (repeatedly, from startup),
+`SQLite.SQLiteException` (three times during startup) and
+`TaskCanceledException` after a resume - not the MQTT ones, which need the
+client to be connected first. MQTTnet takes minutes to load, so a probe that
+suspends the app right after launch proves nothing: there is no connection yet
+to time out.

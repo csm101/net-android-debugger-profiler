@@ -809,7 +809,11 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
             ["packageName"] = TestEnvironment.TestTargetPackage,
         }, ct);
 
-        var plain = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 30 }, ct);
+        // 60s, not the usual 30: what is being tested is the snapshot, not how long a breakpoint
+        // set before launch takes to bind (that has its own test). Late in a full run the emulator
+        // has launched this app a hundred times and does take longer - this failed once at 30s and
+        // passed in isolation in 12.
+        var plain = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 60 }, ct);
         Assert.Contains("Stopped:", plain);
         Assert.DoesNotContain("-- locals", plain);
 
