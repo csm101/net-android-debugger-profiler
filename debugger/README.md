@@ -92,9 +92,26 @@ dotnet build NetAndroidDebugger.slnx
 dotnet test  NetAndroidDebugger.slnx
 ```
 
-Clone with `git clone --recurse-submodules` (debugger-libs is a submodule).
-
 Requires: .NET SDK 10 with the `android` workload, Android SDK platform-tools
-(`adb`), and an emulator or attached device for integration tests. When more
-than one device is attached, select the test device with
-`NAD_DEVICE_SERIAL=<serial>`; `NAD_SKIP_DEPLOY=1` skips redeploying TestTarget.
+(`adb`), and an emulator or attached device for integration tests.
+`NAD_SKIP_DEPLOY=1` skips redeploying TestTarget.
+
+### On a new machine
+
+```powershell
+git clone --recurse-submodules https://github.com/csm101/net-android-debugger.git
+```
+
+`debugger-libs` is a submodule pinned to a fork (see ARCHITECTURE.md, "ThirdParty
+vendoring status"), so a plain `git clone` needs `git submodule update --init`
+afterwards or nothing builds.
+
+Then `dotnet test` to confirm the environment, and `register-mcp.cmd` to publish
+and register the MCP server on that machine — the registration is per machine,
+and it runs the published binaries rather than the working tree, so it has to be
+re-run after changes you want to use from Claude Code.
+
+Set `NAD_DEVICE_SERIAL=<serial>` if the machine has more than one device
+attached. It is the per-machine answer to "which device", and it is used both by
+the test suite and by every launch: a call's own argument wins over it, and it
+wins over the deduction, so nothing has to name a serial in a committed file.
