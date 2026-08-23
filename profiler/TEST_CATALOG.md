@@ -161,7 +161,9 @@ the GUI's own data layer.
 - [x] pause/resume/snapshot/clear answer 501 saying what is missing - `The_live_control_verbs_answer_501_until_the_engine_supports_them`
 - [x] /shutdown signals the host - `Shutdown_signals_the_host_to_stop`
 - [x] A POST without Content-Length is rejected by the Windows HTTP stack (documented, not a service bug) - `A_post_without_a_content_length_is_rejected_by_the_http_stack`
-- [ ] A session driven end to end over HTTP (device test; done by hand 2026-08-21: 1338 samples)
+- [x] A session driven end to end over HTTP: devices, POST /sessions, counters while it
+  collects, stop, and the database the service reports opened and read -
+  `A_session_runs_from_start_to_database_over_http` (device)
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
