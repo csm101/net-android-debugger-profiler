@@ -245,6 +245,37 @@ C# Dev Kit family (license bound to VS Code). Do not drive it from our code and
 do not reuse its binaries. Open alternatives: `mono/debugger-libs`,
 `microsoft/vscode-mono-debug` (both MIT). **[verified — C# Dev Kit FAQ]**
 
+
+## Evaluation and unhandled exceptions: what the runtime actually does
+
+- **An aborted invocation is not reliably undone (2026-08-20, was U11):**
+  measured with TestTarget's `SlowProbe.SlowValue` (an 8 s getter) against a
+  1.5 s timeout. The debugger side is settled - the timeout is reported as an
+  error, the session stays responsive, later evaluation and expansion answer
+  normally, and `RunBounded` guarantees no hang. The **debuggee** side is not
+  deterministic: an invocation stuck in a call the abort cannot interrupt (here
+  `Thread.Sleep`) sometimes survives, with the thread carrying on and Continue
+  resuming it, and sometimes the runtime retries the abort over and over
+  ("Aborting invocation of ...") until the process dies. Both were observed on
+  the same test. **[verified]**
+  Practical consequence, for users rather than for the engine: keep
+  `EvaluationTimeout` generous, and where a getter may block set
+  `allowTargetInvoke=false` (or `allowToStringCalls=false`) instead of relying
+  on the abort. Covered by `AbortedSlowInvoke_LeavesTheThreadUsable`.
+- **An unhandled exception does not reliably kill the process (2026-08-21, was
+  U12):** measured over eight runs on the emulator - usually gone within
+  seconds, but twice still alive past 90 s, with the crash hook armed and
+  disarmed alike. What does hold, and what the engine guarantees: only the
+  FIRST unhandled exception per process is reported (the runtime raises more on
+  other threads while dying, and each would suspend the app again), later ones
+  are resumed automatically and logged, one Continue is enough, a crashed
+  process is never left held stopped, and the session never claims to be
+  Stopped with nothing suspended. Whether the automatic resume of the later
+  exceptions interferes with Mono's own teardown is not established.
+  The session reports Exited only when every process is gone, and the sticky
+  `:helper` service can outlive the crashing main process. **[verified]**
+  Covered by `UnhandledException_IsReported_ThenAppExits`, which accepts both
+  outcomes.
 ## Sharing a device with another debugger
 
 `debug.mono.extra` is device-global, so two debuggers on one device overwrite

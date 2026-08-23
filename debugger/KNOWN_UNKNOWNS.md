@@ -45,42 +45,6 @@ near-term concern for net9; track when the reference application retargets.
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
 
-## U11 - What an aborted debuggee invocation costs (mostly answered)
-Measured 2026-08-20 with TestTarget `SlowProbe.SlowValue` (an 8 s getter) and
-a 1.5 s timeout. The debugger side is settled: the timeout is reported as an
-error, the session stays responsive, later evaluation and expansion answer
-normally, and `RunBounded` guarantees no hang.
-The **debuggee** side is not deterministic: an invocation stuck in a call the
-abort cannot interrupt (here `Thread.Sleep`) sometimes survives - the thread
-keeps working and Continue resumes it - and sometimes the runtime retries the
-abort repeatedly ("Aborting invocation of ..." over and over) until the whole
-process dies. Both outcomes were observed on the same test.
-Practical consequence, worth documenting for users rather than fixing: keep
-`EvaluationTimeout` generous, and on a target where a getter may block, set
-`allowTargetInvoke=false` (or `allowToStringCalls=false`) instead of relying
-on the abort. Open only if it ever matters: can the engine tell an
-interruptible invocation from a doomed one before starting it? Covered by
-`AbortedSlowInvoke_LeavesTheThreadUsable`.
-
-## U12 - Unhandled exceptions: reported once, death not guaranteed
-An unhandled exception suspends the debuggee at ExceptionDispatchInfo.Throw, and
-while the process dies the runtime raises further unhandled exceptions on other
-threads, each of which suspended it again - so "Continue once and the app exits"
-did not hold. Decision (implemented in DebugSession, 2026-08-20): only the FIRST
-unhandled exception per process is reported; later ones are resumed
-automatically and logged, and the reported details keep describing the first
-one. One Continue is therefore enough.
-**Corrected 2026-08-21:** the process does *not* reliably die afterwards.
-Measured over eight runs on the emulator: usually gone within seconds, but twice
-still alive past 90 s - with the crash hook armed (a tick throwing on every
-iteration) and with it disarmed alike. `UnhandledException_IsReported_ThenAppExits`
-therefore accepts both outcomes and asserts what does hold: the exception is
-reported once with its details, one Continue is enough, the crashed process is
-never left held stopped, and the session never claims to be Stopped with nothing
-suspended. Whether Mono's own teardown is being interfered with by the automatic
-resume of later unhandled exceptions is not established.
-Note the session still reports Exited only when every process is gone, and the
-sticky `:helper` service can outlive the crashing main process.
 ## U13 - Hit-count breakpoints: measured, no longer reproducing
 `HitCountBreakpoint_StopsAtNthHit` asks for the 3rd hit and once in several runs
 stopped on the 9th (suite run 28b, 2026-08-20). `CurrentHitCount` lives on the
