@@ -47,13 +47,12 @@
         "configurationAttributes": {
           "launch": {
             "required": [
-              "deviceSerial",
               "packageName"
             ],
             "properties": {
               "deviceSerial": {
                 "type": "string",
-                "description": "adb serial of the target device, from `adb devices`. Always explicit - there is no default device."
+                "description": "adb serial of the target device, from `adb devices`. Optional: when omitted, NAD_DEVICE_SERIAL is used, and failing that the only ready device. With several devices ready the launch fails listing them - none is ever guessed. A serial names a machine, so leaving it out is usually the right thing to commit."
               },
               "packageName": {
                 "type": "string",
@@ -147,13 +146,12 @@
           },
           "attach": {
             "required": [
-              "deviceSerial",
               "packageName"
             ],
             "properties": {
               "deviceSerial": {
                 "type": "string",
-                "description": "adb serial of the target device."
+                "description": "adb serial of the target device. Optional; see the launch configuration."
               },
               "packageName": {
                 "type": "string",

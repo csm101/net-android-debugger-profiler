@@ -120,10 +120,7 @@ public sealed class DebuggerTools(SessionHost host)
         }
 
         // Resolved before the session exists, so a device that cannot be chosen leaves nothing behind.
-        string serial;
-        try { serial = await new DebugSession().ResolveDeviceSerialAsync(deviceSerial, ct); }
-        catch (LaunchException ex) { throw new McpException(ex.Message); }
-        if (deviceSerial is null) deduced.AppendLine($"device {serial}, the only one ready");
+        var serial = await ResolveSerialAsync(deviceSerial, null, deduced, ct);
 
         var session = await host.ForLaunchAsync(ct);
         var app = new AppTarget(packageName, activityName, projectPath);
@@ -135,6 +132,39 @@ public sealed class DebuggerTools(SessionHost host)
         return "Launched and attached.\n"
              + (deduced.Length > 0 ? "Deduced: " + string.Join("; ", DeducedLines(deduced)) + "\n" : "")
              + TextFormat.Status(session.GetStatus());
+    }
+
+
+    /// <summary>The environment variable naming this machine's device, when it has more than one.</summary>
+    private const string DeviceSerialVariable = "NAD_DEVICE_SERIAL";
+
+    /// <summary>
+    /// The device to launch on, most explicit first: this call, then the launch configuration, then
+    /// <c>NAD_DEVICE_SERIAL</c>, then the only ready device. The environment sits between the two
+    /// because a serial is a property of the machine, not of the app - committing one to a shared
+    /// configuration makes it wrong on everybody else's desk.
+    /// <para>
+    /// A serial that was named but is not attached is an error, never a quiet fallback to whatever
+    /// else is there: a variable left over from an earlier session would otherwise debug the wrong
+    /// device while looking like it worked.
+    /// </para>
+    /// </summary>
+    private async Task<string> ResolveSerialAsync(string? fromCall, string? fromConfig, StringBuilder deduced, CancellationToken ct)
+    {
+        var requested = fromCall ?? fromConfig ?? Environment.GetEnvironmentVariable(DeviceSerialVariable);
+        var source = fromCall is not null ? null
+            : fromConfig is not null ? "the configuration"
+            : requested is not null ? DeviceSerialVariable
+            : null;
+
+        try
+        {
+            var chosen = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, requestedFrom: source);
+            if (requested is null) deduced.AppendLine($"device {chosen}, the only one ready");
+            else if (source is not null) deduced.AppendLine($"device {chosen} from {source}");
+            return chosen;
+        }
+        catch (LaunchException ex) { throw new McpException(ex.Message); }
     }
 
     /// <summary>What was deduced rather than given, one item per line.</summary>
@@ -197,9 +227,11 @@ public sealed class DebuggerTools(SessionHost host)
             catch (Exception ex) { notes.AppendLine($"Ignoring the shared exception rules: {ex.Message}"); }
         }
 
-        var serial = deviceSerial ?? config.DeviceSerial;
-        if (serial != config.DeviceSerial)
-            notes.AppendLine($"Device {serial} overrides {config.DeviceSerial} from the configuration.");
+        // Same resolution as launch_app, so a configuration that omits deviceSerial - which is the
+        // sensible thing to commit - still launches on the only ready device.
+        if (deviceSerial is not null && config.DeviceSerial is not null && deviceSerial != config.DeviceSerial)
+            notes.AppendLine($"Device {deviceSerial} overrides {config.DeviceSerial} from the configuration.");
+        var serial = await ResolveSerialAsync(deviceSerial, config.DeviceSerial, notes, ct);
 
         var app = new AppTarget(config.PackageName, config.ActivityName, config.ProjectPath);
         var options = new LaunchOptions(

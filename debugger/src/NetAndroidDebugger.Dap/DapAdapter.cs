@@ -142,7 +142,16 @@ public sealed class DapAdapter : IAsyncDisposable
     private async Task LaunchAsync(JsonObject request, bool attach, CancellationToken ct)
     {
         var args = request["arguments"] as JsonObject ?? new JsonObject();
-        var serial = Str(args, "deviceSerial") ?? throw new ArgumentException("'deviceSerial' is required (see `adb devices`)");
+        // Same resolution as the MCP frontend: the request, then NAD_DEVICE_SERIAL, then the only
+        // ready device. A serial belongs to a machine, so a launch.json that omits it is the
+        // sensible thing to commit - and F5 still works on a desk with one emulator.
+        var requestedSerial = Str(args, "deviceSerial") ?? Environment.GetEnvironmentVariable("NAD_DEVICE_SERIAL");
+        var serialSource = Str(args, "deviceSerial") is not null ? null
+            : requestedSerial is not null ? "NAD_DEVICE_SERIAL"
+            : null;
+        var serial = await _session.ResolveDeviceSerialAsync(requestedSerial, ct, requestedFrom: serialSource);
+        if (Str(args, "deviceSerial") is null) Log($"device {serial}{(serialSource is null ? " (the only one ready)" : $" from {serialSource}")}");
+
         var package = Str(args, "packageName") ?? throw new ArgumentException("'packageName' is required (the app's ApplicationId)");
 
         // Attaching on Mono Android means restarting the app with the agent enabled; the only

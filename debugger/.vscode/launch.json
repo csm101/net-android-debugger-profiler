@@ -8,8 +8,6 @@
       "type": "net-android",
       "request": "launch",
       "name": "TestTarget",
-      // Set NAD_DEVICE_SERIAL, or replace this with a serial from `adb devices`.
-      "deviceSerial": "${env:NAD_DEVICE_SERIAL}",
       "packageName": "net.androiddebugger.testtarget",
       "exceptionRules": [
         {
@@ -23,7 +21,6 @@
       "type": "net-android",
       "request": "launch",
       "name": "TestTarget (build and install first)",
-      "deviceSerial": "${env:NAD_DEVICE_SERIAL}",
       "packageName": "net.androiddebugger.testtarget",
       "projectPath": "${workspaceFolder}/TestTarget/TestTarget.csproj",
       "deploy": true

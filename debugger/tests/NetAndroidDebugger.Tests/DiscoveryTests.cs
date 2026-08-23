@@ -329,4 +329,20 @@ public sealed class DeviceChoiceTests
     {
         Assert.Equal("RF8N", DebugSession.ChooseDevice([Ready("emulator-5554"), new DeviceInfo("RF8N", "device", null, false)], "RF8N").Serial);
     }
+
+    /// <summary>
+    /// A serial that was named but is not attached names where it came from, because "which of the
+    /// three places do I fix" is the actual question - a variable left over from an earlier session
+    /// looks exactly like a wrong config field.
+    /// </summary>
+    [Fact]
+    public void ASerialThatIsNotAttached_NamesWhereItCameFrom()
+    {
+        var ex = Assert.Throws<LaunchException>(() =>
+            DebugSession.ChooseDevice([Ready("emulator-5554")], "emulator-5560", "NAD_DEVICE_SERIAL"));
+
+        Assert.Contains("emulator-5560", ex.Message);
+        Assert.Contains("NAD_DEVICE_SERIAL", ex.Message);
+        Assert.Contains("emulator-5554", ex.Message);
+    }
 }

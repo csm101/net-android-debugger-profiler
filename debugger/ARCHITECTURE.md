@@ -174,6 +174,22 @@ names. The device follows the same rule: one ready device is not a choice,
 several are. Nothing ambiguous is ever guessed — the failure lists the
 candidates, which is also how the test harness has always behaved.
 
+The device follows one chain, shared by both frontends, most explicit first: the
+call's own argument, then `deviceSerial` in the configuration, then the
+`NAD_DEVICE_SERIAL` environment variable, then the only ready device. The
+environment sits between the file and the deduction on purpose - a serial names
+a machine, not an app, so committing one to a shared configuration makes it
+wrong on everybody else's desk, while an environment variable is exactly the
+per-machine answer. `deviceSerial` is therefore **not** required in a launch
+configuration, though `packageName` still is: that is the app's identity.
+
+A serial that was named but is not attached is an error naming where it came
+from, never a quiet fallback to whatever else is connected - a variable left
+over from an earlier session would otherwise debug the wrong device while
+looking like it worked. Several ready devices and no serial is an error too,
+listing them. In VS Code, where there is a person present, the extension is the
+right place to offer a picker; that is not built yet.
+
 **Chosen** — `launch_from_config`, over `src/Shared/LaunchConfigFile.cs`. What
 is left after deduction is real decisions: which exceptions matter, whether to
 deploy, whether to keep the debug property fresh, one configuration per device.

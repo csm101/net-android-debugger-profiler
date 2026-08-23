@@ -12,7 +12,7 @@ namespace NetAndroidDebugger.Frontends;
 public sealed record LaunchConfig(
     string Name,
     string Origin,
-    string DeviceSerial,
+    string? DeviceSerial,
     string PackageName,
     string? ActivityName = null,
     string? ProjectPath = null,
@@ -133,8 +133,11 @@ public static class LaunchConfigFile
         var name = Text(chosen, "name") ?? "(unnamed)";
         string? Field(string key) => Text(chosen, key) is { } raw ? Expand(raw, workspaceFolder, origin) : null;
 
-        var serial = Field("deviceSerial")
-            ?? throw new FormatException($"{origin}: configuration '{name}' has no deviceSerial (the adb serial from `adb devices`)");
+        // deviceSerial is deliberately optional: it names a machine, not the app, and a serial
+        // committed to a shared file is wrong on everyone else's desk. The caller resolves it -
+        // call argument, then this field, then NAD_DEVICE_SERIAL, then the only ready device.
+        // packageName stays mandatory, because that is the app's identity.
+        var serial = Field("deviceSerial");
         var package = Field("packageName")
             ?? throw new FormatException($"{origin}: configuration '{name}' has no packageName (the app's ApplicationId)");
 

@@ -128,14 +128,20 @@ public sealed class DebugSession : IAsyncDisposable
     /// </summary>
     /// <param name="devices">What adb reports.</param>
     /// <param name="requested">The serial the caller asked for, or null to deduce one.</param>
-    public static DeviceInfo ChooseDevice(IReadOnlyList<DeviceInfo> devices, string? requested = null)
+    /// <param name="requestedFrom">
+    /// Where <paramref name="requested"/> came from, named in the error when it turns out not to be
+    /// attached. A stale serial in an environment variable or a committed file is the common case,
+    /// and "which of the three places do I fix" is the question the message has to answer.
+    /// </param>
+    public static DeviceInfo ChooseDevice(IReadOnlyList<DeviceInfo> devices, string? requested = null, string? requestedFrom = null)
     {
         if (!string.IsNullOrWhiteSpace(requested))
         {
+            var from = requestedFrom is { Length: > 0 } ? $" (from {requestedFrom})" : "";
             return devices.FirstOrDefault(d => string.Equals(d.Serial, requested, StringComparison.OrdinalIgnoreCase))
                 ?? throw new LaunchException(devices.Count == 0
-                    ? $"No device is attached, so '{requested}' cannot be used. Start the emulator, or plug the device in."
-                    : $"No attached device has the serial '{requested}'. Attached:\n" + DeviceLines(devices));
+                    ? $"No device is attached, so '{requested}'{from} cannot be used. Start the emulator, or plug the device in."
+                    : $"No attached device has the serial '{requested}'{from}. Attached:\n" + DeviceLines(devices));
         }
 
         var ready = devices.Where(d => string.Equals(d.State, "device", StringComparison.OrdinalIgnoreCase)).ToList();
@@ -155,8 +161,8 @@ public sealed class DebugSession : IAsyncDisposable
         string.Join('\n', devices.Select(d => $"  {d.Serial}  state={d.State}  model={d.Model ?? "?"}"));
 
     /// <summary><see cref="ChooseDevice"/> applied to the devices adb reports right now.</summary>
-    public async Task<string> ResolveDeviceSerialAsync(string? requested, CancellationToken ct, string adbPath = "adb")
-        => ChooseDevice(await ListDevicesAsync(ct, adbPath), requested).Serial;
+    public async Task<string> ResolveDeviceSerialAsync(string? requested, CancellationToken ct, string adbPath = "adb", string? requestedFrom = null)
+        => ChooseDevice(await ListDevicesAsync(ct, adbPath), requested, requestedFrom).Serial;
 
     /// <summary>
     /// Deploys (optionally), starts the app with the debugger agent enabled and attaches

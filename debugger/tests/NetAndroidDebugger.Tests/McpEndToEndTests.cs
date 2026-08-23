@@ -832,4 +832,44 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
 
         Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
     }
+
+    /// <summary>
+    /// A configuration that omits deviceSerial - the sensible thing to commit, since a serial names
+    /// a machine - still launches: the serial comes from NAD_DEVICE_SERIAL or from the only ready
+    /// device. This is what makes launch_from_config usable on a second desk.
+    /// </summary>
+    [Fact]
+    public async Task LaunchFromConfig_WithoutADeviceSerial_ResolvesOneAnyway()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var workspace = Directory.CreateTempSubdirectory("nad-e2e-nodev-");
+        var file = Path.Combine(workspace.FullName, "debug.json");
+        try
+        {
+            await File.WriteAllTextAsync(file, $$"""
+                {
+                  "type": "net-android",
+                  "name": "TestTarget",
+                  "packageName": "{{TestEnvironment.TestTargetPackage}}"
+                }
+                """, ct);
+
+            // No deviceSerial in the file and none in the call.
+            var launched = await CallAsync(client, "launch_from_config", new Dictionary<string, object?>
+            {
+                ["configFile"] = file,
+            }, ct);
+
+            Assert.Contains("state=Running", launched);
+            Assert.Contains($"device={device.Serial}", launched);
+            Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
+        }
+        finally
+        {
+            workspace.Delete(recursive: true);
+        }
+    }
 }

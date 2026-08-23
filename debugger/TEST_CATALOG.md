@@ -40,7 +40,7 @@ Conventions (mirroring the Delphi project's discipline):
   so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
   with "Running multiple emulators with the same AVD". The script now kills it by
   its qemu PID, matched on the AVD name (2026-08-23).
-- 136 tests in ten files, ~15 min on the headless emulator after deploy. Each
+- 139 tests in ten files, ~15-17 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -426,8 +426,8 @@ Conventions (mirroring the Delphi project's discipline):
       device picker reaching adb as a serial would fail far from its cause —
       `VariablesOnlyVsCodeCanAnswer_AreRefusedByName`
 - [x] `${env:VAR}` is expanded — `EnvironmentVariables_AreExpanded`
-- [x] A configuration missing `deviceSerial` says which configuration and what is
-      missing — `AConfigurationMissingWhatIsMandatory_SaysWhichOneAndWhatIsMissing`
+- [x] A configuration missing `packageName` says which configuration and what is
+      missing — `AConfigurationMissingThePackage_SaysWhichOneAndWhatIsMissing`
 - [x] Exception rules travel with the configuration, and a relative
       `globalExceptionRulesPath` resolves against the project —
       `ExceptionRules_TravelWithTheConfiguration`
@@ -436,6 +436,13 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A single hand-written object is a configuration, so using this outside VS
       Code does not mean writing the launch.json envelope —
       `ASingleHandWrittenObject_IsAConfiguration`
+- [x] A configuration without `deviceSerial` is valid: the serial names a machine,
+      not the app, so the caller resolves it —
+      `AConfigurationWithoutADeviceSerial_IsValid_AndLeavesItToTheCaller`,
+      and end to end `LaunchFromConfig_WithoutADeviceSerial_ResolvesOneAnyway`
+- [x] A serial that was named but is not attached says where it came from, since
+      "which of the three places do I fix" is the real question —
+      `ASerialThatIsNotAttached_NamesWhereItCameFrom`
 - [x] A missing file says where it looked — `AMissingFile_SaysWhereItLooked`
 - [x] A file that is not JSON names the file — `AFileThatIsNotJson_NamesTheFile`
 

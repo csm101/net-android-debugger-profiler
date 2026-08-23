@@ -16,8 +16,8 @@ attach to an already-running process.
 
 | Argument | Required | Meaning |
 |---|---|---|
-| `deviceSerial` | yes | adb serial, from `adb devices`. Always explicit — never a "default device". |
 | `packageName` | yes | The app's ApplicationId, e.g. `App.Droid`. |
+| `deviceSerial` | no | adb serial, from `adb devices`. Omit it and the adapter uses `NAD_DEVICE_SERIAL`, or the only ready device; several ready devices fail listing them. A serial names a machine, so leaving it out is usually what belongs in a committed file. |
 | `activityName` | no | `pkg/fully.qualified.Activity`; resolved automatically when omitted. |
 | `projectPath` | no | Android `.csproj`; needed only with `deploy`. |
 | `deploy` | no | Build and install before launching (`launch` only). |

@@ -184,17 +184,36 @@ public sealed class LaunchConfigTests
         }
     }
 
+    /// <summary>
+    /// Only the app's identity is mandatory. The device is not: a serial names a machine, so
+    /// committing one to a shared file makes it wrong on everybody else's desk — the caller resolves
+    /// it from the call, NAD_DEVICE_SERIAL, or the only ready device.
+    /// </summary>
     [Fact]
-    public void AConfigurationMissingWhatIsMandatory_SaysWhichOneAndWhatIsMissing()
+    public void AConfigurationMissingThePackage_SaysWhichOneAndWhatIsMissing()
+    {
+        using var ws = new TempWorkspace();
+        var file = ws.Write("""
+            { "configurations": [ { "type": "net-android", "name": "app", "deviceSerial": "emulator-5554" } ] }
+            """);
+
+        var ex = Assert.Throws<FormatException>(() => LaunchConfigFile.Read(file));
+        Assert.Contains("'app'", ex.Message);
+        Assert.Contains("packageName", ex.Message);
+    }
+
+    [Fact]
+    public void AConfigurationWithoutADeviceSerial_IsValid_AndLeavesItToTheCaller()
     {
         using var ws = new TempWorkspace();
         var file = ws.Write("""
             { "configurations": [ { "type": "net-android", "name": "app", "packageName": "com.example.app" } ] }
             """);
 
-        var ex = Assert.Throws<FormatException>(() => LaunchConfigFile.Read(file));
-        Assert.Contains("'app'", ex.Message);
-        Assert.Contains("deviceSerial", ex.Message);
+        var config = LaunchConfigFile.Read(file);
+
+        Assert.Equal("com.example.app", config.PackageName);
+        Assert.Null(config.DeviceSerial);
     }
 
     /// <summary>
