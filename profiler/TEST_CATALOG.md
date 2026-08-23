@@ -173,7 +173,10 @@ the GUI's own data layer.
 - [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
 - [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`
 - [x] Async state machines woven by default report their resumptions - `Build_time_weaving_records_async_bodies_on_the reference application`
-- [ ] Multi-assembly symbolication in one session (App.Core, App.Shared, ...)
+- [x] Multi-assembly in one session: both TestTarget and TestTarget.Support woven, named
+  per module and resolved to their own source files -
+  `One_session_symbolicates_methods_from_two_assemblies` (device). The app gained a
+  second assembly to have the shape a real app has
 
 ## H6. Packaging (Fast/PackagingTests)
 - [x] The tool version comes from the build, not a literal, and reaches the database

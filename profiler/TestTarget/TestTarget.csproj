@@ -22,6 +22,10 @@
     the target csproj (CustomAfterMicrosoftCommonTargets import adding an
     AndroidEnvironment item, or an AndroidEnvironment file next to the project).
   -->
+  <ItemGroup>
+    <ProjectReference Include="..\TestTarget.Support\TestTarget.Support.csproj" />
+  </ItemGroup>
+
   <!-- Build-time IL weaving (opt-in: -p:NapWeave=true -p:NapCallspec=...). -->
   <Import Project="$(MSBuildThisFileDirectory)..\build\NetAndroidProfiler.Weaving.targets" />
 

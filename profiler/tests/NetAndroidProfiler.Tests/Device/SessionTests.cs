@@ -211,6 +211,76 @@ public class SessionTests
     /// objects", however long the warm-up was. A heap session never suspends now.
     /// </summary>
     /// <summary>
+    /// A real app is several assemblies, and every layer of the profiler works per module:
+    /// the weaver is told which assemblies to rewrite, methods are named per module, and
+    /// symbolication looks up a pdb per module. One session must therefore weave both
+    /// TestTarget and TestTarget.Support and give each a source location.
+    /// </summary>
+    [SkippableFact]
+    public async Task One_session_symbolicates_methods_from_two_assemblies()
+    {
+        string symbols = BuildOutputDirectory();
+        Skip.If(symbols is null, "TestTarget build output not found: build the app first");
+        Skip.IfNot(File.Exists(Path.Combine(symbols!, "TestTarget.Support.pdb")),
+            "the app was built before it had a second assembly: rebuild and reinstall TestTarget");
+
+        // Woven rather than sampled: the support method runs in microseconds, so a sampler
+        // would catch it only by luck, while enter/leave records every call. This also
+        // covers weaving more than one assembly in a session, which is what a real app
+        // needs (App.Droid plus App.Core, and so on).
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(10),
+            Callspec: "N:TestTarget.Workloads,N:TestTarget.Support",
+            Engine: InstrumentingEngine.Weaver,
+            WeaveAssemblies: ["TestTarget", "TestTarget.Support"],
+            SymbolsDir: symbols));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var modules = s.Results.Methods()
+            .Select(m => m.Module)
+            .Where(m => m.StartsWith("TestTarget", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.Contains("TestTarget", modules, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("TestTarget.Support", modules, StringComparer.OrdinalIgnoreCase);
+
+        // Both modules resolved to source, which is what the pdb lookup is for.
+        foreach (var module in new[] { "TestTarget", "TestTarget.Support" })
+        {
+            var figures = s.Results.MethodFiguresByModule(module);
+            Assert.True(figures.Count > 0, $"no methods recorded for {module}");
+        }
+        Assert.Contains(SourceFiles(s.DatabasePath), f => f.EndsWith("SupportWork.cs", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(SourceFiles(s.DatabasePath), f => f.EndsWith("CpuBurner.cs", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Source files recorded for the session's methods.</summary>
+    private static IEnumerable<string> SourceFiles(string databasePath)
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+        connection.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT DISTINCT source_file FROM method WHERE source_file IS NOT NULL";
+        using var reader = cmd.ExecuteReader();
+        var files = new List<string>();
+        while (reader.Read()) files.Add(reader.GetString(0));
+        return files;
+    }
+
+    /// <summary>The app's build output, where its pdbs are.</summary>
+    private static string? BuildOutputDirectory()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidProfiler.slnx")))
+            dir = dir.Parent;
+        if (dir is null) return null;
+        string bin = Path.Combine(dir.FullName, "TestTarget", "bin", "Debug");
+        return Directory.Exists(bin)
+            ? Directory.GetDirectories(bin).FirstOrDefault(d => File.Exists(Path.Combine(d, "TestTarget.pdb")))
+            : null;
+    }
+
+    /// <summary>
     /// An app built without the diagnostics component cannot be profiled at all, and the
     /// refusal is the product for whoever hits it: it has to name the missing library and
     /// the build switch that puts it back, before anything is collected.
@@ -431,7 +501,7 @@ public class SessionTests
     /// already collected stays a valid, analyzable trace - and say so in the session warnings
     /// rather than failing or filling the disk.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public async Task Collection_stops_when_the_trace_reaches_its_size_limit()
     {
         const long limit = 2 * 1024 * 1024;
@@ -441,7 +511,13 @@ public class SessionTests
             MaxTraceBytes: limit));
         Assert.Equal(SessionState.Ready, s.State);
 
+        // The trace only grows if the runtime is instrumenting, so on a device that has
+        // stopped doing that (KNOWN_UNKNOWNS U23) this measures the device, not the size
+        // limit. Skipping says so instead of blaming the limit.
         var trace = new FileInfo(Path.Combine(s.Directory, "trace.nettrace"));
+        Skip.If(s.Results.Timings(1).Count == 0 && trace.Length < limit,
+            "the runtime instrumented nothing, so the trace never grew - restart the device; KNOWN_UNKNOWNS U23");
+
         Assert.True(trace.Exists && trace.Length >= limit, $"trace is {trace.Length} bytes");
         // The check runs every 250 ms, so the file overshoots a little - but nowhere near
         // what two minutes of collection would have produced.
