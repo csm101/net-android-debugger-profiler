@@ -30,6 +30,12 @@ Conventions (mirroring the Delphi project's discipline):
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
+- A guard that is right elsewhere can be wrong here: `RunBounded` blocks a
+  thread waiting on another thread-pool thread, which is fine on a frontend
+  request and starves the pool inside the rule worker, where it runs once per
+  first-chance exception. Measured 2026-08-23: eight MCP tests dead at 2m05s
+  each and the whole run at 35 min instead of 15. Only a full run shows it -
+  the same tests pass in isolation.
 - A qemu instance that never registers with adb is invisible to `adb devices`,
   so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
   with "Running multiple emulators with the same AVD". The script now kills it by

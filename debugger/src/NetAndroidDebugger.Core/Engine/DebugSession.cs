@@ -885,18 +885,34 @@ public sealed class DebugSession : IAsyncDisposable
           {
             // An empty type means the throw site had no debug info, not that the exception has no
             // type. Recovering it here is what keeps a `type` rule working on third-party code.
+            //
+            // Both reads go through the same two guards as every other evaluation: RunBounded caps
+            // a wedged invocation instead of holding a pool thread for the full evaluation timeout,
+            // and the breakpoints are disarmed because reading .Message invokes a getter in the
+            // debuggee - one that can reach a breakpoint the user set, which would stop the app
+            // again while this decision is still in flight and then be resumed past by ActOnRule.
+            // One disarm and one ceiling for both reads, since they happen at the same stop.
             var resolvedType = type;
-            if (string.IsNullOrEmpty(resolvedType))
-            {
-                try { resolvedType = ResolveExceptionTypeLive(pid, threadId); }
-                catch (Exception ex) { _log($"pid {pid}: reading the exception type for the rules failed: {ex.Message}"); }
-            }
-
             string? message = null;
-            if (needsMessage)
+            if (string.IsNullOrEmpty(resolvedType) || needsMessage)
             {
-                try { message = ResolveExceptionMessageLive(pid, threadId); }
-                catch (Exception ex) { _log($"pid {pid}: reading the exception message for the rules failed: {ex.Message}"); }
+                try
+                {
+                    // Deliberately NOT RunBounded: that blocks a thread waiting on another
+                    // thread-pool thread, which is fine on a frontend request but starves the pool
+                    // here - this runs once per first-chance exception, and an app that throws in a
+                    // loop then wedges the whole engine (measured: eight MCP tests dead at 2m05s).
+                    // The Resolve* calls carry their own evaluation timeout.
+                    (resolvedType, message) = WithBreakpointsDisarmed(() =>
+                    (
+                        string.IsNullOrEmpty(type) ? ResolveExceptionTypeLive(pid, threadId) : type,
+                        needsMessage ? ResolveExceptionMessageLive(pid, threadId) : null
+                    ));
+                }
+                catch (Exception ex)
+                {
+                    _log($"pid {pid}: reading the exception details for the rules failed: {ex.Message}");
+                }
             }
 
             // Whatever was recovered belongs to the stop as well, so a reported one no longer reads
@@ -1199,11 +1215,13 @@ public sealed class DebugSession : IAsyncDisposable
         {
             try
             {
-                var (type, message) = RunBounded("GetExceptionDetails", () =>
+                // Disarmed for the same reason as the rule path: reading .Message invokes a getter,
+                // which can reach one of the user's own breakpoints.
+                var (type, message) = RunBounded("GetExceptionDetails", () => WithBreakpointsDisarmed(() =>
                 (
                     string.IsNullOrEmpty(snap.Value.Type) ? ResolveExceptionTypeLive(last.Pid, last.ThreadId) : snap.Value.Type,
                     string.IsNullOrEmpty(snap.Value.Message) ? ResolveExceptionMessageLive(last.Pid, last.ThreadId) : snap.Value.Message
-                ));
+                )));
                 if (!string.IsNullOrEmpty(type) || !string.IsNullOrEmpty(message))
                 {
                     snap = (type, message, snap.Value.StackTrace);
