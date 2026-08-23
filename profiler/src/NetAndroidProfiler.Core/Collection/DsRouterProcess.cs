@@ -39,6 +39,10 @@ public sealed class DsRouterProcess : IAsyncDisposable
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            // dsrouter outlives the call that started it and reads stdin. Without this it
+            // inherits the parent's, and in the MCP server that is the client's request
+            // stream: requests then vanish into dsrouter and the server answers nothing.
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
         };
@@ -58,6 +62,9 @@ public sealed class DsRouterProcess : IAsyncDisposable
         p.ErrorDataReceived += (_, e) => router.OnLine(e.Data, started);
         p.Exited += (_, _) => started.TrySetResult(false);
         if (!p.Start()) throw new ToolException("dotnet-dsrouter failed to start");
+        // Give it end-of-file rather than a pipe nobody writes to: it has nothing to say
+        // to us, and a router waiting on input is a router that never reports its port.
+        try { p.StandardInput.Close(); } catch { /* it may have exited already */ }
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
         try

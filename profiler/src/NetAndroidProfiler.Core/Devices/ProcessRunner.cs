@@ -25,7 +25,11 @@ public static class ProcessRunner
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = stdin is not null,
+            // Always redirect stdin, even with nothing to send: a child started without it
+            // inherits the parent's, and adb shell and dsrouter both read stdin. In a
+            // frontend that speaks over stdio - the MCP server - the child then eats the
+            // client's requests and the server goes silent without an error anywhere.
+            RedirectStandardInput = true,
             UseShellExecute = false,
             CreateNoWindow = true,
             StandardOutputEncoding = Encoding.UTF8,
@@ -39,7 +43,13 @@ public static class ProcessRunner
 
         var stdout = p.StandardOutput.ReadToEndAsync(ct);
         var stderr = p.StandardError.ReadToEndAsync(ct);
-        if (stdin is not null)
+        if (stdin is null)
+        {
+            // Nothing to send: close it at once, so the child reads end-of-file instead of
+            // waiting on a pipe nobody writes to.
+            p.StandardInput.Close();
+        }
+        else
         {
             await p.StandardInput.BaseStream.WriteAsync(stdin, ct).ConfigureAwait(false);
             p.StandardInput.Close();

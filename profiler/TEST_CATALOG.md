@@ -99,9 +99,14 @@ Conventions (mirroring the debugger project's discipline):
 - [x] initialize + tools/list expose the P1 tool surface - `Initialize_and_tools_list_expose_the_P1_tool_surface`
 - [x] Read-only tools answer from a prepared sessions root (sessions, hotspots, report, tree, callers, threads) - `Read_only_tools_answer_from_the_prepared_session`
 - [x] Error paths return MCP errors and the server stays alive - `Error_paths_return_mcp_errors_instead_of_hanging`
-- [ ] profile_run on TestTarget through MCP (device test)
-- [ ] profile_start / profile_stop round trip
-- [ ] profile_annotate_source through MCP on a prepared session
+- [x] profile_run on TestTarget through MCP, and the read-only tools answering from the
+  session it created without being told its id - `Profile_run_produces_a_session_the_read_only_tools_can_answer_from` (device)
+- [x] profile_start / profile_status / profile_stop round trip -
+  `Profile_start_and_profile_stop_round_trip` (device). Also the regression test for
+  child processes inheriting the server's stdin: before the fix this hung for ever,
+  because adb and dsrouter were eating the client's requests
+- [x] profile_annotate_source through MCP, with an unknown source file reported as an
+  error carrying guidance - `Profile_annotate_source_puts_the_figures_beside_the_method` (device)
 
 ## H3. GUI data layer (gui/tests/StoreTests.dpr, Delphi; run against real session databases)
 - [x] Session identity, report rows, tree roots and expansion, details queries, segment history - `StoreTests`

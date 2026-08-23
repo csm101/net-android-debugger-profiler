@@ -65,9 +65,12 @@ public sealed class AdbClient
     /// <summary>adb exec-out: binary-safe stdout of a device command.</summary>
     public async Task<byte[]> ExecOutAsync(string serial, string command, CancellationToken ct)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo(AdbPath) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+        // RedirectStandardInput, always: an adb started without it inherits the parent's
+        // stdin, and in a frontend that speaks over stdio that is the client's requests.
+        var psi = new System.Diagnostics.ProcessStartInfo(AdbPath) { RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var a in new[] { "-s", serial, "exec-out", command }) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi) ?? throw new ToolException("cannot start adb");
+        p.StandardInput.Close();
         using var ms = new MemoryStream();
         var err = p.StandardError.ReadToEndAsync(ct);
         // Drain stdout to EOF *before* waiting for exit: waiting first can leave data
@@ -228,9 +231,10 @@ public sealed class AdbClient
     /// <summary>Stream logcat lines for a pid until cancelled.</summary>
     public async IAsyncEnumerable<string> LogcatStreamAsync(string serial, int pid, [EnumeratorCancellation] CancellationToken ct)
     {
-        var psi = new System.Diagnostics.ProcessStartInfo(AdbPath) { RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8 };
+        var psi = new System.Diagnostics.ProcessStartInfo(AdbPath) { RedirectStandardOutput = true, RedirectStandardInput = true, UseShellExecute = false, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8 };
         foreach (var a in new[] { "-s", serial, "logcat", "--pid", pid.ToString() }) psi.ArgumentList.Add(a);
         using var p = System.Diagnostics.Process.Start(psi) ?? throw new ToolException("cannot start adb logcat");
+        p.StandardInput.Close();
         try
         {
             while (!ct.IsCancellationRequested)

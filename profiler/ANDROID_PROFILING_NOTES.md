@@ -481,6 +481,25 @@ draining. Stopping this way is clean: the runtime emits its rundown, so method
 names still resolve in the part that was collected. **[verified -
 Collection_stops_when_the_trace_reaches_its_size_limit]**
 
+## Child processes must never inherit stdin
+
+Every process the profiler starts - adb, dotnet-dsrouter - is started with
+`RedirectStandardInput = true` and its stdin closed straight away, even when we have
+nothing to send it. A child started without that inherits the parent's stdin, and both
+`adb shell` and dsrouter read from it.
+
+In a frontend that speaks over stdio this is not cosmetic: the MCP server's stdin *is*
+the client's request stream. Measured symptom, before the fix: `profile_start` answered,
+the next three `profile_status` calls answered, and then the server went silent for ever -
+no error, no log line, the process alive and idle, because the request had been swallowed
+by a child. A test left running overnight was still waiting in the morning. The same
+session driven by `nap` was unaffected, which is what makes it easy to miss: only the
+stdio frontend loses its input.
+
+Regression cover: `McpDeviceTests.Profile_start_and_profile_stop_round_trip`, which polls
+`profile_status` while a session starts. It hung indefinitely before the fix and takes 17
+seconds after it.
+
 ## One session at a time per device
 
 dotnet-dsrouter 9.0.x has no port option, so one machine runs one router on

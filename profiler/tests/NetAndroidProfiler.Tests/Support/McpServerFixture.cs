@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -13,6 +14,11 @@ namespace NetAndroidProfiler.Tests.Support;
 public sealed class McpServerFixture : IDisposable
 {
     private readonly Process _process;
+    // Reading on the calling thread means a server that says nothing blocks it for ever:
+    // ReadLine has no timeout, and a deadline checked between lines is never reached.
+    // A reader thread turns silence into an expired wait instead of a hung test run.
+    private readonly BlockingCollection<string> _lines = new();
+    private readonly ConcurrentQueue<string> _stderr = new();
     private int _nextId = 1;
 
     public McpServerFixture(string sessionsRoot)
@@ -30,8 +36,17 @@ public sealed class McpServerFixture : IDisposable
         psi.ArgumentList.Add(LocateServerDll());
         psi.Environment["NAP_SESSIONS_ROOT"] = sessionsRoot;
         _process = Process.Start(psi) ?? throw new InvalidOperationException("cannot start the MCP server");
-        _process.ErrorDataReceived += (_, _) => { };
+        // Keep the last of stderr: when a call does time out, what the server said about
+        // it is the whole diagnosis, and discarding it costs an hour of guessing.
+        _process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null) return;
+            _stderr.Enqueue(e.Data);
+            while (_stderr.Count > 100) _stderr.TryDequeue(out string? _);
+        };
         _process.BeginErrorReadLine();
+
+        new Thread(ReadLines) { IsBackground = true, Name = "mcp-stdout" }.Start();
     }
 
     /// <summary>How long to wait for a response; a device run needs far longer than a query.</summary>
@@ -92,19 +107,48 @@ public sealed class McpServerFixture : IDisposable
         _process.StandardInput.Flush();
     }
 
+    private void ReadLines()
+    {
+        try
+        {
+            while (_process.StandardOutput.ReadLine() is { } line)
+                _lines.Add(line);
+        }
+        catch { /* the process is going away */ }
+        finally { _lines.CompleteAdding(); }
+    }
+
     private JsonElement ReadResponse(int id)
     {
         var deadline = DateTime.UtcNow + Timeout;
-        while (DateTime.UtcNow < deadline)
+        while (true)
         {
-            string? line = _process.StandardOutput.ReadLine();
-            if (line is null) throw new InvalidOperationException("the MCP server closed its output");
+            var left = deadline - DateTime.UtcNow;
+            if (left <= TimeSpan.Zero)
+                throw new TimeoutException($"no response for request {id} within {Timeout.TotalSeconds:F0} s.{Stderr()}");
+            if (!_lines.TryTake(out string? line, left))
+            {
+                // TryTake also returns false when stdout has ended, and spinning on that
+                // until the deadline turns "the server died" into "the server was slow".
+                if (_lines.IsCompleted)
+                    throw new InvalidOperationException(
+                        $"the MCP server ended its output while request {id} was outstanding" +
+                        (_process.HasExited ? $" (process exited with code {_process.ExitCode})" : "") + "." + Stderr());
+                continue;
+            }
             if (line.Length == 0 || line[0] != '{') continue;
             var doc = JsonDocument.Parse(line);
             if (doc.RootElement.TryGetProperty("id", out var responseId) && responseId.TryGetInt32(out int value) && value == id)
                 return doc.RootElement.Clone();
         }
-        throw new TimeoutException($"no response for request {id}");
+    }
+
+    /// <summary>The tail of what the server wrote to stderr, for a failure message.</summary>
+    private string Stderr()
+    {
+        var lines = _stderr.ToArray();
+        return lines.Length == 0 ? "" : Environment.NewLine + "server stderr:" + Environment.NewLine +
+            string.Join(Environment.NewLine, lines.TakeLast(30));
     }
 
     public void Dispose()

@@ -71,6 +71,10 @@ public sealed class McpDeviceTests : IDisposable
     [Fact]
     public void Profile_start_and_profile_stop_round_trip()
     {
+        // profile_start returns as soon as the session exists, and profile_status is a
+        // read of memory: seconds, not minutes. Waiting six minutes for either would only
+        // turn a wedged server into a slow-looking one.
+        _server.Timeout = TimeSpan.FromSeconds(45);
         string started = _server.CallTool("profile_start", new
         {
             deviceSerial = Serial,
@@ -93,7 +97,11 @@ public sealed class McpDeviceTests : IDisposable
 
         Thread.Sleep(TimeSpan.FromSeconds(8));
 
+        // Stopping collects, analyses and writes the database: this one really can take
+        // minutes on a busy app.
+        _server.Timeout = TimeSpan.FromMinutes(5);
         string stopped = _server.CallTool("profile_stop", new { });
+        _server.Timeout = TimeSpan.FromSeconds(45);
         Assert.Contains("Sampling", stopped);
         Assert.DoesNotContain("Failed", stopped);
 
