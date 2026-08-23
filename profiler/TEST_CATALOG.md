@@ -36,8 +36,12 @@ Conventions (mirroring the debugger project's discipline):
   `Heap_snapshot_with_default_settings_captures_objects`
 - [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`
 - [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`
-- [ ] Missing diagnostics component fails with guidance (needs a TestTarget build without EnableDiagnostics)
-- [ ] Release build: instrumenting refused unless MONO_DIAGNOSTICS baked
+- [x] Missing diagnostics component fails with guidance, before anything is collected -
+  `An_app_built_without_diagnostics_is_refused_with_guidance` (device; skips unless the
+  companion build is installed: `-p:EnableDiagnostics=false
+  -p:ApplicationId=com.mcasoftware.testtarget.nodiag -t:Install`)
+- [x] Release build: instrumenting refused unless MONO_DIAGNOSTICS is baked, and the other
+  modes never need it - `PrerequisiteTests` (fast: the rule, with its guidance text)
 - [x] Startup profiling via suspend captures app init (MainActivity/OnCreate in the tree) -
   `Suspended_start_captures_the_app_initialisation`
 - [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
@@ -66,7 +70,8 @@ Conventions (mirroring the debugger project's discipline):
   iterator state machines, all resolving into the author's file -
   `GenericAndStateMachineSymbolsTests` (fast: tokens read from the sample assembly)
 - [x] Leaf attribution characterized on device (long leaf attributed, tiny leaf folded into its caller) - `Sampling_attributes_a_long_running_leaf_method`
-- [ ] AOT build: leaf attribution caveat surfaced as a session warning
+- [x] AOT: instrumenting refused, sampling warned but allowed (leaf frames land on the
+  caller) - `Aot_blocks_instrumenting_and_only_warns_for_sampling`
 - [x] Method tokens -> portable pdb source ranges (Fast/PortablePdbSymbolsTests): `Loads_testtarget_pdb_and_lists_its_documents`, `Methods_in_document_have_line_ranges`, `Sampled_method_tokens_resolve_to_source_ranges`, `Unknown_module_or_token_returns_null`
 
 ## C. Memory analysis

@@ -211,6 +211,37 @@ public class SessionTests
     /// objects", however long the warm-up was. A heap session never suspends now.
     /// </summary>
     /// <summary>
+    /// An app built without the diagnostics component cannot be profiled at all, and the
+    /// refusal is the product for whoever hits it: it has to name the missing library and
+    /// the build switch that puts it back, before anything is collected.
+    ///
+    /// Needs the companion build, installed beside the normal one so both can live on the
+    /// device:
+    ///   dotnet build TestTarget/TestTarget.csproj -c Debug -p:EnableDiagnostics=false
+    ///       -p:ApplicationId=com.mcasoftware.testtarget.nodiag -t:Install -p:AdbTarget="-s emulator-5556"
+    /// </summary>
+    [SkippableFact]
+    public async Task An_app_built_without_diagnostics_is_refused_with_guidance()
+    {
+        const string package = "com.mcasoftware.testtarget.nodiag";
+        var adb = new AdbClient();
+        string installed = await adb.ShellAsync(Serial, "pm list packages " + package, CancellationToken.None);
+        Skip.IfNot(installed.Contains(package, StringComparison.Ordinal),
+            $"{package} is not installed - see this test's summary for the build command");
+
+        var session = ProfilerSession.Create(new SessionSpec(Serial, package, ProfilingMode.Sampling,
+            Duration: TimeSpan.FromSeconds(5)), SessionsRoot);
+        await using var _ = session;
+        var error = await Assert.ThrowsAnyAsync<Exception>(() => session.RunAsync(CancellationToken.None));
+
+        Assert.Contains("libmono-component-diagnostics_tracing.so", error.Message);
+        Assert.Contains("-p:EnableDiagnostics=true", error.Message);
+        Assert.Equal(SessionState.Failed, session.State);
+        // Refused before collecting: no trace was written.
+        Assert.False(File.Exists(Path.Combine(session.Directory, "trace.nettrace")));
+    }
+
+    /// <summary>
     /// A session with no duration collects until somebody stops it - what the GUI's Stop
     /// button and the MCP profile_stop do. The engine has to end collection, analyse what
     /// it has and reach Ready, rather than wait for a duration that will never come.
