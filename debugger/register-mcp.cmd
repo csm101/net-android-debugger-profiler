@@ -40,6 +40,13 @@ if not exist "%DAP_DLL%" (
     exit /b 1
 )
 
+rem The notices have to travel with the binaries they cover, not stay in the repo.
+copy /y "%~dp0THIRD-PARTY-NOTICES.txt" "%NAD_INSTALL_DIR%\THIRD-PARTY-NOTICES.txt" >nul
+if errorlevel 1 (
+    echo Could not copy THIRD-PARTY-NOTICES.txt next to the published binaries.
+    exit /b 1
+)
+
 echo [3/4] Checking Claude Code registration ...
 claude mcp get %NAME% >nul 2>&1
 if errorlevel 1 goto register

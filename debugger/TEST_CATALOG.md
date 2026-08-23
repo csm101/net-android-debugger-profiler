@@ -34,7 +34,7 @@ Conventions (mirroring the Delphi project's discipline):
   so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
   with "Running multiple emulators with the same AVD". The script now kills it by
   its qemu PID, matched on the AVD name (2026-08-23).
-- 128 tests in eight files, ~7-10 min on the headless emulator after deploy. Each
+- 130 tests in nine files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -487,3 +487,13 @@ on — a symptom nowhere near its cause.
 - [x] End to end: a foreign fresh property is reported before being taken over,
       and the launch still succeeds (the warning informs, it does not block) —
       `ADebugPropertyLeftByAnotherDebugger_IsReportedBeforeItIsTakenOver`
+
+## P. Third-party notices (`ThirdPartyNoticesTests`, no device)
+- [x] Every assembly the frontends ship is named in THIRD-PARTY-NOTICES.txt — a
+      dependency arriving without a notice is a licence breach at distribution,
+      and nothing else in the build would say so: the reference is transitive,
+      the assembly lands in the output folder, and everything keeps working —
+      `EveryShippedAssembly_IsNamedInTheNotices`
+- [x] The licence texts the file refers to are reproduced in full, Apache-2.0
+      included (the short header most packages carry is not the licence) —
+      `TheLicenceTextsReferredTo_AreReproducedInFull`

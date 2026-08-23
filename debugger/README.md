@@ -69,6 +69,10 @@ dotnet "%LOCALAPPDATA%\net-android-debugger\NetAndroidDebugger.Dap.dll"
 ready-made nvim-dap configuration. For VS Code, which cannot run an arbitrary
 adapter from `launch.json`, `DevTools/vscode/net-android-debugger/` is a small
 extension that contributes the `net-android` debug type.
+
+`THIRD-PARTY-NOTICES.txt` lists every third-party component shipped with the
+binaries, with its licence in full; `register-mcp.cmd` copies it next to them.
+
 ## Layout
 
 ```

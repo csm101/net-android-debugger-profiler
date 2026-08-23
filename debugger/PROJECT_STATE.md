@@ -34,8 +34,15 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
 
 - Licensing (2026-08-20): proprietary closed source, copyright MCA Software
   s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
-  MIT/BSD/Apache-2.0 only, no GPL; THIRD-PARTY-NOTICES required at first
-  distributed release.
+  MIT/BSD/Apache-2.0 only, no GPL.
+- THIRD-PARTY-NOTICES.txt (2026-08-23): written from what is actually published,
+  with each component's copyright read out of the shipped assemblies rather than
+  from memory. Seven components: mono/debugger-libs, Mono.Cecil, Roslyn, the
+  Microsoft.Extensions/.NET libraries, SymbolStore+FileFormats, Json.NET (all
+  MIT) and the MCP C# SDK (**Apache-2.0**, not MIT as assumed - allowed by the
+  policy, and it ships no NOTICE file to propagate). `register-mcp.cmd` copies
+  the file next to the binaries, and a test fails if a shipped assembly is not
+  named in it.
 
 ## Architecture status
 

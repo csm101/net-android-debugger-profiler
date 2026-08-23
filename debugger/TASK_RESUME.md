@@ -2,8 +2,10 @@
 
 ## Current task
 
-Nothing in flight. Items 1-4 of the Delphi cross-pollination are committed and
-the suite is green.
+Nothing in flight. The suite is green and THIRD-PARTY-NOTICES.txt is in place,
+so nothing blocks a first distribution on the licensing side.
+
+What the last two commits added:
 
 1. `AndroidLauncher.ForeignDebugPropertyWarning` - the launch reads
    `debug.mono.extra` before writing it and reports a value that has not
@@ -20,7 +22,7 @@ the suite is green.
 
 ## State (2026-08-23)
 
-- Suite: **128 tests, 128/128 green** (13m34s, `NAD_DEVICE_SERIAL=emulator-5554`).
+- Suite: **130 tests, 130/130 green** (13m22s, `NAD_DEVICE_SERIAL=emulator-5554`).
   No skips left: the named gap became a real test once TestTarget got a slow line.
 - Two runs were lost today to qemu crashing mid-run, both with the same
   signature: dozens of failures at ~150 ms each, all `device not found`. That
@@ -78,7 +80,6 @@ Every item below came out of driving the real app or re-reading the new code.
    disconnect (U9).
 2. Run the VS Code extension in a real VS Code against a real device.
 3. PR mono/debugger-libs#419: open, CLA signed, awaiting a maintainer.
-4. THIRD-PARTY-NOTICES.txt is still missing; required at first distribution.
 
 ## Environment rules
 
