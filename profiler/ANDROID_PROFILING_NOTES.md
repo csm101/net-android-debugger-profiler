@@ -302,7 +302,16 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   directory or in system properties, and **restarting the device clears it**. The session
   warns when allocations arrive without enter/leave and says to restart. The weaver engine
   is unaffected - it does not rely on the runtime instrumenting anything - and is the
-  answer for a long profiling session on a tired device. Open: KNOWN_UNKNOWNS U23.
+  answer for a long profiling session on a tired device.
+
+  It is not the device running out of anything. Measured after the restart, ten sessions
+  in a row: 204k-235k enter/leave and 10,933 allocations each, free memory steady at
+  774-855 MB of 2 GB, /data steady at 3.4 GB free, the app's data directory steady at
+  73-75 MB - and the full device suite in between changed none of it. Provider traces are
+  streamed to the host and never stored on the device; the weaver's event files are wiped
+  at the start of every session. Calibration worth keeping: sessions that looked healthy
+  while diagnosing this recorded 223 to 2,823 enter events, against 200,000+ on the fresh
+  emulator - the slope starts long before the number reaches zero. Open: KNOWN_UNKNOWNS U23.
 - Enter/leave nesting per thread is consistent (depth 3 = Loop > Busy > Mix;
   enter count = leave count + still-open frames at session end). **[verified]**
 - Overhead with a realistic callspec (NewRecord + ctor instrumented, 40k

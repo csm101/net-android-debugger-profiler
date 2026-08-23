@@ -232,10 +232,28 @@ property left behind, the failing session's own log shows the right variable app
 our analyzer (the empty traces contain no MethodEnter when decoded by hand), and the
 MONO_DIAGNOSTICS spelling (four variants, same outcome).
 
-Not understood: what accumulates. Instrumentation is decided at JIT time and the app is
-launched suspended to avoid that race, so a plausible guess is that the diagnostics
-component in the emulator's runtime image degrades across sessions - but nothing has been
-shown, and "restart the emulator" is a workaround, not an explanation.
+What it is not, measured after the restart with the device watched at every step
+(free memory, free space in /data, the size of the app's data directory):
+
+- **not exhaustion of anything.** Ten sessions in a row: 204k-235k enter/leave each,
+  10,933 allocations each, MemAvailable steady between 774 and 855 MB of 2 GB, /data
+  steady at 3.4 GB free, the app's files steady at 73-75 MB. Nothing moves.
+- **not where the data goes.** Provider traces are streamed to the host and never touch
+  the device; the weaver's event files live in the app's private directory and are wiped
+  at the start of every session.
+- **not repetition, and not the test suite.** The full device suite - the workload that
+  preceded the bad state yesterday - was run again on the fresh emulator and passed
+  (76 passed, 7 skipped, 0 failed, 5 minutes), and ten more sessions straight afterwards
+  were as healthy as the ten before it.
+
+What the bad state had that the good one does not: an emulator up for three days, which
+had also hosted a session left stuck for fourteen hours overnight. That is a correlation
+with one observation behind it, not a cause.
+
+Worth noticing for calibration: the sessions called "good" while diagnosing this recorded
+223, 2,811 and 2,823 enter events. After the restart the same session records over
+200,000. The degradation is a slope, not a switch, and a session can look healthy while
+already well down it.
 
 Correction worth keeping: for two hours this was documented as "the runtime serves
 allocations or enter/leave, never both", complete with a measurement table. The table was
