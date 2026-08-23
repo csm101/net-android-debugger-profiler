@@ -116,17 +116,17 @@ public class SessionTests
             TrackAllocations: false));
 
     /// <summary>
-    /// Characterization, not a wish: on the net10 workload measured on 2026-08-23 the Mono
-    /// profiler serves allocations or method enter/leave, never both. With the GCAllocation
-    /// keyword the trace carries allocations and not a single MethodEnter (verified by
-    /// decoding the trace by hand, DevTools/NetTraceProbe monoprof); without it, enter/leave
-    /// arrive normally. The session says so in a warning instead of returning empty timings.
+    /// One provider session carrying both timings and allocations - what the engine is for.
     ///
-    /// This test fails the day a runtime restores the combination - which is what we want to
-    /// be told, since ANDROID_PROFILING_NOTES once recorded it as working.
+    /// This was briefly documented as impossible: a run of sessions measured on 2026-08-23
+    /// produced allocations and not one MethodEnter, whatever the MONO_DIAGNOSTICS spelling.
+    /// A restarted emulator produced both from the same code minutes later (50,504 calls of
+    /// NewRecord with real durations), so the exclusivity was the device degrading, not the
+    /// runtime's design - KNOWN_UNKNOWNS U23. The skip below is that degradation, and it
+    /// stops as soon as the device is fresh.
     /// </summary>
     [SkippableFact]
-    public async Task Instrumenting_provider_serves_allocations_or_timings_not_both()
+    public async Task Instrumenting_provider_records_timings_and_allocations_together()
     {
         await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
             Duration: TimeSpan.FromSeconds(10),
@@ -136,15 +136,19 @@ public class SessionTests
 
         var allocs = s.Results.AllocationsByType(10);
         var timings = s.Results.Timings(20);
-        // The runtime also has spells where it records nothing at all - not allocations
-        // either (KNOWN_UNKNOWNS U23). There is nothing to characterize in an empty
-        // session, and calling that a failure would report a defect we did not find.
-        Skip.If(allocs.Count == 0 && timings.Count == 0,
-            "the runtime recorded neither allocations nor timings - KNOWN_UNKNOWNS U23");
+        Skip.If(timings.Count == 0,
+            "the runtime stopped instrumenting methods on this device - restart it; KNOWN_UNKNOWNS U23");
 
         Assert.NotEmpty(allocs);
-        Assert.Empty(timings);
-        Assert.Contains(s.Info.Warnings, w => w.Contains("one or the other"));
+        var record = allocs.Single(a => a.TypeName == "TestTarget.Workloads.AllocHeavyRecord");
+        var newRecord = timings.Single(t => t.FullName == "TestTarget.Workloads.AllocHog.NewRecord");
+        Assert.True(newRecord.Calls > 0, "the woven method must carry calls");
+        Assert.True(newRecord.TotalNs > 0, "and a duration");
+        // The allocations cover the constructor calls they come from.
+        Assert.True(record.Count >= newRecord.Calls,
+            $"allocations {record.Count} should cover the {newRecord.Calls} constructor calls");
+        Assert.Contains(s.Results.AllocationsBySite(10),
+            a => a.MethodFullName.EndsWith("NewRecord"));
     }
 
     /// <summary>

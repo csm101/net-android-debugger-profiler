@@ -214,39 +214,36 @@ Open follow-ups: exercise it on the reference application itself; decide whether
 tool as a NuGet package with the targets file instead of a published folder.
 
 
-## U23 - Provider instrumenting sometimes records nothing, and never records both
+## U23 - The runtime stops instrumenting on a device that has been profiled for a while
 
-Two separate observations about the runtime-provider instrumenting engine, both
-measured on 2026-08-23 (net10 workload, emulator-5556, TestTarget):
+Measured on 2026-08-23 (net10 workload, emulator-5556, TestTarget). The
+runtime-provider instrumenting engine degrades with use of the device:
 
-1. **Allocations and enter/leave are mutually exclusive.** With the GCAllocation
-   keyword in the session the trace carries allocations and not one MethodEnter;
-   without it, enter/leave arrive normally. The full table, with the trace decoded
-   by hand rather than read through our analyzer, is in ANDROID_PROFILING_NOTES.
-   This is settled behaviour, not an open question: the session warns, the
-   characterization test `Instrumenting_provider_serves_allocations_or_timings_not_both`
-   pins it, and engine=weaver is the answer when a run needs both. It is listed
-   here because the same notes recorded the combination as working in August, so
-   the runtime moved: worth re-testing on the next workload update.
+1. first the method events go - sessions return allocations and not one MethodEnter,
+   whatever the MONO_DIAGNOSTICS spelling;
+2. then everything goes - `enter=0 leave=0 allocs=0`, with a correct callspec, a correct
+   environment and no error anywhere;
+3. **restarting the emulator restores it**: the same code that had produced nothing for an
+   hour recorded 50,504 enter/leave pairs alongside the allocations minutes later.
 
-2. **Open: the runtime sometimes instruments nothing, in runs.** Sessions with a
-   correct MONO_DIAGNOSTICS, a correct callspec and no error anywhere come back
-   `enter=0 leave=0 allocs=0`. Measured over an afternoon of runs against the same
-   app: three consecutive good runs (223, 2811, 2823 enter events), then three
-   consecutive empty ones, then good again. What was ruled out:
+Ruled out along the way: the app process (force-stopped and relaunched between sessions,
+the failure survives), state we write (no override environment file, no `debug.mono.*`
+property left behind, the failing session's own log shows the right variable applied),
+our analyzer (the empty traces contain no MethodEnter when decoded by hand), and the
+MONO_DIAGNOSTICS spelling (four variants, same outcome).
 
-   - not the process: the app is force-stopped and relaunched between sessions, and
-     the empty runs survive the restart;
-   - not leftover state we write: no override environment file and no `debug.mono.*`
-     property remain between runs, and the failing session's own log shows the
-     right variable applied;
-   - not our analyzer: the empty traces contain no MethodEnter when decoded by hand;
-   - not the preceding allocations session on its own: an empty run repeats even
-     when the run before it was also allocation-free.
+Not understood: what accumulates. Instrumentation is decided at JIT time and the app is
+launched suspended to avoid that race, so a plausible guess is that the diagnostics
+component in the emulator's runtime image degrades across sessions - but nothing has been
+shown, and "restart the emulator" is a workaround, not an explanation.
 
-   Still open. The suspend handshake releasing the app before the session's
-   MethodInstrumentation keyword is live remains the best guess, but nothing has
-   been shown. The session says "No enter/leave events were recorded" when it
-   happens, so it is visible rather than silent, the weaver engine never shows it,
-   and `Instrumenting_restart_session_times_methods` repeats the session once
-   before failing so the suite reports our pipeline, not the runtime's mood.
+Correction worth keeping: for two hours this was documented as "the runtime serves
+allocations or enter/leave, never both", complete with a measurement table. The table was
+real; the conclusion was not. Everything in it was measured on a device already in state
+(1), and the variable that mattered - how long the device had been profiled - was not in
+the table.
+
+Consequences in the product: the session warns when allocations arrive without enter/leave
+and tells the user to restart the device; the weaver engine does not depend on the runtime
+instrumenting anything and never shows this; and the two provider device tests skip while
+a device is in that state, so the suite reports our pipeline rather than the device's age.

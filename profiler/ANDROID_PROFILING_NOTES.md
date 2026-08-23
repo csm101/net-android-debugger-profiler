@@ -275,33 +275,34 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   + 123,117 byte[] (96 B) for 6 full Allocate() calls of 20,000 each; no
   sampling. Array vtables created during the session resolve through
   ClassLoaded (`System.Byte[]`). **[verified]**
-- **Allocations and enter/leave are mutually exclusive on this runtime.** Measured
-  on 2026-08-23, net10 workload, emulator-5556, same app and callspec, one variable
-  at a time (traces decoded by hand with `DevTools/NetTraceProbe monoprof`, so this
-  is the trace's content, not our analyzer's reading of it):
+- **A device that has been profiled for a while stops instrumenting methods.** Measured
+  on 2026-08-23, net10 workload, emulator-5556. After an afternoon of device tests the
+  provider engine returned allocations and not one MethodEnter, whatever the
+  MONO_DIAGNOSTICS spelling - `enable alloc`, `enable,alloc`, the order reversed - and
+  sometimes nothing at all, allocations included. Traces decoded by hand with
+  `DevTools/NetTraceProbe monoprof`, so this is the trace's content, not our analyzer's
+  reading of it:
 
   | MONO_DIAGNOSTICS | GCAllocation keyword | MethodEnter | GCAllocation events |
   |---|---|---|---|
-  | `enable` + callspec | off | 551 (depth 3, names resolved) | 0 |
-  | `enable alloc` + callspec | on | **0** | 10,466 |
-  | `enable,alloc` + callspec | on | **0** | 10,809 |
-  | `alloc enable` + callspec (order reversed) | on | **0** | 10,699 |
-  | `enable` + callspec | on | **0** | **0** |
+  | `enable` + callspec | off | 551 | 0 |
+  | `enable alloc` + callspec | on | 0 | 10,466 |
+  | `enable,alloc` + callspec | on | 0 | 10,809 |
+  | `alloc enable` + callspec | on | 0 | 10,699 |
+  | `enable` + callspec | on | 0 | 0 |
 
-  So it is the GCAllocation keyword, not the option spelling, that costs the method
-  events: the last row asks for allocations at the session and never installs the
-  hook, and gets neither. `MethodBeginInvoke`/`MethodEndInvoke` keep arriving in every
-  configuration, which is what makes the loss easy to miss.
+  For two hours this read as "the runtime serves allocations or enter/leave, never both",
+  and it was written down as such. It is wrong: **a restarted emulator produced both from
+  the same code minutes later** - 50,504 calls of NewRecord with real durations alongside
+  the allocations - which is what the August measurement had recorded all along. The
+  variable that mattered was not in the table.
 
-  This contradicts the older combined measurement above (40k enter/leave + 40k
-  allocations in one session), which is no longer reproducible here - the workload has
-  moved under it. The measurement wins over the note; the earlier line is left in place
-  because it says what was seen then.
-
-  Consequence for the product: a provider session asking for both records only
-  allocations, and says so in a session warning. **engine=weaver records both** - its
-  collector writes enter/leave and allocations itself - and is the answer when a run
-  needs the two together. Cover: `Instrumenting_provider_serves_allocations_or_timings_not_both`.
+  What holds: the degradation costs the method events first and the allocations later, it
+  survives force-stopping and relaunching the app, it leaves no trace in the app's data
+  directory or in system properties, and **restarting the device clears it**. The session
+  warns when allocations arrive without enter/leave and says to restart. The weaver engine
+  is unaffected - it does not rely on the runtime instrumenting anything - and is the
+  answer for a long profiling session on a tired device. Open: KNOWN_UNKNOWNS U23.
 - Enter/leave nesting per thread is consistent (depth 3 = Loop > Busy > Mix;
   enter count = leave count + still-open frames at session end). **[verified]**
 - Overhead with a realistic callspec (NewRecord + ctor instrumented, 40k

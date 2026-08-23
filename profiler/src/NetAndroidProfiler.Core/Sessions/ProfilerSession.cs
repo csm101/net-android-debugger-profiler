@@ -580,12 +580,12 @@ public sealed class ProfilerSession : IAsyncDisposable
                 if (r.BrokenPairs > 0)
                     _warnings.Add($"{r.BrokenPairs} enter/leave pairs were dropped because their records were cut " +
                                   "(results cleared while the app was running, or a truncated read). The remaining timings are consistent.");
-                if (r.EnterEvents == 0 && r.AllocationEvents > 0 && Spec.Engine == InstrumentingEngine.RuntimeProvider && Spec.TrackAllocations)
+                if (r.EnterEvents == 0 && r.AllocationEvents > 0 && Spec.Engine == InstrumentingEngine.RuntimeProvider)
                     _warnings.Add(
-                        "No enter/leave events were recorded, only allocations: on this runtime the Mono profiler serves one or " +
-                        "the other. Measured on the net10 workload (2026-08-23): with the GCAllocation keyword the runtime emits " +
-                        "allocations and no MethodEnter/Leave at all; without it, enter/leave arrive normally. Re-run with " +
-                        "trackAllocations=false for timings, or use engine=weaver, which records both.");
+                        "Allocations were recorded but no enter/leave: the Mono profiler stops instrumenting methods on a device " +
+                        "that has been profiled for a while, and keeps emitting allocations, so the timings look empty rather " +
+                        "than missing. Restart the device or emulator and retry - measured to restore it - or use engine=weaver, " +
+                        "which does not depend on the runtime's instrumentation.");
                 else if (r.EnterEvents == 0)
                     _warnings.Add("No enter/leave events were recorded: check the callspec/assemblies and that the app actually ran the woven methods.");
                 break;
