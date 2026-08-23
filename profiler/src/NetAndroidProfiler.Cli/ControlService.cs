@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Devices;
 using NetAndroidProfiler.Core.Sessions;
@@ -37,12 +38,12 @@ public sealed class ControlService : IAsyncDisposable
     /// <summary>Raised when a client asks the service to shut down (POST /shutdown).</summary>
     public CancellationToken Stopping => _stopping.Token;
 
-    private static readonly JsonSerializerOptions Json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        WriteIndented = true,
-    };
+    /// <summary>
+    /// The one place that knows how the wire looks. Source-generated rather than
+    /// reflection-based so that the service also runs in a Native AOT build, where
+    /// reflection-based System.Text.Json throws at the first call.
+    /// </summary>
+    private static JsonSerializerContext Json => ControlJsonContext.Default;
 
     /// <summary>HttpListener has no "any free port", so take one from the OS and hand it over.</summary>
     private static int FreePort()
@@ -212,13 +213,18 @@ public sealed class ControlService : IAsyncDisposable
         using var reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8);
         string body = await reader.ReadToEndAsync().ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(body)) return default;
-        try { return JsonSerializer.Deserialize<T>(body, Json); }
+        var typeInfo = (JsonTypeInfo<T>?)Json.GetTypeInfo(typeof(T))
+            ?? throw new ProfilerException($"{typeof(T).Name} is not part of the control service contract.");
+        try { return JsonSerializer.Deserialize(body, typeInfo); }
         catch (JsonException e) { throw new ProfilerException("Malformed JSON body: " + e.Message); }
     }
 
     private static async Task WriteAsync(HttpListenerContext ctx, int status, object body)
     {
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(body, body.GetType(), Json);
+        var typeInfo = Json.GetTypeInfo(body.GetType())
+            ?? throw new InvalidOperationException(
+                $"{body.GetType().Name} is returned by the control service but not registered in ControlJsonContext.");
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(body, typeInfo);
         ctx.Response.StatusCode = status;
         ctx.Response.ContentType = "application/json; charset=utf-8";
         ctx.Response.ContentLength64 = bytes.Length;
@@ -276,3 +282,26 @@ public sealed class StartRequest
         Name, KeepAppRunning, Engine, WeaveAssemblies, WeaveReferenceDirs, WeaveMapPath,
         Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb, SymbolsDir);
 }
+
+/// <summary>
+/// Everything the control service puts on the wire, in one place. A response type that is
+/// missing here fails loudly at the first request rather than silently in a published
+/// build: see WriteAsync.
+/// </summary>
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    WriteIndented = true)]
+[JsonSerializable(typeof(HealthResponse))]
+[JsonSerializable(typeof(OkResponse))]
+[JsonSerializable(typeof(ErrorResponse))]
+[JsonSerializable(typeof(SessionListItem))]
+[JsonSerializable(typeof(List<SessionListItem>))]
+[JsonSerializable(typeof(SnapshotResponse))]
+[JsonSerializable(typeof(CheckResponse))]
+[JsonSerializable(typeof(SessionResponse))]
+[JsonSerializable(typeof(StartRequest))]
+[JsonSerializable(typeof(SessionCounters))]
+[JsonSerializable(typeof(IReadOnlyList<DeviceInfo>))]
+[JsonSerializable(typeof(List<DeviceInfo>))]
+internal sealed partial class ControlJsonContext : JsonSerializerContext;

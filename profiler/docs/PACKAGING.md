@@ -72,44 +72,56 @@ will be used.
 from source into `%LOCALAPPDATA%` and registers that. Same registration, different
 source of truth.
 
-## Native AOT and obfuscation (measured, not adopted)
+## Native AOT (measured, working for nap)
 
-Publishing `nap` with `PublishAot=true` on this machine:
+`dotnet publish src\NetAndroidProfiler.Cli -c Release -r win-x64 -p:NapAot=true` produces a
+single native `nap.exe`. It runs a real profiling session end to end - device, dsrouter,
+EventPipe, TraceEvent analysis, SQLite - and `nap serve` answers /health and /devices, so
+the GUI's control service works natively too.
 
-- **Blocked on the build machine**: `error : Platform linker not found` - NativeAOT needs
-  the Visual C++ Desktop Development workload. That turns a machine with the .NET SDK
-  into a machine with Visual Studio build tools.
-- **Blocked in the solution**: the property flows into `ProjectReference`s, and
-  `NetAndroidProfiler.Collector` targets Android - `NETSDK1207: ahead-of-time compilation
-  is not supported for the target framework`. AOT would have to be a per-project opt-in.
-- **Warnings before linking**: every reflection-based `System.Text.Json` call raises
-  IL2026/IL3050 (fixable with source generators), and TraceEvent - the trace reader the
-  whole product rests on - is reflection-heavy and carries native symbol interop
-  (Dia2Lib). It is not documented as AOT-compatible.
+Measured on 2026-08-23, win-x64:
 
-Attempted again once the toolchain question came up: the `PublishAot` property is now an
-opt-in per project (`-p:NapAot=true` on nap and the MCP server), which settles the
-NETSDK1207 half. The machine half is not settled: installing the components from the
-command line fails at the elevation prompt, and the VS Installer reports
-`Status changed to UpdateAvailable` - it wants to update itself before it will modify an
-installation, and in `--passive` mode it exits silently instead of saying so. An
-`MSVC\14.51.36231\link.exe` left by another workload is not enough on its own: without a
-registered `VC.Tools.x86.x64` and a Windows SDK carrying its `Lib`/`Include`, ILCompiler
-still reports "Platform linker not found".
+| | framework-dependent | native AOT |
+|---|---|---|
+| size | 8.4 MB (bin\, 68 files) | 21 MB (one file) |
+| `nap version` | 66 ms | 37 ms |
+| sampling session on the emulator | works | works, same database (195 methods, 236 tree nodes) |
 
-To resume: open Visual Studio Installer, let it update itself, Modify the installation and
-add **Desktop development with C++** (or the components `VC.Tools.x86.x64` and
-`Windows11SDK.26100`). Then publish nap with `-p:NapAot=true -r win-x64` and run `nap run`
-against a device: the analysis happens before the command prints anything, so that single
-run answers the TraceEvent question even though the final JSON print will fail until the
-serializers are source-generated.
+Three things had to be true, and none of them is optional:
 
-Conclusion: AOT buys startup time and a single file, and costs a toolchain dependency
-plus a port of the JSON layer and a bet on TraceEvent. Not now. The framework-dependent
-package starts fast enough for a tool that then waits on a device.
+1. **The build machine needs the Visual C++ tools.** Components
+   `Microsoft.VisualStudio.Component.VC.Tools.x86.x64` and
+   `Microsoft.VisualStudio.Component.Windows11SDK.26100`. Traps met on the way: the VS 18
+   installer CLI has no `--wait` (exit 87, with the reason only in
+   `%TEMP%\dd_installer_*.log`), and the first command that succeeds may be swallowed by
+   the installer updating itself - the log says "Installer self-update complete", nothing
+   is installed, and the command has to be issued again. `vswhere.exe` must also be on
+   PATH when publishing, or ILCompiler's link step fails with a mangled command line
+   naming link.exe and exit code 123.
 
-Obfuscation is the same shape of decision and is likewise deferred: only our own
-assemblies could be obfuscated (Mono.Cecil, TraceEvent and the rest must ship
-unmodified, and MPL-1.1 components must stay unmodified by licence), which protects the
-thin layer and leaves the analysis libraries legible. Revisit if the product ships to
-customers who ask for it.
+2. **No reflection-based JSON.** Native AOT disables it outright, and the first call throws
+   "Reflection-based serialization has been disabled for this application". The session
+   spec (`SessionJsonContext`), what nap prints (`NapJsonContext`) and the whole control
+   service wire (`ControlJsonContext`) are source-generated. Anonymous types cannot be, so
+   the two nap outputs that used them are records now.
+
+3. **TraceEvent must be rooted against trimming.** Its FastSerialization builds objects
+   from type names read out of the trace, which the trimmer cannot see: trimmed, the first
+   trace conversion dies with `Unable to create an object of type
+   TraceCodeAddresses+ILToNativeMap`. `<TrimmerRootAssembly>` for
+   `Microsoft.Diagnostics.Tracing.TraceEvent` and `Microsoft.Diagnostics.FastSerialization`
+   fixes it and costs about 7 MB - most of the difference in the table above.
+
+Not done yet: the **MCP server** is still framework-dependent (its SDK and
+Microsoft.Extensions.AI carry their own reflection; nobody has tried), and **heap mode**
+was not verified under AOT because the emulator refused heap dumps that afternoon on the
+framework-dependent build too. The package therefore still ships framework-dependent
+binaries; `-p:NapAot=true` is a per-project opt-in that works for nap today.
+
+## Obfuscation (deferred)
+
+Only our own assemblies could be obfuscated - Mono.Cecil, TraceEvent and the rest must
+ship unmodified, and MPL-1.1 components must stay unmodified by licence - which protects
+the thin layer and leaves the analysis libraries legible. Native AOT is the stronger
+answer for the parts that can take it: there is no IL left to read. Revisit if the
+product ships to customers who ask for it.

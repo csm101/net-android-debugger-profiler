@@ -19,11 +19,11 @@
 //
 //   nap version
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NetAndroidProfiler.Cli;
 using NetAndroidProfiler.Core.Devices;
 using NetAndroidProfiler.Core.Sessions;
 
-var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
 
 string command = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
 switch (command)
@@ -34,7 +34,7 @@ switch (command)
     case "devices":
     {
         var devices = await new AdbClient().ListDevicesAsync(CancellationToken.None);
-        Console.WriteLine(JsonSerializer.Serialize(devices, json));
+        Console.WriteLine(JsonSerializer.Serialize(devices, NapJsonContext.Default.IReadOnlyListDeviceInfo));
         return 0;
     }
 
@@ -97,7 +97,7 @@ static async Task<int> ServeAsync(int port, string? sessionsRoot)
     }
 
     // The GUI spawns this process with no port and reads the chosen one from here.
-    Console.WriteLine(JsonSerializer.Serialize(new { port = service.Port, sessionsRoot = service.SessionsRoot }));
+    Console.WriteLine(JsonSerializer.Serialize(new PortLine(service.Port, service.SessionsRoot), NapJsonContext.Default.PortLine));
     Console.Out.Flush();
 
     using var stopping = CancellationTokenSource.CreateLinkedTokenSource(service.Stopping);
@@ -155,16 +155,21 @@ static async Task<int> RunAsync(string[] args)
 
     var registry = new SessionRegistry(Option(args, "--sessions-root"), line => Console.Error.WriteLine(line));
     var live = registry.Create(spec);
-    var info = await live.Session.RunAsync(CancellationToken.None);
-
-    Console.WriteLine(JsonSerializer.Serialize(new
+    SessionInfo info;
+    try
     {
-        info.Id,
-        State = info.State.ToString(),
-        info.DatabasePath,
-        info.Error,
-        info.Warnings,
-    }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true }));
+        info = await live.Session.RunAsync(CancellationToken.None);
+    }
+    catch (Exception e) when (e is ProfilerException or ToolException)
+    {
+        // These carry guidance a user can act on; a stack trace buries it.
+        Console.Error.WriteLine(e.Message);
+        return 1;
+    }
+
+    Console.WriteLine(JsonSerializer.Serialize(
+        new RunResult(info.Id, info.State.ToString(), info.DatabasePath, info.Error, info.Warnings),
+        NapJsonContext.Default.RunResult));
     return info.State == SessionState.Ready ? 0 : 1;
 }
 
@@ -195,3 +200,14 @@ static int Doctor()
 
 static IReadOnlyList<string>? Split(string? value) =>
     string.IsNullOrWhiteSpace(value) ? null : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+// Anonymous types cannot be source-generated, and reflection-based serialization does
+// not exist in a Native AOT build: what nap prints is declared here and generated below.
+record PortLine(int Port, string SessionsRoot);
+record RunResult(string Id, string State, string DatabasePath, string? Error, IReadOnlyList<string> Warnings);
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
+[JsonSerializable(typeof(IReadOnlyList<DeviceInfo>))]
+[JsonSerializable(typeof(PortLine))]
+[JsonSerializable(typeof(RunResult))]
+internal sealed partial class NapJsonContext : JsonSerializerContext;

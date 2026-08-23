@@ -27,6 +27,18 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!--
+    TraceEvent reads .nettrace through FastSerialization, which builds objects from type
+    names in the stream - reflection the trimmer cannot see. Trimmed, the first trace
+    conversion dies on "Unable to create an object of type ... ILToNativeMap". Rooting the
+    two assemblies keeps their constructors; it costs size, which is the trade this
+    experiment is measuring.
+  -->
+  <ItemGroup Condition="'$(NapAot)' == 'true'">
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.FastSerialization" />
+  </ItemGroup>
+
 
   <ItemGroup>
     <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />

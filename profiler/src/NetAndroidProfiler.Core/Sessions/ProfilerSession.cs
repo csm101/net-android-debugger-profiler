@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NetAndroidProfiler.Core.Analysis;
 using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Collection;
@@ -28,6 +29,16 @@ public enum LaunchMode
 }
 
 public enum SessionState { Idle, Preparing, WaitingForApp, Collecting, Analyzing, Ready, Failed }
+
+/// <summary>
+/// Source-generated serialization for the session spec. Reflection-based System.Text.Json
+/// cannot run in a Native AOT build - it throws at the first call - and this type is
+/// written to session.json and to the database on every session. It lives at namespace
+/// level because the generator does not emit for a type nested in a non-partial class.
+/// </summary>
+[JsonSourceGenerationOptions(WriteIndented = true)]
+[JsonSerializable(typeof(SessionSpec))]
+internal sealed partial class SessionJsonContext : JsonSerializerContext;
 
 /// <summary>Everything a session needs to run. Immutable; serialized to session.json.</summary>
 public sealed record SessionSpec(
@@ -157,7 +168,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         string dir = Path.Combine(sessionsRoot, id);
         System.IO.Directory.CreateDirectory(dir);
         var s = new ProfilerSession(id, spec, dir, adb ?? new AdbClient());
-        File.WriteAllText(Path.Combine(dir, "session.json"), JsonSerializer.Serialize(spec, JsonOpts));
+        File.WriteAllText(Path.Combine(dir, "session.json"), JsonSerializer.Serialize(spec, SessionJsonContext.Default.SessionSpec));
         return s;
     }
 
@@ -172,7 +183,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         foreach (var dir in System.IO.Directory.GetDirectories(sessionsRoot).OrderByDescending(d => d))
         {
             SessionSpec? spec = null;
-            try { spec = JsonSerializer.Deserialize<SessionSpec>(File.ReadAllText(Path.Combine(dir, "session.json")), JsonOpts); } catch { }
+            try { spec = JsonSerializer.Deserialize(File.ReadAllText(Path.Combine(dir, "session.json")), SessionJsonContext.Default.SessionSpec); } catch { }
             list.Add((Path.GetFileName(dir), dir, spec, File.Exists(Path.Combine(dir, "session.db"))));
         }
         return list;
@@ -591,7 +602,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         }
         store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Ready", Spec.Package, Spec.DeviceSerial, _started,
             _started is not null && _ended is not null ? (_ended.Value - _started.Value).TotalMilliseconds : null,
-            _traceFile is null ? null : Path.GetFileName(_traceFile), total, withStack, JsonSerializer.Serialize(Spec, JsonOpts), null));
+            _traceFile is null ? null : Path.GetFileName(_traceFile), total, withStack, JsonSerializer.Serialize(Spec, SessionJsonContext.Default.SessionSpec), null));
         WriteMethodSources(store);
         store.AddSegment(DateTimeOffset.UtcNow, "final", total ?? 0);
         store.Dispose();
@@ -696,7 +707,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         _writeStore ??= File.Exists(DatabasePath) ? ResultStore.Open(DatabasePath, readOnly: false) : ResultStore.Create(DatabasePath, ToolVersion);
         _writeStore.WriteInstrumenting(result);
         _writeStore.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), _state.ToString(), Spec.Package, Spec.DeviceSerial,
-            _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), null));
+            _started, null, null, null, null, JsonSerializer.Serialize(Spec, SessionJsonContext.Default.SessionSpec), null));
         int segment = _writeStore.AddSegment(DateTimeOffset.UtcNow, "snapshot", result.EnterEvents, $"{files} event files");
         _snapshotCount++;
         Log($"snapshot {segment}: enter={result.EnterEvents} leave={result.LeaveEvents} methods={result.Methods.Count} (session continues)");
@@ -754,7 +765,7 @@ public sealed class ProfilerSession : IAsyncDisposable
             using var store = File.Exists(DatabasePath)
                 ? ResultStore.Open(DatabasePath, readOnly: false)
                 : ResultStore.Create(DatabasePath, ToolVersion);
-            store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Failed", Spec.Package, Spec.DeviceSerial, _started, null, null, null, null, JsonSerializer.Serialize(Spec, JsonOpts), _error));
+            store.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), "Failed", Spec.Package, Spec.DeviceSerial, _started, null, null, null, null, JsonSerializer.Serialize(Spec, SessionJsonContext.Default.SessionSpec), _error));
         }
         catch (Exception e) { Log("cannot write failed-session db: " + e.Message); }
         await Task.CompletedTask.ConfigureAwait(false);
@@ -821,5 +832,4 @@ public sealed class ProfilerSession : IAsyncDisposable
 
     private static string Sanitize(string s) => new(s.Select(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_' ? c : '_').ToArray());
 
-    private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 }
