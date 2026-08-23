@@ -1,43 +1,45 @@
 # Task resume
 
 ## Current task
-P5, packaging, is done and pushed. `build\package.ps1` produces
-dist\net-android-profiler-<version>.zip (63 MB): bin\ with the MCP server, nap and
-nap-weave; tools\ with dotnet-dsrouter; build\ with the weaving targets and the copy
-of nap-weave they run; gui\NapGui.exe; install.cmd, README, LICENSE, notices.
+Closing the MCP device gaps in TEST_CATALOG turned into two product findings, both
+landed:
 
-Verified by running the package, not by reading it: `dist\...\bin\nap.exe doctor`
-reports the packaged dsrouter as the one in use, and
-`nap run --package com.mcasoftware.testtarget --mode sampling --duration 12` profiled
-emulator-5556 and wrote a schema v4 database stamped 0.2.0 (193 methods, 220 tree
-nodes).
+1. **Child processes were eating the MCP server's stdin.** adb and dotnet-dsrouter,
+   started without redirecting it, inherit the parent's stdin and read from it - and
+   in a stdio frontend that stdin is the client's request stream. profile_start was
+   answered, the next status calls were answered, then the server went silent for
+   good, alive and idle, with no error anywhere. Every child now redirects stdin and
+   closes it. The device test that reproduced it hung all night before; it takes 17
+   seconds now.
 
-Landed with it:
-- Directory.Build.props holds NapVersion; ProfilerSession.ToolVersion reads it from
-  the assembly, so the database stamp cannot drift from what shipped.
-- ToolLocator prefers the package's own tools over globally installed ones
-  (env override, then package, then ~/.dotnet/tools, then PATH).
-- nap gained `run` (one session, for scripts and CI) and `doctor` (which adb and
-  dsrouter this machine uses, and whether they came from the package).
-- THIRD-PARTY-NOTICES gained the two distributed components the deps.json sweep
-  cannot see: dotnet-dsrouter, now redistributed, and SynEdit, compiled into the
-  GUI - with the MPL 1.1 in full and a statement of which half of its dual licence
-  this product takes.
-- The packaged GUI looks for nap.exe in ..\bin\ too: it would otherwise have failed
-  on the first click of New session.
+2. **The runtime-provider engine records allocations or enter/leave, never both.**
+   Measured one variable at a time with the traces decoded by hand: it is the
+   GCAllocation keyword, not the MONO_DIAGNOSTICS spelling, that costs the method
+   events. The session warns and names engine=weaver, which records both; the table
+   is in ANDROID_PROFILING_NOTES and contradicts an August note, which is left dated
+   rather than deleted.
 
-## What is deliberately not done
-- install.cmd has not been executed here: it re-registers the MCP server at user
-  scope and would repoint this machine's net-android-profiler entry at the package.
-  Run it (or `install.cmd /remove`) when that is what you want.
-- Native AOT and obfuscation: measured, deferred, reasons in docs/PACKAGING.md.
+New: McpDeviceTests (profile_run, profile_start/status/stop, profile_annotate_source),
+the JSON-RPC fixture moved to Tests/Support with a reader thread and the server's
+stderr attached to failures, and nap run --no-allocations.
+
+## Open
+KNOWN_UNKNOWNS U23: the provider engine has spells where it records nothing at all -
+not the process, not state we write, not our analyzer, all ruled out. Both provider
+tests skip during a blackout so the suite reports our pipeline rather than the
+runtime's mood. Next diagnostic worth trying: restart the emulator and see whether a
+blackout ends with it.
+
+AOT is still parked on the Visual C++ build tools: installing them from here fails at
+the elevation prompt, and the VS Installer wants to update itself first
+(docs/PACKAGING.md has the exact steps and the resume plan).
 
 ## Next
 U10, physical devices: never tried, and the adb reverse path differs from the
-emulator's. It is the last thing that can still surprise the product in the field.
+emulator's.
 
 ## Substep
-Full suite green after the change: 72 passed, 7 skipped, 0 failed.
+Full suite after the changes: 74-76 passed depending on the blackout, 0 failed.
 
 ## Files in focus
 build/package.ps1, build/package-files/{install.cmd, README.txt},
