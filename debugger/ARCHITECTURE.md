@@ -119,7 +119,9 @@ no debugging logic of its own. Notes that matter to a client:
 Filters answer "which types should stop the app". That is not enough for an app
 that throws on purpose: the reference application raises an MQTT timeout whenever the network
 blinks and a handled `InvalidOperationException` on every reconnect, so "stop on
-everything" and "stop on nothing" are equally useless.
+everything" and "stop on nothing" are equally useless. Both exceptions were
+measured on the running app: see ANDROID_ATTACH_NOTES.md, "Exception rules beat
+filters on a real app".
 
 `DebugSession` therefore carries an ordered rule list (`SetExceptionRules`),
 taken from the Delphi debugger's design. The first rule whose set criteria all
