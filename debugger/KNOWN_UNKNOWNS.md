@@ -169,3 +169,16 @@ Also learned while measuring: the reference application's recurring first-chance
 client to be connected first. MQTTnet takes minutes to load, so a probe that
 suspends the app right after launch proves nothing: there is no connection yet
 to time out.
+
+Confirmed again through the MCP server (2026-08-23, after republishing), which
+is the path a user actually takes: six exceptions whose type the capture could
+not read came back typed - `TaskCanceledException`, `InvalidOperationException`
+(twice) and `OperationCanceledException`.
+
+Worth knowing when writing rules for this app: **the MQTT exceptions are not
+named after MQTT.** What arrives after a suspend/resume is
+`System.Threading.Tasks.TaskCanceledException`,
+`System.InvalidOperationException` (the "connect/disconnect is pending" one) and
+`System.OperationCanceledException`. A rule with `typeContains: "Mqtt"` - the
+example in the tool description and in the probe - matches none of them. Use
+`messageContains` or `sourceFileContains` for this app instead.
