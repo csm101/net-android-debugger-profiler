@@ -210,6 +210,72 @@ public class SessionTests
     /// against a frozen process and the session ended with "Heap snapshot produced no
     /// objects", however long the warm-up was. A heap session never suspends now.
     /// </summary>
+    /// <summary>
+    /// A session with no duration collects until somebody stops it - what the GUI's Stop
+    /// button and the MCP profile_stop do. The engine has to end collection, analyse what
+    /// it has and reach Ready, rather than wait for a duration that will never come.
+    /// </summary>
+    [Fact]
+    public async Task Stop_ends_a_session_that_was_started_without_a_duration()
+    {
+        var session = ProfilerSession.Create(
+            new SessionSpec(Serial, Package, ProfilingMode.Sampling), SessionsRoot);   // no Duration
+        var run = Task.Run(() => session.RunAsync(CancellationToken.None));
+        try
+        {
+            await WaitForStateAsync(session, SessionState.Collecting, TimeSpan.FromMinutes(2));
+            await Task.Delay(TimeSpan.FromSeconds(6));
+
+            session.Stop();
+            var info = await run.WaitAsync(TimeSpan.FromMinutes(3));
+
+            Assert.Equal(SessionState.Ready, info.State);
+            using var store = ResultStore.Open(session.DatabasePath);
+            var row = store.ReadSession();
+            Assert.NotNull(row);
+            Assert.True(row!.TotalSamples > 0, "a stopped session must carry the samples it collected");
+            Assert.NotEmpty(store.SampleTreeChildren(null));
+        }
+        finally
+        {
+            session.Stop();
+            await session.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// Startup profiling: with suspend, the session is up before the app runs a line, so
+    /// the tree carries the activity's OnCreate. Without it the app would be past its
+    /// initialisation by the time the first sample lands - which is the whole reason the
+    /// launch is suspended.
+    /// </summary>
+    [Fact]
+    public async Task Suspended_start_captures_the_app_initialisation()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Sampling,
+            Duration: TimeSpan.FromSeconds(10), SuspendOnStart: true));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var names = AllTreeMethods(s.Results).ToList();
+        Assert.Contains(names, n => n.Contains("MainActivity", StringComparison.Ordinal));
+        Assert.Contains(names, n => n.Contains("OnCreate", StringComparison.Ordinal));
+    }
+
+    /// <summary>Every method named anywhere in the sample tree, depth first.</summary>
+    private static IEnumerable<string> AllTreeMethods(ResultStore results)
+    {
+        var pending = new Stack<int?>();
+        pending.Push(null);
+        while (pending.Count > 0)
+        {
+            foreach (var row in results.SampleTreeChildren(pending.Pop(), top: 200))
+            {
+                yield return row.FullName;
+                if (row.HasChildren) pending.Push(row.Id);
+            }
+        }
+    }
+
     [Fact]
     public async Task Heap_snapshot_with_default_settings_captures_objects()
     {

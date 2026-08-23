@@ -61,6 +61,30 @@ public class Shapes
     }
 }
 
+/// <summary>
+/// Generic shapes. A generic method has one metadata token whatever it is instantiated
+/// with, so symbolication has to resolve Map&lt;int&gt; and Map&lt;string&gt; to the same source
+/// range - and a method of a generic type has to resolve at all.
+/// </summary>
+public class Generic<T>
+{
+    public T? Last { get; private set; }
+
+    public T Keep(T value)
+    {
+        Last = value;
+        return value;
+    }
+
+    public IReadOnlyList<TOut> Map<TOut>(IEnumerable<T> source, Func<T, TOut> project)
+    {
+        var result = new List<TOut>();
+        foreach (var item in source)
+            result.Add(project(item));
+        return result;
+    }
+}
+
 /// <summary>Deterministic allocations for the weaver's allocation tracking.</summary>
 public class Allocator
 {

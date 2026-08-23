@@ -38,10 +38,12 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`
 - [ ] Missing diagnostics component fails with guidance (needs a TestTarget build without EnableDiagnostics)
 - [ ] Release build: instrumenting refused unless MONO_DIAGNOSTICS baked
-- [ ] Startup profiling via suspend captures app init (assert on OnCreate frames)
+- [x] Startup profiling via suspend captures app init (MainActivity/OnCreate in the tree) -
+  `Suspended_start_captures_the_app_initialisation`
 - [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
 - [x] Clean teardown: environment restored, no dsrouter left - `Session_restores_app_environment_and_leaves_no_dsrouter`
-- [ ] Stop() on a session without Duration ends collection
+- [x] Stop() on a session without Duration ends collection and analyses what it has -
+  `Stop_ends_a_session_that_was_started_without_a_duration`
 
 - [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
 - [x] Live control on a weaver session: snapshot grows, pause freezes, resume restarts, clear empties - `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`
@@ -60,7 +62,9 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Every stacked sample resolved - `Every_sample_with_stack_is_resolved`
 - [x] Name split (namespace/type/name/signature/module) - `Method_names_are_split_into_namespace_type_name`
 - [x] Thread attribution - `Threads_are_reported_with_sample_counts`
-- [ ] Symbolication of generic methods and async state machines
+- [x] Symbolication of generic types, generic methods, and the MoveNext of async and
+  iterator state machines, all resolving into the author's file -
+  `GenericAndStateMachineSymbolsTests` (fast: tokens read from the sample assembly)
 - [x] Leaf attribution characterized on device (long leaf attributed, tiny leaf folded into its caller) - `Sampling_attributes_a_long_running_leaf_method`
 - [ ] AOT build: leaf attribution caveat surfaced as a session warning
 - [x] Method tokens -> portable pdb source ranges (Fast/PortablePdbSymbolsTests): `Loads_testtarget_pdb_and_lists_its_documents`, `Methods_in_document_have_line_ranges`, `Sampled_method_tokens_resolve_to_source_ranges`, `Unknown_module_or_token_returns_null`
