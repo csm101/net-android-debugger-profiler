@@ -352,6 +352,46 @@ Working probe masks: `0x40020200000:5` (instrumentation+tracing+alloc),
   ClassLoaded), 11 (JitChunkCreated), 62 (one per JitDone - not in the
   manifest snapshot used; ignore). **[verified]**
 
+## What a call costs, and why there are two weaver modes
+
+Deterministic instrumenting costs an enter and a leave per call, whichever engine inserts
+them. What differs is what happens next, and that is worth an order of magnitude.
+
+**trace** writes a record per event: the order of calls and every single duration survive,
+and both the cost and the volume grow with the number of calls.
+
+**tree** keeps a calling context tree in the app - one node per call path, holding calls,
+inclusive and exclusive time, minimum and maximum. Everything a call tree, a call graph,
+parents/children and a critical path are built from survives; the order of calls and
+individual durations beyond min/max do not. This is how AQTime has always worked, and it
+is what makes instrumenting a whole application affordable rather than a namespace at a
+time.
+
+Measured on the host (`DevTools/WeaveBench`, Fib(27), 1,028,457 calls, x64 Release):
+
+| | ns per call | data produced |
+|---|---|---|
+| not instrumented | 3 | - |
+| woven, collector disabled | 7 | - |
+| trace | 123-131 | 16.1 MB |
+| tree | 55-66 | 1.6 KB |
+
+Measured on the device (emulator-5556, TestTarget, `N:TestTarget.Workloads`, 8 s):
+
+| engine | calls recorded | data pulled |
+|---|---|---|
+| weaver (trace) | 346,589 | 8.6 MB |
+| weaver-tree | 361,934 | 1 KB |
+
+The tree records *more* calls in the same window because it slows the app down less. The
+remaining per-call cost is the two timestamps; the child lookup is a walk of a short array
+list rather than a hash, which was worth ~20 ns per call when it was measured.
+
+Allocations stay events in both modes - one record each, in the .napw stream - because
+their volume is the caller's choice (trackAllocations). In tree mode that costs their call
+site: allocations are reported by type, not by allocating method, since the site came from
+replaying enter/leave and nothing is replayed. Choose trace when the site matters.
+
 ## Weaver instrumenting (plan B, works on net9)
 
 On-device IL weaving instead of the runtime provider (the provider is unusable

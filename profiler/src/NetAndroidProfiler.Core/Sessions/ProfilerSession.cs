@@ -15,8 +15,33 @@ public enum InstrumentingEngine
 {
     /// <summary>Microsoft-DotNETRuntimeMonoProfiler callspec (MonoVM only; crashes net9 runtimes - see U20).</summary>
     RuntimeProvider,
-    /// <summary>Mono.Cecil IL weaving of the app assemblies (runtime-independent; works on net9).</summary>
+    /// <summary>
+    /// Mono.Cecil IL weaving of the app assemblies (runtime-independent; works on net9).
+    /// The woven code writes one record per enter and per leave, so the order of calls and
+    /// every single duration survive - and the cost grows with the number of calls.
+    /// </summary>
     Weaver,
+    /// <summary>
+    /// The same weaving, with the app keeping a calling context tree instead of writing
+    /// events: a call updates counters on the node for its path. The call tree, the graph,
+    /// parents and children and the critical path all survive; the order of calls and
+    /// individual durations beyond min/max do not. This is what makes instrumenting a whole
+    /// application affordable, and it is how AQTime has always worked.
+    /// </summary>
+    WeaverTree,
+    /// <summary>
+    /// Let the session choose once it has looked at the app: the weaver when its assemblies
+    /// can be rewritten on the device, the runtime provider when they cannot. This is the
+    /// default because the right answer depends on the app, not on the caller's taste.
+    /// </summary>
+    Auto,
+}
+
+/// <summary>Which engines rewrite the app's IL: both weaver modes do, the provider does not.</summary>
+public static class InstrumentingEngines
+{
+    public static bool Weaves(this InstrumentingEngine engine) =>
+        engine is InstrumentingEngine.Weaver or InstrumentingEngine.WeaverTree;
 }
 
 /// <summary>How the app process is brought into the session.</summary>
@@ -150,7 +175,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     }
 
     public string Id { get; }
-    public SessionSpec Spec { get; }
+    public SessionSpec Spec { get; private set; }
     public string Directory { get; }
     public DateTimeOffset CreatedUtc { get; }
     public string DatabasePath => Path.Combine(Directory, "session.db");
@@ -270,7 +295,21 @@ public sealed class ProfilerSession : IAsyncDisposable
         if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Launch == LaunchMode.Attach)
             throw new ProfilerException("Instrumenting requires LaunchMode.Restart: the app must be (re)started under the instrumentation, not attached later.");
 
-        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.Weaver)
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.Auto)
+        {
+            // The weaver needs to replace the app's assemblies in the fast-deployment
+            // directory: possible for a debuggable app that does not carry them inside the
+            // APK. When it is possible it is the better engine - it does not depend on the
+            // runtime instrumenting anything, it works on net9 (U20), and it survives a
+            // device that has stopped instrumenting (U23).
+            bool canWeave = prereq.IsDebuggable && !prereq.HasAssemblyStore;
+            Spec = Spec with { Engine = canWeave ? InstrumentingEngine.WeaverTree : InstrumentingEngine.RuntimeProvider };
+            Log(canWeave
+                ? "engine: weaver-tree (the app is fast-deployed, so its assemblies can be woven)"
+                : "engine: provider (the app carries its assemblies inside the APK, so nothing can be rewritten on the device)");
+        }
+
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine.Weaves())
         {
             await PrepareWeaverAsync(device, prereq, ct).ConfigureAwait(false);
             return;
@@ -431,6 +470,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         [
             new("NAP_PROFILER_OUT", eventsAbs),
             new("NAP_PROFILER_MARKER_DIR", markerDir),
+            new("NAP_PROFILER_MODE", Spec.Engine == InstrumentingEngine.WeaverTree ? "tree" : "trace"),
         ], ct).ConfigureAwait(false);
         Log($"NAP_PROFILER_OUT={eventsAbs} NAP_PROFILER_MARKER_DIR={markerDir}");
         await _weaveDeployer.ClearCollectorMarkerAsync(ct).ConfigureAwait(false);
@@ -500,7 +540,7 @@ public sealed class ProfilerSession : IAsyncDisposable
 
     private async Task CollectAsync(CancellationToken ct)
     {
-        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.Weaver)
+        if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine.Weaves())
         {
             await CollectWeaverAsync(ct).ConfigureAwait(false);
             return;
@@ -579,7 +619,7 @@ public sealed class ProfilerSession : IAsyncDisposable
             }
             case ProfilingMode.Instrumenting:
             {
-                InstrumentingResult r = Spec.Engine == InstrumentingEngine.Weaver
+                InstrumentingResult r = Spec.Engine.Weaves()
                     ? await AnalyzeWeaverEventsAsync(ct).ConfigureAwait(false)
                     : await Task.Run(() => new MonoProfilerAnalyzer().Analyze(_traceFile!, ct), ct).ConfigureAwait(false);
                 store.WriteInstrumenting(r);
@@ -675,7 +715,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         try
         {
-            return await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+            return await Task.Run(() => AnalyzeWeaverOutput(ct), ct).ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
@@ -686,6 +726,17 @@ public sealed class ProfilerSession : IAsyncDisposable
                 [], [], [], [], [], [], [], 0, 0, 0, 0);
         }
     }
+
+    /// <summary>
+    /// Whichever of the two the app produced: nodes when it kept a call tree, events when it
+    /// wrote a stream. The directory decides rather than the spec, so a session that was
+    /// switched, or an app left running from an earlier one, is read as what it actually
+    /// wrote.
+    /// </summary>
+    private InstrumentingResult AnalyzeWeaverOutput(CancellationToken ct) =>
+        WeaveTreeAnalyzer.HasTrees(_weaveEventsDir!)
+            ? new WeaveTreeAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct)
+            : new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct);
 
     /// <summary>
     /// Refresh the results from what has been collected so far, without stopping the app -
@@ -701,7 +752,7 @@ public sealed class ProfilerSession : IAsyncDisposable
         InstrumentingResult result;
         try
         {
-            result = await Task.Run(() => new WeaveAnalyzer().Analyze(_weaveEventsDir!, _weaveMap!, ct), ct).ConfigureAwait(false);
+            result = await Task.Run(() => AnalyzeWeaverOutput(ct), ct).ConfigureAwait(false);
         }
         catch (FileNotFoundException)
         {
@@ -758,7 +809,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         if (_state is not (SessionState.Collecting or SessionState.WaitingForApp))
             throw new ProfilerException($"Cannot {operation}: the session is {_state}, not collecting.");
-        if (Spec.Mode != ProfilingMode.Instrumenting || Spec.Engine != InstrumentingEngine.Weaver || _weaveDeployer is null || _weaveMap is null)
+        if (Spec.Mode != ProfilingMode.Instrumenting || !Spec.Engine.Weaves() || _weaveDeployer is null || _weaveMap is null)
             throw new ProfilerException(
                 $"'{operation}' needs the weaver engine (mode=instrumenting, engine=weaver): its events are files the collector " +
                 "flushes as it goes. A runtime-provider trace only becomes readable when its session ends, so there stop and " +

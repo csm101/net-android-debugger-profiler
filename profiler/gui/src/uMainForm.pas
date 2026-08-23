@@ -2228,6 +2228,10 @@ begin
   // when the session ends, so the buttons stay off rather than failing on the click.
   FLiveControllable := SameText(LSetup.Mode, 'instrumenting') and
     not SameText(LSetup.Engine, 'provider');
+  // With auto the engine is decided on the device, so the buttons follow the session's
+  // state rather than a guess made here.
+  if SameText(LSetup.Engine, 'auto') then
+    FLiveControllable := SameText(LSetup.Mode, 'instrumenting');
   SetLength(FMonitorSamples, 0);
   FLog.Lines.Add('session ' + FSessionId + ' started');
   UpdateButtons(LStatus.State);

@@ -39,6 +39,18 @@ public static class Profiler
     private static readonly List<ThreadWriter> Writers = new List<ThreadWriter>();
     [ThreadStatic] private static ThreadWriter? t_writer;
 
+    /// <summary>
+    /// Environment variable choosing what a call costs: "tree" (default) keeps a calling
+    /// context tree in the process and writes nodes, "trace" writes a record per enter and
+    /// per leave. Trace keeps the order calls happened in and every single duration; tree
+    /// keeps what a call tree is made of, for a fraction of the cost per call.
+    /// </summary>
+    public const string ModeVariable = "NAP_PROFILER_MODE";
+
+    private static readonly bool TreeMode;
+    private static readonly List<CallTree> Trees = new List<CallTree>();
+    [ThreadStatic] private static CallTree? t_tree;
+
     /// <summary>Rooted so the periodic flush keeps running for the life of the process.</summary>
     private static Timer? s_flushTimer;
 
@@ -73,6 +85,12 @@ public static class Profiler
     /// </summary>
     public const string MarkerFileName = "nap-collector-loaded.txt";
 
+    /// <summary>An environment read that can never throw the app down.</summary>
+    private static string? ReadVariable(string name)
+    {
+        try { return Environment.GetEnvironmentVariable(name); } catch { return null; }
+    }
+
     static Profiler()
     {
         // Never use System.Diagnostics.Process here: on Android it can throw and
@@ -87,6 +105,9 @@ public static class Profiler
             Directory.CreateDirectory(dir!);
             OutDir = dir;
             Enabled = true;
+            string? mode = null;
+            try { mode = Environment.GetEnvironmentVariable(ModeVariable); } catch { }
+            TreeMode = !string.Equals(mode, "trace", StringComparison.OrdinalIgnoreCase);
             // The timer must be rooted in a static field: GC.KeepAlive only reaches the end
             // of this constructor, so a local would be collected and every buffered event
             // would then sit in its 64 KB stream until the buffer filled - which for a small
@@ -126,6 +147,7 @@ public static class Profiler
             text = string.Join(Environment.NewLine,
                 "collector=" + typeof(Profiler).Assembly.FullName,
                 "NAP_PROFILER_OUT=" + (string.IsNullOrEmpty(outDir) ? "<unset>" : outDir),
+                ModeVariable + "=" + (ReadVariable(ModeVariable) ?? "<unset>"),
                 "utc=" + DateTime.UtcNow.ToString("O"),
                 "stopwatchFrequency=" + Stopwatch.Frequency);
         }
@@ -148,13 +170,29 @@ public static class Profiler
     public static void Enter(int methodId)
     {
         if (!Collecting) return;
+        if (TreeMode) { Tree()?.Enter(methodId, Stopwatch.GetTimestamp()); return; }
         Write(KindEnter, methodId);
     }
 
     public static void Leave(int methodId)
     {
         if (!Collecting) return;
+        if (TreeMode) { Tree()?.Leave(methodId, Stopwatch.GetTimestamp()); return; }
         Write(KindLeave, methodId);
+    }
+
+    /// <summary>This thread's call tree, created on its first instrumented call.</summary>
+    private static CallTree? Tree()
+    {
+        var t = t_tree;
+        if (t is not null && t.Generation == s_generation) return t;
+        try
+        {
+            t = new CallTree(Thread.CurrentThread.ManagedThreadId, s_generation);
+            lock (Trees) Trees.Add(t);
+            return t_tree = t;
+        }
+        catch { return null; }
     }
 
     public static void ExceptionLeave(int methodId)
@@ -239,6 +277,9 @@ public static class Profiler
                     foreach (var w in Writers) w.Close();
                     Writers.Clear();
                 }
+                // Clearing means "forget what you have": the trees go with the event files,
+                // and every thread starts a new one on its next instrumented call.
+                lock (Trees) Trees.Clear();
             }
         }
         catch { /* keep the previous state */ }
@@ -251,6 +292,52 @@ public static class Profiler
         lock (Writers)
             foreach (var w in Writers)
                 w.Flush();
+        if (TreeMode) WriteTrees();
+    }
+
+    /// <summary>
+    /// Writes each thread's tree as a whole file, replacing the previous one: the nodes are
+    /// the state, not a log, so there is nothing to append and a reader always finds a
+    /// complete file. The write goes to a temporary name and is renamed into place, so a
+    /// profiler pulling files never reads a half-written tree.
+    /// </summary>
+    private static void WriteTrees()
+    {
+        CallTree[] trees;
+        lock (Trees) trees = Trees.ToArray();
+        foreach (var tree in trees)
+        {
+            try
+            {
+                var nodes = tree.Snapshot();
+                int count = Volatile.Read(ref nodes.Count);
+                string name = ProcessToken + "-t" + tree.ThreadId + "-g" + tree.Generation + ".napt";
+                string finalPath = Path.Combine(OutDir!, name);
+                string temporary = finalPath + ".writing";
+                using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+                using (var writer = new BinaryWriter(stream))
+                {
+                    writer.Write(new byte[] { (byte)'N', (byte)'A', (byte)'P', (byte)'T' });
+                    writer.Write((byte)1);
+                    writer.Write(Stopwatch.Frequency);
+                    writer.Write(tree.ThreadId);
+                    writer.Write(count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        writer.Write(nodes.Parent[i]);
+                        writer.Write(nodes.Method[i]);
+                        writer.Write(nodes.Calls[i]);
+                        writer.Write(nodes.Inclusive[i]);
+                        writer.Write(nodes.Exclusive[i]);
+                        writer.Write(nodes.Min[i]);
+                        writer.Write(nodes.Max[i]);
+                    }
+                }
+                if (File.Exists(finalPath)) File.Delete(finalPath);
+                File.Move(temporary, finalPath);
+            }
+            catch { /* a tree that cannot be written must not break the app */ }
+        }
     }
 
     private sealed class ThreadWriter

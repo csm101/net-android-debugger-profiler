@@ -265,7 +265,7 @@ public sealed class StartRequest
     public bool SuspendOnStart { get; set; } = true;
     public string? Name { get; set; }
     public bool KeepAppRunning { get; set; }
-    public string Engine { get; set; } = "provider";
+    public string Engine { get; set; } = "auto";
     public List<string>? WeaveAssemblies { get; set; }
     public List<string>? WeaveReferenceDirs { get; set; }
     public string? WeaveMapPath { get; set; }

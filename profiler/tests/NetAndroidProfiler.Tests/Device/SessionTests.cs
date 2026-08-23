@@ -211,6 +211,44 @@ public class SessionTests
     /// objects", however long the warm-up was. A heap session never suspends now.
     /// </summary>
     /// <summary>
+    /// The third engine: the same weaving, with the app keeping a call tree instead of
+    /// writing an event per call. The results have to be the same shape as the event
+    /// stream's - calls, times, a tree with parents - because everything downstream reads
+    /// them the same way; what differs is what it cost to get them.
+    /// </summary>
+    [Fact]
+    public async Task Weaver_tree_engine_records_the_same_shape_for_a_fraction_of_the_data()
+    {
+        await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,
+            Duration: TimeSpan.FromSeconds(8),
+            Callspec: "N:TestTarget.Workloads",
+            Engine: InstrumentingEngine.WeaverTree,
+            WeaveAssemblies: ["TestTarget"]));
+        Assert.Equal(SessionState.Ready, s.State);
+
+        var timings = s.Results.Timings(30);
+        Assert.NotEmpty(timings);
+        Assert.All(timings, t => Assert.StartsWith("TestTarget.Workloads", t.FullName));
+        var mix = timings.Single(t => t.FullName == "TestTarget.Workloads.CpuBurner.Mix");
+        Assert.True(mix.Calls > 100, $"Mix calls = {mix.Calls}");
+        Assert.True(mix.TotalNs > 0 && mix.MinNs > 0 && mix.MaxNs >= mix.MinNs,
+            "a node carries its own minimum and maximum");
+
+        // The tree is the point: parents, children and depth, without an event per call.
+        var roots = s.Results.TimingTreeChildren(null);
+        Assert.NotEmpty(roots);
+        Assert.Contains(roots, r => r.HasChildren);
+
+        // And the app wrote nodes rather than a call-by-call stream. Allocations stay events,
+        // so a small .napw is expected; what must not happen is megabytes of enter/leave.
+        var written = Directory.GetFiles(Path.Combine(s.Directory, "events"));
+        Assert.Contains(written, f => f.EndsWith(".napt", StringComparison.OrdinalIgnoreCase));
+        long bytes = written.Sum(f => new FileInfo(f).Length);
+        Assert.True(bytes < 256 * 1024,
+            $"{mix.Calls} calls of Mix alone should not have produced {bytes} bytes");
+    }
+
+    /// <summary>
     /// A real app is several assemblies, and every layer of the profiler works per module:
     /// the weaver is told which assemblies to rewrite, methods are named per module, and
     /// symbolication looks up a pdb per module. One session must therefore weave both

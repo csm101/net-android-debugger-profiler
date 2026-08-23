@@ -110,8 +110,12 @@ begin
   FEngine.Parent := Self;
   FEngine.SetBounds(140, 112, 200, 24);
   FEngine.Properties.DropDownListStyle := lsFixedList;
-  FEngine.Properties.Items.Add('weaver');      // the engine that supports live control
-  FEngine.Properties.Items.Add('provider');
+  // auto first: it picks the weaver when the app allows rewriting its assemblies, which is
+  // the better engine when it is possible, and says so in the session log.
+  FEngine.Properties.Items.Add('auto');
+  FEngine.Properties.Items.Add('weaver-tree');   // a call tree kept in the app: cheapest
+  FEngine.Properties.Items.Add('weaver');        // an event per call: keeps order and each duration
+  FEngine.Properties.Items.Add('provider');      // the Mono runtime's own instrumentation
   FEngine.ItemIndex := 0;
 
   Label_('Callspec', 144);

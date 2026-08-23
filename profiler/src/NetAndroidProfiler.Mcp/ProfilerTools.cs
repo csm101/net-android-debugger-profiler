@@ -68,7 +68,7 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("restart: keep the app suspended until the session is up (captures startup)")] bool suspendOnStart = true,
         [Description("Optional friendly name used in the session id")] string? name = null,
         [Description("restart: leave the app running after the session (default: stop it, so it does not reconnect to the next session)")] bool keepAppRunning = false,
-        [Description("Instrumenting engine: provider (Mono runtime callspec; crashes net9 runtimes) or weaver (Mono.Cecil IL weaving of the app assemblies; works on net9 Debug builds)")] string engine = "provider",
+        [Description("Instrumenting engine: auto (default: weaver-tree when the app's assemblies can be rewritten, provider when they cannot), weaver-tree (IL weaving, the app keeps a call tree: cheapest, no per-call events), weaver (IL weaving with an event per call: keeps their order and every single duration), provider (Mono runtime callspec; crashes net9 runtimes)")] string engine = "auto",
         [Description("Weaver: assembly names to weave, comma-separated (e.g. 'App.Droid,App.Core'); inferred from the callspec when omitted")] string? weaveAssemblies = null,
         [Description("Weaver: local directories with the app's reference assemblies (usually its bin/<Config>/<tfm> folder); needed because most assemblies live in the APK assembly store, not on the device")] string? weaveReferenceDirs = null,
         [Description("Weaver: path of nap-weave.map from a build-time weaving build (-p:NapWeave=true). With it nothing is woven or deployed on the device: the installed app already carries the instrumentation.")] string? weaveMapPath = null,
@@ -103,7 +103,7 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("restart: suspend the app until the session is up")] bool suspendOnStart = true,
         [Description("Optional friendly name")] string? name = null,
         [Description("restart: leave the app running after the session")] bool keepAppRunning = false,
-        [Description("Instrumenting engine: provider or weaver")] string engine = "provider",
+        [Description("Instrumenting engine: auto (default: weaver-tree when the app's assemblies can be rewritten, provider when they cannot), weaver-tree (IL weaving, the app keeps a call tree: cheapest, no per-call events), weaver (IL weaving with an event per call: keeps their order and every single duration), provider (Mono runtime callspec; crashes net9 runtimes)")] string engine = "auto",
         [Description("Weaver: assembly names to weave, comma-separated")] string? weaveAssemblies = null,
         [Description("Weaver: local reference directories (app bin folder)")] string? weaveReferenceDirs = null,
         [Description("Weaver: path of nap-weave.map from a build-time weaving build")] string? weaveMapPath = null,
@@ -423,7 +423,7 @@ public sealed class ProfilerTools(SessionHost host)
     }
 
     /// <summary>Translate the tool arguments into a spec; Core owns the aliases and the validation.</summary>
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "provider", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512, string? symbolsDir = null)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "auto", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512, string? symbolsDir = null)
     {
         try
         {

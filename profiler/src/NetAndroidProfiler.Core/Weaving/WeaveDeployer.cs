@@ -146,18 +146,25 @@ public sealed class WeaveDeployer
     /// <summary>Failures encountered by the last <see cref="RestoreAsync"/> (empty = clean).</summary>
     public List<string> RestoreErrors { get; } = new();
 
-    /// <summary>Pull every *.napw event file the collector wrote into <paramref name="remoteEventsDir"/> to <paramref name="localDir"/>.</summary>
+    /// <summary>
+    /// Pull what the collector wrote into <paramref name="remoteEventsDir"/>: the event
+    /// stream (*.napw), the call trees (*.napt), and the types file. Which of the two the
+    /// app produced depends on its mode, and allocations are events in both.
+    /// </summary>
     public async Task<int> PullEventsAsync(string remoteEventsDir, string localDir, CancellationToken ct)
     {
         Directory.CreateDirectory(localDir);
         var ls = await _adb.RunAsAsync(_serial, _package, $"ls {remoteEventsDir}", ct).ConfigureAwait(false);
         // The types file maps allocation type ids to names; it travels with the events.
         var files = ls.Split('\n').Select(l => l.Trim())
-            .Where(l => l.EndsWith(".napw", StringComparison.Ordinal) || l == "nap-types.txt")
+            .Where(l => l.EndsWith(".napw", StringComparison.Ordinal)
+                     || l.EndsWith(".napt", StringComparison.Ordinal)
+                     || l == "nap-types.txt")
             .ToList();
         foreach (var f in files)
             await CatToLocalAsync($"{remoteEventsDir}/{f}", Path.Combine(localDir, f), ct).ConfigureAwait(false);
-        return files.Count(f => f.EndsWith(".napw", StringComparison.Ordinal));
+        return files.Count(f => f.EndsWith(".napw", StringComparison.Ordinal)
+                             || f.EndsWith(".napt", StringComparison.Ordinal));
     }
 
     public bool HasPendingChanges => _deployed.Count > 0 || _collectorDeployed || _movedPdbs.Count > 0;
@@ -198,7 +205,7 @@ public sealed class WeaveDeployer
         // Delete first, bump second. The other order deletes the fresh files the collector
         // has just started; this way the only loss is the second or so of events that the
         // old handles still write into files that no longer have a name.
-        await _adb.RunAsAsync(_serial, _package, $"rm -f {RemoteEventsDir}/*.napw", ct).ConfigureAwait(false);
+        await _adb.RunAsAsync(_serial, _package, $"rm -f {RemoteEventsDir}/*.napw {RemoteEventsDir}/*.napt", ct).ConfigureAwait(false);
         _generation++;
         await WriteControlAsync(_collecting ? "run" : "pause", ct).ConfigureAwait(false);
     }

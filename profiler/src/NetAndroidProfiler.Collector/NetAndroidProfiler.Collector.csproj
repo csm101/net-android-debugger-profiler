@@ -14,4 +14,10 @@
     <Version>1.0.0</Version>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- The call tree is an implementation detail of the collector, and its arithmetic
+         is worth testing directly rather than through a device. -->
+    <InternalsVisibleTo Include="NetAndroidProfiler.Tests" />
+  </ItemGroup>
+
 </Project>

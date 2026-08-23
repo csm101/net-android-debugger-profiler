@@ -63,7 +63,9 @@ switch (command)
               --mode <m>               sampling (default) | instrumenting | heap
               --duration <seconds>     default: 20 (heap: as long as the snapshots need)
               --launch <l>             restart (default) | attach
-              --engine <e>             instrumenting only: provider (default) | weaver
+              --engine <e>             instrumenting only: auto (default) | weaver-tree | weaver | provider
+                                       auto weaves when the app allows it; weaver-tree keeps a call
+                                       tree in the app, weaver writes an event per call
               --callspec <spec>        instrumenting only, required: N:Ns, T:Type, M:Type:Method
               --no-allocations         instrumenting only: time methods without recording allocations
               --assemblies <a,b>       weaver only: assemblies to weave; default inferred
@@ -147,7 +149,7 @@ static async Task<int> RunAsync(string[] args)
         Option(args, "--callspec"),
         trackAllocations: !args.Contains("--no-allocations", StringComparer.OrdinalIgnoreCase),
         name: Option(args, "--name"),
-        engine: Option(args, "--engine") ?? "provider",
+        engine: Option(args, "--engine") ?? "auto",
         weaveAssemblies: Split(Option(args, "--assemblies")),
         snapshots: int.TryParse(Option(args, "--snapshots"), out int snapshots) ? snapshots : 1,
         snapshotIntervalSeconds: int.TryParse(Option(args, "--snapshot-interval"), out int interval) ? interval : 30,

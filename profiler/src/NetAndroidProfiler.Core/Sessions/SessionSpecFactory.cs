@@ -26,8 +26,10 @@ public static class SessionSpecFactory
 
     public static InstrumentingEngine ParseEngine(string engine) => engine.Trim().ToLowerInvariant() switch
     {
-        "provider" or "runtime" or "" => InstrumentingEngine.RuntimeProvider,
+        "provider" or "runtime" => InstrumentingEngine.RuntimeProvider,
+        "auto" or "" => InstrumentingEngine.Auto,
         "weaver" or "cecil" or "il" => InstrumentingEngine.Weaver,
+        "weaver-tree" or "tree" or "cct" => InstrumentingEngine.WeaverTree,
         _ => throw new ProfilerException($"Unknown engine '{engine}': use provider | weaver."),
     };
 
@@ -43,7 +45,7 @@ public static class SessionSpecFactory
         bool suspendOnStart = true,
         string? name = null,
         bool keepAppRunning = false,
-        string engine = "provider",
+        string engine = "auto",
         IReadOnlyList<string>? weaveAssemblies = null,
         IReadOnlyList<string>? weaveReferenceDirs = null,
         string? weaveMapPath = null,

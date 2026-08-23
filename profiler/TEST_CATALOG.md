@@ -87,6 +87,11 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Timing tree nesting - `Timing_tree_nests_ctor_under_NewRecord_under_Allocate`
 - [ ] Callspec session end-to-end on device: only filtered namespace instrumented (blocked on net9 targets - U20)
 - [x] Weaver: deterministic call counts match known execution (Fib recursion, nesting, values) - `Weave_execute_and_analyze_end_to_end`
+- [x] Call tree mode: inclusive/exclusive split, one node per call path, repeated calls with
+  their own min/max, a leave without its enter ignored, and nodes read back as timings and
+  a tree - `CallTreeTests`
+- [x] The tree engine on a device records the same shape for a fraction of the data -
+  `Weaver_tree_engine_records_the_same_shape_for_a_fraction_of_the_data`
 - [x] Weaver: exception paths balanced by finally-based Leave - same test (Boom / CatchAndReturn)
 - [x] Weaver filter grammar incl. exclusions - `WeaveFilterTests.Namespace_type_method_and_exclusions`
 - [x] Weaver records allocations by type and by allocating method - `Woven_methods_report_their_allocations_by_type_and_site` (fast) and asserted on device

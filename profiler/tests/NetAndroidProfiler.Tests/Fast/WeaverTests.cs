@@ -16,6 +16,10 @@ public sealed class WeaverCollectorFixture
         EventsDir = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "weave", Guid.NewGuid().ToString("N"), "events");
         Directory.CreateDirectory(EventsDir);
         Environment.SetEnvironmentVariable("NAP_PROFILER_OUT", EventsDir);
+        // These tests read the event stream, so they ask for it: the collector's own default
+        // is the call tree, and the mode is fixed when its static constructor runs - once per
+        // process, which is why the tree is covered by its own tests rather than here.
+        Environment.SetEnvironmentVariable("NAP_PROFILER_MODE", "trace");
     }
 
     public string EventsDir { get; }
