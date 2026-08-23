@@ -1,29 +1,42 @@
 # Task resume
 
 ## Current task
-Everything that could be done without new hardware is done. This round closed the
-test gaps the catalog had carried and finished the AOT question.
+Nothing is half-done. The last piece landed was a third instrumenting mode and an
+automatic engine choice.
 
-Landed since the last note:
-- **Native AOT is complete.** nap and the MCP server both publish natively
-  (21 MB and 29 MB), and all four collection paths run from a native build:
-  sampling, heap, provider instrumenting and weaver instrumenting - the last of
-  them rewriting IL with Mono.Cecil. The MCP server needed no code at all;
-  ModelContextProtocol 2.2.0 is AOT-clean. What is left is a distribution
-  decision, not a technical blocker (docs/PACKAGING.md).
-- **A heap snapshot no longer freezes the app it measures.** Heap sessions
-  honoured SuspendOnStart, so the app never ran, the warm-up ticked against a
-  frozen process, and the session ended "no objects" - on both frontends'
-  defaults. Heap never suspends now.
-- **The package was tried the way a customer would**: unpacked outside the
-  repository, `nap doctor` reports its own dsrouter, `nap run` profiles,
-  `install.cmd /name` registers beside an existing installation, the packaged GUI
-  opens a session.
-- **Test gaps closed**: Stop() without a duration, startup profiling (OnCreate in
-  the tree), symbolication of generics and state machines, the prerequisite
-  messages (missing diagnostics component, Release without MONO_DIAGNOSTICS, AOT),
-  a session driven end to end over HTTP, and multi-assembly - for which the test
-  app gained a second assembly.
+**The collector can keep a calling context tree instead of streaming every call.** One
+node per call path with calls, inclusive and exclusive time, min and max; a call updates
+counters instead of writing a record. Everything downstream reads the same tables,
+because a call tree, a call graph, parents/children and the critical path are what those
+nodes are. Measured, host (Fib(27), one million calls): 123-131 ns and 16.1 MB streaming
+against 55-66 ns and 1.6 KB as a tree. Device, same eight seconds of TestTarget: 346,589
+calls and 8.6 MB against 361,934 calls and 1 KB - the tree records more because it slows
+the app less. `DevTools/WeaveBench` reproduces the host numbers.
+
+**The engine is chosen automatically** unless the caller says otherwise: the session looks
+at the app, weaves when its assemblies can be rewritten (weaver-tree), falls back to the
+runtime provider when they cannot, and logs which and why. `--engine` still takes
+auto | weaver-tree | weaver | provider, and the GUI's Setup dialog offers all four.
+
+What the tree does not keep: the order calls happened in, durations beyond min/max, and
+the allocating method - allocations stay events, so in tree mode they are reported by
+type and not by site. Those are the reasons to choose `weaver`.
+
+Suite at that point: 94 passed, 7 skipped, 0 failed.
+
+## Picking this up on another machine
+The repository carries the code, the docs and the tests. It does not carry:
+
+- **the emulator and the installed apps.** The device tests want TestTarget installed as a
+  Debug build with EnableDiagnostics=true, and one test wants the companion build without
+  it (both commands under "How to run what exists"). NAP_TEST_SERIAL / NAP_TEST_PACKAGE
+  override the defaults (emulator-5556, com.mcasoftware.testtarget).
+- **the package** (dist/ is ignored): rebuild it with build\package.ps1.
+- **the Native AOT prerequisites**: the Visual C++ build tools and Windows SDK, plus
+  vswhere on PATH when publishing. docs/PACKAGING.md has the exact components and the
+  installer traps.
+- **the Delphi side's inputs**: RAD Studio with DevExpress and SynEdit, found through the
+  IDE's own search path by gui\make-cfg.ps1.
 
 ## What is left, and who it needs
 - **U10, physical devices** - needs hardware. adb reverse, arm64, vendor
@@ -40,9 +53,10 @@ Landed since the last note:
   suite all run by hand, and a fixed device would make them a real gate.
 
 ## Files in focus
-tests/NetAndroidProfiler.Tests/{Device/SessionTests.cs, Device/ControlServiceDeviceTests.cs,
-Fast/PrerequisiteTests.cs, Fast/GenericAndStateMachineSymbolsTests.cs};
-TestTarget.Support/; src/NetAndroidProfiler.Core/Sessions/ProfilerSession.cs.
+src/NetAndroidProfiler.Collector/{Profiler.cs, CallTree.cs};
+src/NetAndroidProfiler.Core/Weaving/{WeaveTreeAnalyzer.cs, WeaveDeployer.cs};
+src/NetAndroidProfiler.Core/Sessions/{ProfilerSession.cs, SessionSpecFactory.cs};
+DevTools/WeaveBench/; tests/NetAndroidProfiler.Tests/Fast/CallTreeTests.cs.
 
 ## Next action if interrupted right now
 Nothing is half-done. Pick from the list above; U10 first if a device appears.
