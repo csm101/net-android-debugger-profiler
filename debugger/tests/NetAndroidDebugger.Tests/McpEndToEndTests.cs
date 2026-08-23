@@ -264,6 +264,9 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
 
         var assemblies = await CallAsync(client, "get_loaded_assemblies", null, ct);
         Assert.Contains("TestTarget", assemblies, StringComparison.Ordinal);
+        // The app's own assembly must report symbols: without them no breakpoint in it could bind,
+        // and every breakpoint test here does bind one.
+        Assert.Matches(@"TestTarget\s+symbols", assemblies);
 
         var sources = await CallAsync(client, "get_source_files", new Dictionary<string, object?> { ["file"] = "MainActivity.cs" }, ct);
         Assert.Contains(TestEnvironment.MainActivitySource, sources, StringComparison.OrdinalIgnoreCase);
@@ -778,5 +781,51 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
             ["solutionOrFolder"] = Path.Combine(TestEnvironment.RepoRoot, "src"),
         }, cancellationToken: ct);
         Assert.True(noApp.IsError);
+    }
+
+    /// <summary>
+    /// The snapshot folded into a resume, which saves the two calls that normally follow every
+    /// stop. Off by default on purpose: reading locals means invoking code in the debuggee, and
+    /// breakpoints are disarmed for the duration of any evaluation - a cost nobody should pay
+    /// silently on every step.
+    /// </summary>
+    [Fact]
+    public async Task ContinueAndStep_FoldInASnapshot_OnlyWhenAskedFor()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var tickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "Android.Util.Log.Debug(\"TestTarget\", message);");
+        await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = tickLine,
+        }, ct);
+
+        await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+
+        var plain = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 30 }, ct);
+        Assert.Contains("Stopped:", plain);
+        Assert.DoesNotContain("-- locals", plain);
+
+        var withSnapshot = await CallAsync(client, "continue_and_wait", new Dictionary<string, object?>
+        {
+            ["timeoutSeconds"] = 30,
+            ["snapshot"] = true,
+        }, ct);
+        Assert.Contains("Stopped:", withSnapshot);
+        Assert.Contains("-- call stack", withSnapshot);
+        Assert.Contains("-- locals", withSnapshot);
+        Assert.Contains("TestTarget.MainActivity.Tick", withSnapshot);
+
+        var stepped = await CallAsync(client, "step_over", new Dictionary<string, object?> { ["snapshot"] = true }, ct);
+        Assert.Contains("-- locals", stepped);
+
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
     }
 }

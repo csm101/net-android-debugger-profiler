@@ -2,13 +2,29 @@
 
 ## Current task
 
-Nothing in flight. Deduction is committed and the suite is green.
+Nothing in flight. Items 1-4 of the Delphi cross-pollination are committed and
+the suite is green.
+
+1. `AndroidLauncher.ForeignDebugPropertyWarning` - the launch reads
+   `debug.mono.extra` before writing it and reports a value that has not
+   expired, naming the port and the remaining seconds. It still takes it over.
+2. `get_loaded_assemblies` reports `symbols` / `NO SYMBOLS` / `symbols unknown`
+   from `AssemblyMirror.HasDebugInfo` (protocol 2.51+, try/catch -> null).
+3. `snapshot=true` on continue_and_wait, wait_until_stopped and the three steps
+   folds in stack and locals. Opt-in, unlike the Delphi debugger which always
+   returns one: reading locals invokes code in the debuggee, which disarms
+   breakpoints for the duration.
+4. `SlowStepReceiver` in TestTarget holds one deliberately slow line, which made
+   the race provokable. Answered: `StepOverAsync` returns the breakpoint another
+   thread hit, on that thread, rather than the step - so nothing is lost.
 
 ## State (2026-08-23)
 
-- Suite: **121 tests, 120 green, 1 skipped** (13m37s, `NAD_DEVICE_SERIAL=emulator-5554`).
-  The skip is a named gap, not a failure:
-  `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported`.
+- Suite: **128 tests, 128/128 green** (13m34s, `NAD_DEVICE_SERIAL=emulator-5554`).
+  No skips left: the named gap became a real test once TestTarget got a slow line.
+- Two runs were lost today to qemu crashing mid-run, both with the same
+  signature: dozens of failures at ~150 ms each, all `device not found`. That
+  shape means the environment, not the code.
 - `NAD_DEVICE_SERIAL` is mandatory: emulator-5556 (another project's AVD) is
   online too, and the harness refuses to guess between two devices.
 - A run was lost to qemu crashing, as usual. The restart then failed with
@@ -58,20 +74,11 @@ Every item below came out of driving the real app or re-reading the new code.
 
 ## Next steps
 
-1. Read `debug.mono.extra` before writing it, and say so when a fresh value that
-   is not ours is already there — two debuggers on one device overwrite each
-   other silently today (see ANDROID_ATTACH_NOTES.md "Sharing a device with
-   another debugger"). Symptom without it: the app hangs ~30 s at startup.
-2. Symbol status in `get_loaded_assemblies` — `AssemblyMirror.HasDebugInfo`
-   (protocol 2.51+, try/catch → null on older runtimes), rendered as `symbols` /
-   `noSymbols`. First thing to check when a breakpoint stays pending: without
-   symbols no line in that assembly can bind, and comparing paths is wasted time.
-3. A compact snapshot folded into step/continue answers, **opt-in**: reading
-   locals means invoking code in the debuggee, and breakpoints are disarmed
-   during any evaluation. The Delphi debugger returns one always; here that is
-   not the same trade.
-4. The named gap needs a TestTarget method with a deliberately slow line,
-   reachable on its own so no other test pays for it.
+1. Blocked on hardware: attach over `adb connect` and a mid-run debugger
+   disconnect (U9).
+2. Run the VS Code extension in a real VS Code against a real device.
+3. PR mono/debugger-libs#419: open, CLA signed, awaiting a maintainer.
+4. THIRD-PARTY-NOTICES.txt is still missing; required at first distribution.
 
 ## Environment rules
 

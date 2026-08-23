@@ -34,8 +34,7 @@ Conventions (mirroring the Delphi project's discipline):
   so `adb emu kill` cannot clear it, and the next launch of the same AVD fails
   with "Running multiple emulators with the same AVD". The script now kills it by
   its qemu PID, matched on the AVD name (2026-08-23).
-- 121 tests in seven files (one skipped: a named gap), ~7-10 min on the headless
-  emulator after deploy. Each
+- 128 tests in eight files, ~7-10 min on the headless emulator after deploy. Each
 - Stability, measured 2026-08-21: three consecutive full runs, 62/62 each
   (7m00s, 7m18s, 7m52s), no failures and none of the failure signatures the
   day's race fixes were aimed at. Getting those three took four attempts: one
@@ -131,6 +130,11 @@ Conventions (mirroring the Delphi project's discipline):
       and through the server `Logpoint_TracesToDebuggerOutput_WithoutStoppingTheApp`
 - [x] `%N` hit condition stops on a multiple of N —
       `HitCondition_EveryNthHit_StopsOnAMultiple`
+      (asserted on the engine's own `hit count now N` diagnostic, not on the
+      app's `_ticks`: those can legitimately disagree, because `Tick` runs on a
+      `System.Threading.Timer` that does not serialise its callbacks and
+      `_ticks++` is not atomic — the `_ticks` version failed once under load,
+      see U13)
 - [x] A hit condition that is not one of the spellings is rejected with the ones
       that work — `HitCondition_Nonsense_IsRejectedWithTheSpellingsThatWork`
 - [~] Hit-count breakpoint — `HitCountBreakpoint_StopsAtNthHit` asserts "at
@@ -158,11 +162,13 @@ Conventions (mirroring the Delphi project's discipline):
       which does not serialise its callbacks, so an armed breakpoint there lets a
       second thread re-enter `Tick` at the resume and report its breakpoint
       before the step completes. That happened once, under load.
-- [ ] A breakpoint another thread hits *during* a step is still reported (today
-      it works by accident; no deterministic way to provoke it, since everything
-      is suspended while stopped and the race window lasts only as long as the
-      step). Needs a TestTarget method with a deliberately slow line, reachable
-      on its own — `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported`
+- [x] A breakpoint another thread hits *during* a step is still reported —
+      `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported`. Provoking it
+      needed a TestTarget receiver holding one deliberately slow line
+      (`SlowStepReceiver`, marker `slow-step-line`), because everything is
+      suspended while stopped: the race window lasts exactly as long as the step.
+      Answered: `StepOverAsync` returns that breakpoint itself — reason
+      `Breakpoint`, on the thread that hit it, not the thread being stepped.
 - [x] Step into / step out at a plain call site —
       `StepInto_EntersCallee_AndStepOut_ReturnsToCaller`
 - [x] Step through async/await: stop on the line after the await, locals from
@@ -353,6 +359,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Every inspection tool answers in a stopped session (threads, current
       location, one variable, loaded assemblies, source files, breakpoint list,
       app output, step into/out) — `EveryInspectionTool_AnswersInAStoppedSession`
+- [x] `get_loaded_assemblies` reports whether each assembly has symbols, and the
+      app's own assembly has them — the first thing to check when a breakpoint
+      stays pending, since no line in an assembly without symbols can ever bind
+      (asserted inside `EveryInspectionTool_AnswersInAStoppedSession`)
 - [x] The setup tools take effect and are visible through the server
       (`set_breakpoints` replacing a file's breakpoints, evaluation options,
       exception filters, remove-all) —
@@ -376,6 +386,10 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A launch with nothing to deduce from (no project named; a tree with no
       Android application) is the caller's error, with the fix in the message —
       `LaunchApp_WithNothingToDeduceFrom_SaysWhatIsMissing`
+- [x] A snapshot is folded into a resume or a step only when asked for: reading
+      locals invokes code in the debuggee and disarms breakpoints for the
+      duration, so nobody pays for it silently —
+      `ContinueAndStep_FoldInASnapshot_OnlyWhenAskedFor`
 - [x] **No tool vanishes either**: the expected tool names are spelled out and
       compared with what the server exposes. A tool that disappears is otherwise
       invisible — the build passes and only whichever test happened to call it
@@ -455,3 +469,21 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A requested serial that is not attached lists what is — the typical stale
       copy from an earlier session — `ARequestedSerialThatIsNotAttached_ListsWhatIs`
 - [x] A named device is used as given — `ANamedDevice_IsUsedAsGiven`
+
+## O. Sharing the device with another debugger (`DebugPropertyTests`, no device)
+`debug.mono.extra` is device-global, so two debuggers overwrite each other in
+silence and the loser's app hangs for the agent timeout on a port nobody listens
+on — a symptom nowhere near its cause.
+- [x] No property set is nothing to say — `NoPropertySet_IsNothingToSay`
+- [x] An expired property is not a conflict: every Mono process ignores a
+      deadline in the past, so warning would be noise on every second launch —
+      `AnExpiredProperty_IsNotAConflict`
+- [x] A fresh one says which port and for how long —
+      `AFreshProperty_SaysWhichPortAndForHowLong`
+- [x] Anything without a readable deadline is not judged, rather than crying
+      wolf — `APropertyWithoutAReadableDeadline_IsNotJudged`
+- [x] A fresh value whose port cannot be read is still reported —
+      `AFreshPropertyWithAnUnreadablePort_IsStillReported`
+- [x] End to end: a foreign fresh property is reported before being taken over,
+      and the launch still succeeds (the warning informs, it does not block) —
+      `ADebugPropertyLeftByAnotherDebugger_IsReportedBeforeItIsTakenOver`

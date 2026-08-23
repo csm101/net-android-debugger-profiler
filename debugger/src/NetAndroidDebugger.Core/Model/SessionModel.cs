@@ -168,7 +168,13 @@ public sealed record VariableSnapshot(
     string? ExpansionHandle,
     bool IsError);
 
-public sealed record AssemblyInfo(int Pid, string Name, string? Path);
+/// <summary>One assembly the debuggee has loaded.</summary>
+/// <param name="HasSymbols">
+/// Whether the runtime has debug information for it, or null when the debuggee's protocol version
+/// cannot answer. The first thing to check when a breakpoint stays pending: without symbols no line
+/// in that assembly can ever bind, and comparing source paths is wasted effort.
+/// </param>
+public sealed record AssemblyInfo(int Pid, string Name, string? Path, bool? HasSymbols = null);
 
 /// <summary>
 /// A source file the debuggee's runtime knows about, with the exact path compiled into the PDB.

@@ -1112,7 +1112,13 @@ public sealed class DebugSession : IAsyncDisposable
                 {
                     string? path = null;
                     try { path = asm.Location; } catch { /* not available for dynamic/in-memory */ }
-                    result.Add(new AssemblyInfo(pd.Pid, asm.GetName().Name ?? "?", path));
+
+                    // Protocol 2.51+. An older runtime simply cannot answer, which is not an error:
+                    // the caller is told "unknown" rather than being told "no symbols" wrongly.
+                    bool? symbols = null;
+                    try { symbols = asm.HasDebugInfo; } catch { /* older protocol, or a dynamic assembly */ }
+
+                    result.Add(new AssemblyInfo(pd.Pid, asm.GetName().Name ?? "?", path, symbols));
                 }
             }
             catch (Exception ex) { _log($"pid {pd.Pid}: assemblies unavailable: {ex.Message}"); }

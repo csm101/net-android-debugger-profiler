@@ -125,6 +125,11 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await WaitUntilPackageIsGoneAsync(serial, ct).ConfigureAwait(false);
         _deadline = deviceNow + (long)_options.EffectivePropertyLifetime.TotalSeconds;
 
+        // Announce what is being taken over before taking it: see ForeignDebugPropertyWarning.
+        if (ForeignDebugPropertyWarning(
+                await _adb.GetPropAsync(serial, DebugProperty, ct).ConfigureAwait(false), deviceNow) is { } inUse)
+            _log(inUse);
+
         await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
         await ForwardAsync(_nextPort, ct).ConfigureAwait(false);
 
@@ -229,6 +234,36 @@ public sealed class AndroidLauncher : IAsyncDisposable
         cts.Dispose();
     }
 
+
+    /// <summary>
+    /// What a <c>debug.mono.extra</c> already on the device means for this launch, or null when
+    /// there is nothing worth saying: no value, or one whose deadline has passed and which
+    /// therefore no longer diverts anything.
+    /// <para>
+    /// The property is device-global, so two debuggers on one device overwrite each other in
+    /// silence and the loser's app hangs for the agent timeout on a port nobody listens on. That
+    /// symptom is far from its cause, which is why taking the property over is announced.
+    /// </para>
+    /// </summary>
+    /// <param name="value">The property as read from the device.</param>
+    /// <param name="deviceEpochSeconds">The device clock, in the unit the property's own deadline uses.</param>
+    public static string? ForeignDebugPropertyWarning(string? value, long deviceEpochSeconds)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var deadlineText = PropertyDeadline.Match(value);
+        if (!deadlineText.Success || !long.TryParse(deadlineText.Groups[1].Value, out var deadline)) return null;
+        if (deadline <= deviceEpochSeconds) return null;
+
+        var port = PropertyPort.Match(value) is { Success: true } m ? m.Groups[1].Value : "an unknown port";
+        return $"{DebugProperty} was already set and stays valid for another {deadline - deviceEpochSeconds}s, "
+             + $"pointing at port {port}: another debugger is attaching on this device, or a session of ours did not "
+             + "shut down cleanly. The property is device-global, so this launch takes it over - if a debug session "
+             + "started elsewhere stops working, that is why.";
+    }
+
+    private static readonly Regex PropertyDeadline = new(@"timeout=(\d+)", RegexOptions.Compiled);
+    private static readonly Regex PropertyPort = new(@"debug=[^,]*?:(\d+)", RegexOptions.Compiled);
     private async Task WritePropertyAsync(int port, CancellationToken ct)
     {
         // Rotation (logcat thread), launch and the renewal loop all write this property; keep the

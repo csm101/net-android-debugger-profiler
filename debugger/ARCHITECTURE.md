@@ -51,6 +51,7 @@ verified recipe and why the SDK's own `-t:Run` attach wiring is not used.
 | `Core/Adb/AdbClient.cs` | adb wrapper; every device call takes an explicit serial; `StreamLogcatAsync` |
 | `Core/Launch/AndroidLauncher.cs` | Deploy (`dotnet build -t:Install -p:AdbTarget=-s <serial>`), `debug.mono.extra` + forward, `am start`, logcat watcher → `AgentDetected(pid, port, name)` with **port rotation**, `ShutdownAsync` (clear property, remove forwards, force-stop) |
 | `Core/Launch/AppProjectFinder.cs` | Finds the launchable Android application projects in a solution or folder (android TFM **and** an `ApplicationId` or `Exe`, which is what separates an app from the libraries around it); reads `.sln` and `.slnx` |
+| `Core/Launch/AndroidLauncher.cs` (`ForeignDebugPropertyWarning`) | Reports a still-valid `debug.mono.extra` that is not ours before taking it over: the property is device-global and two debuggers on one device silently overwrite each other |
 | `Core/Engine/ProcessDebugger.cs` (internal) | One `SoftDebuggerSession` per debuggee pid; connect with retries; event → `Stopped/Resumed/Exited` callbacks; step/continue/pause per process |
 | `Core/Engine/DebugSession.cs` | Facade: aggregates N `ProcessDebugger`s, one shared Mono `BreakpointStore`, state machine, monotonic stop generation + `WaitForStopAsync`, inspection (threads, frames, locals, evaluate, expansion handles), app/debugger output buffers |
 | `Mcp/` | `ModelContextProtocol` 2.2.0 stdio server; `DebuggerTools` (one tool = one or two facade calls), `SessionHost` (single active session, pid/thread defaults from the last stop), `TextFormat` (plain-text rendering) |
@@ -191,6 +192,14 @@ above stays the machine-wide baseline of one person's preferences.
 Only `deviceSerial` and `deploy` can be overridden per call — the serial because
 it genuinely changes per run, `deploy` to relaunch without rebuilding. Anything
 else that changes per call means the configuration is wrong.
+
+Two things the launch reports rather than doing silently. It reads
+`debug.mono.extra` before writing it, and when the value it finds has not yet
+expired it says which port that value points at and for how long: the property
+is device-global, so taking it over can break a session someone started
+elsewhere, and the victim's symptom (an app hanging for the agent timeout on a
+port nobody listens on) is nowhere near this cause. And `launch_app` names what
+it deduced, so a deduced package or device is never silent.
 
 ## Threading model
 

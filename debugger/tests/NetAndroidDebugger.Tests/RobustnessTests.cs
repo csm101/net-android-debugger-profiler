@@ -951,4 +951,36 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
             dir.Delete(recursive: true);
         }
     }
+
+    /// <summary>
+    /// Another debugger's `debug.mono.extra` is taken over, and said so. The property is
+    /// device-global: whoever writes it last decides the port every Mono process started afterwards
+    /// waits on, so the loser's app hangs for the agent timeout on a port nobody listens on. That
+    /// symptom is nowhere near its cause, which is why the takeover is announced.
+    /// </summary>
+    [Fact]
+    public async Task ADebugPropertyLeftByAnotherDebugger_IsReportedBeforeItIsTakenOver()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var ct = cts.Token;
+        var adb = new AdbClient();
+
+        // A value that is not ours and is still fresh, exactly as a debugger attaching right now
+        // would have left it.
+        var deviceNow = await adb.GetDeviceEpochSecondsAsync(device.Serial, ct);
+        await adb.SetPropAsync(device.Serial, "debug.mono.extra",
+            $"debug=127.0.0.1:10999,timeout={deviceNow + 120},loglevel=0,server=y", ct);
+
+        var lines = new List<string>();
+        await using var session = device.NewSession(line => { lock (lines) lines.Add(line); output.WriteLine(line); });
+        await session.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options(), ct);
+
+        string log;
+        lock (lines) log = string.Join("\n", lines);
+        Assert.Contains("10999", log);
+        Assert.Contains("device-global", log);
+
+        // And the launch still succeeds: the warning informs, it does not block.
+        Assert.Equal(SessionState.Running, session.State);
+    }
 }

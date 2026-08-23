@@ -1,4 +1,5 @@
 using NetAndroidDebugger.Core;
+using System.Text.RegularExpressions;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;
 
@@ -504,14 +505,29 @@ public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutp
     public async Task HitCondition_EveryNthHit_StopsOnAMultiple()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var session = await LaunchAsync(cts.Token, s =>
-            s.SetBreakpoint(new BreakpointSpec(Main, TickLine, HitCondition: "%4")));
+        var lines = new List<string>();
+        var session = device.NewSession(line => { lock (lines) lines.Add(line); output.WriteLine(line); });
+        await using var _ = session;
+        session.SetBreakpoint(new BreakpointSpec(Main, TickLine, HitCondition: "%4"));
+        await session.LaunchAsync(TestEnvironment.TestTargetApp(), device.Options(), cts.Token);
 
         var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(45), cts.Token);
         Assert.NotNull(stop);
-        var ticks = int.Parse(Eval(session, stop, "_ticks"));
-        output.WriteLine($"stopped at tick {ticks}");
-        Assert.True(ticks % 4 == 0, $"stopped at tick {ticks}, which is not a multiple of 4");
+
+        // What is promised is "every 4th HIT", and hits are what the engine counts. The app's own
+        // _ticks can disagree: Tick runs on a System.Threading.Timer, which does not serialise its
+        // callbacks, so two ticks can overlap - and _ticks++ is not atomic. Asserting on _ticks
+        // passed only while the app happened not to overlap, and failed once under load.
+        output.WriteLine($"stopped with _ticks = {Eval(session, stop, "_ticks")}");
+
+        string log;
+        lock (lines) log = string.Join("\n", lines);
+        var counted = Regex.Matches(log, @"hit count now (\d+) \(stops at")
+            .Select(m => int.Parse(m.Groups[1].Value))
+            .ToList();
+
+        Assert.True(counted.Count > 0, $"no hit-count diagnostic in the log:\n{log}");
+        Assert.True(counted[^1] % 4 == 0, $"stopped on hit {counted[^1]}, which is not a multiple of 4");
     }
 
     [Fact]

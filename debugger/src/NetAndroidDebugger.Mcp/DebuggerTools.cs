@@ -225,17 +225,34 @@ public sealed class DebuggerTools(SessionHost host)
     // ------------------------------------------------------------------ execution
 
     [McpServerTool(Name = "continue_and_wait"), Description("Resumes all stopped processes and waits for the next stop (breakpoint, step, exception, pause) or exit. Returns the stop or 'timeout'.")]
-    public async Task<string> ContinueAndWait([Description("Seconds to wait (default 30)")] int? timeoutSeconds = null, CancellationToken ct = default)
+    public async Task<string> ContinueAndWait(
+        [Description("Seconds to wait (default 30)")] int? timeoutSeconds = null,
+        [Description(SnapshotArgument)] bool snapshot = false,
+        CancellationToken ct = default)
     {
         var s = host.Require();
         var stop = await s.ContinueAndWaitAsync(Secs(timeoutSeconds, 30), ct);
-        return TextFormat.StopOrTimeout(s, stop);
+        return WithSnapshot(s, TextFormat.StopOrTimeout(s, stop), stop, snapshot);
     }
+
+    /// <summary>
+    /// Reading locals means invoking code in the debuggee, and breakpoints are disarmed for the
+    /// duration of any evaluation. Paying that on every step, unasked, is not a trade this engine
+    /// can make for the caller - hence opt-in, unlike debuggers whose values need no invocation.
+    /// </summary>
+    private const string SnapshotArgument =
+        "Append the call stack and locals of the new stop, saving two round trips. Off by default: reading locals " +
+        "calls into the debuggee, which disarms breakpoints for the duration.";
+
+    /// <summary>Appends the snapshot when it was asked for and something actually stopped.</summary>
+    private string WithSnapshot(DebugSession s, string text, StopEvent? stop, bool snapshot)
+        => snapshot && stop is not null ? text + "\n" + CompactSnapshot(s, 12, 30) : text;
 
     [McpServerTool(Name = "wait_until_stopped"), Description("Without afterGeneration: returns the current stop immediately if the session is stopped, otherwise waits for the next stop. With afterGeneration: waits until the stop generation exceeds it. Does not resume anything.")]
     public async Task<string> WaitUntilStopped(
         [Description("Return as soon as the stop generation exceeds this value (use the generation of the last stop you handled)")] long? afterGeneration = null,
         [Description("Seconds to wait (default 30)")] int? timeoutSeconds = null,
+        [Description(SnapshotArgument)] bool snapshot = false,
         CancellationToken ct = default)
     {
         var s = host.Require();
@@ -243,7 +260,7 @@ public sealed class DebuggerTools(SessionHost host)
         var stop = afterGeneration is null
             ? await s.WaitForCurrentOrNextStopAsync(timeout, ct)
             : await s.WaitForStopAsync(afterGeneration.Value, timeout, ct);
-        return TextFormat.StopOrTimeout(s, stop);
+        return WithSnapshot(s, TextFormat.StopOrTimeout(s, stop), stop, snapshot);
     }
 
     [McpServerTool(Name = "pause_execution"), Description("Suspends all running processes and reports where they stopped.")]
@@ -255,23 +272,23 @@ public sealed class DebuggerTools(SessionHost host)
     }
 
     [McpServerTool(Name = "step_over"), Description("Steps over the current line on a thread (defaults: last stopped pid/thread) and waits for the step to complete.")]
-    public Task<string> StepOver([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, CancellationToken ct = default)
-        => StepCore(pid, threadId, timeoutSeconds, ct, (s, p, t, to) => s.StepOverAsync(p, t, to, ct));
+    public Task<string> StepOver([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, [Description(SnapshotArgument)] bool snapshot = false, CancellationToken ct = default)
+        => StepCore(pid, threadId, timeoutSeconds, snapshot, ct, (s, p, t, to) => s.StepOverAsync(p, t, to, ct));
 
     [McpServerTool(Name = "step_into"), Description("Steps into the call on the current line (defaults: last stopped pid/thread).")]
-    public Task<string> StepInto([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, CancellationToken ct = default)
-        => StepCore(pid, threadId, timeoutSeconds, ct, (s, p, t, to) => s.StepIntoAsync(p, t, to, ct));
+    public Task<string> StepInto([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, [Description(SnapshotArgument)] bool snapshot = false, CancellationToken ct = default)
+        => StepCore(pid, threadId, timeoutSeconds, snapshot, ct, (s, p, t, to) => s.StepIntoAsync(p, t, to, ct));
 
     [McpServerTool(Name = "step_out"), Description("Runs until the current method returns (defaults: last stopped pid/thread).")]
-    public Task<string> StepOut([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, CancellationToken ct = default)
-        => StepCore(pid, threadId, timeoutSeconds, ct, (s, p, t, to) => s.StepOutAsync(p, t, to, ct));
+    public Task<string> StepOut([Description("Process id")] int? pid = null, [Description("Thread id")] long? threadId = null, [Description("Seconds to wait (default 20)")] int? timeoutSeconds = null, [Description(SnapshotArgument)] bool snapshot = false, CancellationToken ct = default)
+        => StepCore(pid, threadId, timeoutSeconds, snapshot, ct, (s, p, t, to) => s.StepOutAsync(p, t, to, ct));
 
-    private async Task<string> StepCore(int? pid, long? threadId, int? timeoutSeconds, CancellationToken ct, Func<DebugSession, int, long, TimeSpan, Task<StopEvent?>> step)
+    private async Task<string> StepCore(int? pid, long? threadId, int? timeoutSeconds, bool snapshot, CancellationToken ct, Func<DebugSession, int, long, TimeSpan, Task<StopEvent?>> step)
     {
         var s = host.Require();
         var (p, t) = host.ResolveTarget(s, pid, threadId);
         var stop = await step(s, p, t, Secs(timeoutSeconds, 20));
-        return TextFormat.StopOrTimeout(s, stop);
+        return WithSnapshot(s, TextFormat.StopOrTimeout(s, stop), stop, snapshot);
     }
 
     // ------------------------------------------------------------------ breakpoints
@@ -493,11 +510,18 @@ public sealed class DebuggerTools(SessionHost host)
         return loc is null ? "No source location." : TextFormat.Location(loc);
     }
 
-    [McpServerTool(Name = "get_loaded_assemblies", ReadOnly = true), Description("Assemblies loaded in the attached process(es).")]
+    [McpServerTool(Name = "get_loaded_assemblies", ReadOnly = true), Description(
+        "Assemblies loaded in the attached process(es), each with whether the runtime has debug information for it. " +
+        "That is the first thing to check when a breakpoint stays pending: no line in an assembly without symbols can " +
+        "ever bind, so comparing source paths against it is wasted effort. \"symbols unknown\" means the debuggee's " +
+        "protocol version cannot answer, not that symbols are missing.")]
     public string GetLoadedAssemblies([Description("Restrict to one process")] int? pid = null)
     {
         var list = host.Require().GetLoadedAssemblies(pid);
-        return list.Count == 0 ? "No assemblies reported." : string.Join('\n', list.Select(a => $"pid {a.Pid}  {a.Name}  {a.Path ?? ""}"));
+        return list.Count == 0
+            ? "No assemblies reported."
+            : string.Join('\n', list.Select(a =>
+                $"pid {a.Pid}  {a.Name}  {a.HasSymbols switch { true => "symbols", false => "NO SYMBOLS", null => "symbols unknown" }}  {a.Path ?? ""}"));
     }
 
 
@@ -548,8 +572,15 @@ public sealed class DebuggerTools(SessionHost host)
 
     [McpServerTool(Name = "get_compact_debug_snapshot", ReadOnly = true), Description("One-call overview at a stop: status, location, call stack (top frames) and locals of the stopped thread.")]
     public string GetCompactSnapshot([Description("Max frames (default 12)")] int maxFrames = 12, [Description("Max locals (default 30)")] int maxLocals = 30)
+        => CompactSnapshot(host.Require(), maxFrames, maxLocals);
+
+    /// <summary>
+    /// Status, stack and locals at a stop. Also what <c>snapshot=true</c> appends to a step or a
+    /// resume: it costs a round trip saved, and locals cost calls into the debuggee, which is why
+    /// nobody pays for it unless they ask.
+    /// </summary>
+    private string CompactSnapshot(DebugSession s, int maxFrames, int maxLocals)
     {
-        var s = host.Require();
         var sb = new StringBuilder();
         sb.AppendLine(TextFormat.Status(s.GetStatus()));
         var last = s.LastStop;

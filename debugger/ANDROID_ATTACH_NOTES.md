@@ -264,6 +264,12 @@ The symptom is recognisable: the app hangs for about 30 s at startup - the agent
 waiting for a debugger that never connects on the port it read - and the process
 then dies. Different devices are fine: the property is per-device.
 
+Since 2026-08-23 the launcher reads the property before writing it and, when it
+finds a value whose deadline has not passed, logs which port it points at and
+for how long it stays valid. It still takes it over - the warning informs, it
+does not block - but the takeover is now visible where it happens rather than
+30 s later in an app that will not start.
+
 **[inference - the property's scope and the agent timeout are verified above;
 that the C# Dev Kit adapter uses the same mechanism is not observed here, though
 it is the only way to attach to MonoVM on Android.]**

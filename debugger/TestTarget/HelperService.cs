@@ -118,3 +118,30 @@ public class GlobalProcessReceiver : BroadcastReceiver
         return value;
     }
 }
+
+/// <summary>
+/// Runs in the main process, where <see cref="MainActivity.Tick"/>'s timer also runs, and holds one
+/// deliberately slow line. Stepping over that line lasts long enough for another thread to hit a
+/// breakpoint while the step is still in flight, which is otherwise a race no test can provoke:
+/// everything is suspended while stopped, so the window is only as long as the step.
+/// <para>
+/// Nothing else calls this, so no other test pays for the delay.
+/// </para>
+/// </summary>
+[BroadcastReceiver(Name = "net.androiddebugger.testtarget.SlowStepReceiver", Exported = true)]
+[IntentFilter([SlowStepReceiver.SlowStepAction])]
+public class SlowStepReceiver : BroadcastReceiver
+{
+    public const string SlowStepAction = "net.androiddebugger.testtarget.SLOW_STEP";
+
+    public override void OnReceive(Context? context, Intent? intent)
+    {
+        SlowStep();
+    }
+
+    private static void SlowStep()
+    {
+        System.Threading.Thread.Sleep(4000); // marker: slow-step-line
+        Android.Util.Log.Debug("TestTarget", "slow step done");
+    }
+}

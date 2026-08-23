@@ -1,4 +1,5 @@
 using NetAndroidDebugger.Core;
+using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;
 
@@ -143,9 +144,49 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
     /// long as the step itself. Making it real needs a TestTarget method with a deliberately slow
     /// line, reachable on its own so no other test pays for it.
     /// </summary>
-    [Fact(Skip = "TODO: needs a TestTarget method with a slow line, so a step lasts long enough to be interrupted")]
-    public void ABreakpointHitByAnotherThread_DuringAStep_IsStillReported()
-        => Assert.Fail("not implemented");
+    [Fact]
+    public async Task ABreakpointHitByAnotherThread_DuringAStep_IsStillReported()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        var slowLine = TestEnvironment.LineOf(TestEnvironment.HelperServiceSource, "// marker: slow-step-line");
+        await using var session = await LaunchAsync(cts.Token,
+            s => s.SetBreakpoint(new BreakpointSpec(TestEnvironment.HelperServiceSource, slowLine)));
+
+        var pkg = TestEnvironment.TestTargetPackage;
+        var adb = new AdbClient();
+        // `am broadcast` waits for the receiver to return, and the breakpoint stops it inside the
+        // receiver - waiting for the command here would deadlock the test against itself.
+        _ = Task.Run(async () =>
+        {
+            try { await adb.ShellAsync(device.Serial, $"am broadcast -a {pkg}.SLOW_STEP -p {pkg}", CancellationToken.None, TimeSpan.FromMinutes(2)); }
+            catch (Exception ex) { output.WriteLine($"broadcast command ended: {ex.Message}"); }
+        }, CancellationToken.None);
+
+        var stop = await session.WaitForStopAsync(0, TimeSpan.FromSeconds(40), cts.Token);
+        Assert.NotNull(stop);
+        Assert.Equal(slowLine, stop.Location?.Line);
+
+        // Arm the timer's line, then step over the slow one. Tick runs every second on a thread of
+        // its own, so it hits that breakpoint while this step is still in flight.
+        session.SetBreakpoint(new BreakpointSpec(TestEnvironment.MainActivitySource, TickLine));
+        var stepped = await session.StepOverAsync(stop.Pid, stop.ThreadId, TimeSpan.FromSeconds(40), cts.Token);
+        Assert.NotNull(stepped);
+
+        // Either the step returns that breakpoint, or it arrives as the very next stop. What must
+        // not happen is losing it: whoever is stepping still set that breakpoint on purpose.
+        var reported = stepped.Reason == StopReason.Breakpoint
+            ? stepped
+            : await session.WaitForStopAsync(stepped.Generation, TimeSpan.FromSeconds(40), cts.Token);
+
+        output.WriteLine($"step returned {stepped.Reason}; the breakpoint came back as {reported?.Reason} on thread {reported?.ThreadId}, stepped thread was {stop.ThreadId}");
+
+        Assert.NotNull(reported);
+        Assert.True(reported.Reason == StopReason.Breakpoint,
+            $"the breakpoint hit during the step was not reported; got {reported.Reason} at "
+            + $"{reported.Location?.File}:{reported.Location?.Line} on thread {reported.ThreadId}");
+        Assert.Contains("Tick", reported.Location?.Method ?? "");
+        Assert.NotEqual(stop.ThreadId, reported.ThreadId);
+    }
 
     [Fact]
     public async Task Threads_AreListed_WhenStopped()

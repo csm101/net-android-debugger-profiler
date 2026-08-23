@@ -96,6 +96,16 @@ were exact - count 3, tick 3, every time. The anomaly has not reappeared since
 processes stopped colliding on ports (U14) and since a launch waits for the old
 processes to be gone: both of those used to make a second process attach at an
 unpredictable moment, which is exactly the window suspected here.
+
+Update 2026-08-23: `HitCondition_EveryNthHit_StopsOnAMultiple` failed once in a
+full run and passed in isolation - but that test was asserting on the app's own
+`_ticks`, not on the hit count. Those two can legitimately disagree: `Tick` runs
+on a `System.Threading.Timer`, which does not serialise its callbacks, so two
+ticks can overlap and `_ticks++` is not atomic. The message was lost with the
+run's `-v q` output, so this is not proof of what failed. What it does buy: the
+test now asserts on the engine's own `hit count now N` diagnostic, which is what
+the feature promises, so that way of failing no longer exists. **If it fails
+again, it is this unknown for real.**
 Not closed, because the original was rare and six runs cannot prove its absence.
 The test still asserts "at least N hits" and the diagnostic stays: if it ever
 comes back, the log line says immediately whether the count was reset or the
