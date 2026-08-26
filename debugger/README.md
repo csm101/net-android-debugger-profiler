@@ -151,6 +151,57 @@ exception filters, structured app output — exposed through an MCP stdio server
 and, since 2026-08-21, a Debug Adapter Protocol adapter. See `PROJECT_STATE.md`
 for milestones and `ARCHITECTURE.md` for the design.
 
+## Why a debugger written from scratch
+
+For one of the two frontends, the prior art is real and should be acknowledged.
+Microsoft's [C# Dev Kit](https://code.visualstudio.com/docs/csharp/cs-dev-kit-faq)
+with the .NET MAUI extension already debugs .NET Android apps in VS Code, and
+Visual Studio and Rider have done so for years. If the goal were pressing F5 in
+an editor, this project would not exist, and it does not try to match those on
+editor integration: the DAP frontend is a by-product of a frontend-neutral core,
+not a competitor.
+
+What does not exist is a debugger an autonomous agent can drive. That is the
+project: semantic operations exposed as MCP tools, answers shaped for a token
+budget rather than for a debug pane, and stops that report what happened instead
+of handing back a tree to be walked one request at a time.
+
+Wrapping an existing debugger instead was considered and is closed on both
+counts.
+
+**Licensing.** C# Dev Kit is closed source and not redistributable. It is free
+for personal, academic and open-source use and for commercial teams of up to
+five developers; beyond that it requires a Visual Studio Professional
+subscription, and an Enterprise — more than 250 users or a million dollars in
+revenue — may not use it outside open source and education at all. Microsoft's
+debugger components carry a further restriction: they are licensed to run only
+with Microsoft's own IDEs and, for VS Code, only with the build Microsoft
+distributes — a constraint `vsdbg` also enforces with a handshake. An adapter
+that may only be driven inside someone else's IDE cannot sit under a server of
+our own. See
+[the .NET Core Debugger licensing note](https://github.com/OmniSharp/omnisharp-vscode/wiki/Microsoft-.NET-Core-Debugger-licensing-and-Microsoft-Visual-Studio-Code).
+
+**Architecture.** Visual Studio and Rider are not a licensing problem — driving
+either locally is ordinary use — but neither exposes its debugger as a service.
+Visual Studio's `EnvDTE`/`Debugger2` COM automation exists and could in principle
+be scripted, at the cost of keeping a GUI IDE alive for a headless server to talk
+to; Rider's debug backend is internal and undocumented for third parties.
+
+That leaves the MIT sources — [mono/debugger-libs](https://github.com/mono/debugger-libs),
+which is what the reference implementations use as well — as the only reusable
+foundation, and an engine of our own above them.
+
+Building it that way also bought things a general-purpose debugger does not
+offer, because the consumer is an agent working through a noisy real application:
+an ordered per-exception rule engine whose actions include logging and continuing
+rather than only breaking, automatic attach to every process of the app
+recognised by uid rather than by name, compact snapshots that fold a stop's stack
+and locals into one answer, and a launch that deduces the application project,
+its `ApplicationId` and the device from the solution.
+
+The standing cost is maintenance: the Mono soft debugger protocol, .NET releases
+and Android API levels all move, and nobody else is keeping this current.
+
 ## Using the MCP server with Claude Code
 
 `register-mcp.cmd` registers the server once at user scope, as
