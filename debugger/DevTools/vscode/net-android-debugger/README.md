@@ -9,15 +9,22 @@ contributed by an extension. This is that extension, and nothing more — it dec
 Run `register-mcp.cmd` first: it publishes the adapter to
 `%LOCALAPPDATA%\net-android-debugger`, which is where this extension looks by default.
 
-Then, for day-to-day use, symlink or copy this folder into your VS Code extensions directory:
+Then, from the repository root:
 
-```powershell
-$target = "$env:USERPROFILE\.vscode\extensions\net-android-debugger"
-New-Item -ItemType SymbolicLink -Path $target -Target "C:\GitHub\net-android-debugger\DevTools\vscode\net-android-debugger"
+```
+install-vscode-extension.cmd
 ```
 
-Restart VS Code. To develop on it instead, open this folder in VS Code and press F5 — that starts an
-Extension Development Host with it loaded.
+It junctions this folder into `%USERPROFILE%\.vscode\extensions` — a junction, not a symbolic link,
+because that needs neither elevation nor developer mode, and VS Code follows it just the same. The
+junction tracks the repository, so editing the extension needs no reinstall. Where a junction is
+refused the script copies instead, and says so: a copy is a snapshot, to be reinstalled after every
+change. Set `NAD_VSCODE_EXTENSIONS` to install into another extensions folder (VS Code Insiders, a
+portable install). Re-running is safe: it replaces whatever is installed under that name.
+
+Restart VS Code afterwards — reloading the window is not enough for a newly installed extension. To
+develop on it instead, open this folder in VS Code and press F5: that starts an Extension Development
+Host with it loaded, and needs no install at all.
 
 There is no `.vsix` package and no marketplace entry: this is proprietary software and the
 repository is private.

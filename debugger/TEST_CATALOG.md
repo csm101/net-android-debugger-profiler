@@ -311,8 +311,10 @@ Conventions (mirroring the Delphi project's discipline):
       `DevTools/vscode/net-android-debugger` contributes the `net-android` debug
       type, and `node test-extension.js` checks its own logic (adapter path
       resolution, the missing-adapter message, configuration validation) against
-      a stand-in for the `vscode` module. Nobody has yet run it inside a real
-      VS Code against a real device — that part is still uncovered.
+      a stand-in for the `vscode` module. `install-vscode-extension.cmd` installs
+      it, and section R guards what that script names. Nobody has yet run the
+      extension inside a real VS Code against a real device — that part is still
+      uncovered.
 
 ## L. Exception rules (per-exception engine)
 - [x] A noisy exception is let through while the app keeps running —
@@ -532,3 +534,17 @@ the event thread or matches rules against data that is not there.
 Verified end to end on the reference application with `DevTools/ExceptionTypeProbe`, not in this
 suite: it needs a real app whose exceptions come out of an assembly without
 symbols, which TestTarget cannot provide. See KNOWN_UNKNOWNS U15.
+## R. Install scripts (`InstallScriptTests`, no device)
+`register-mcp.cmd` and `install-vscode-extension.cmd` are the only path a new
+machine has to a working setup, and they name folders and file names as strings.
+Nothing else in the build reads them, so a rename elsewhere in the repo breaks
+them silently and surfaces only on the machine being set up.
+- [x] The installer links a folder that really is the extension (it holds a
+      `package.json`) — `TheInstaller_PointsAtTheExtensionThatExists`
+- [x] Both scripts agree on where the adapter is published, and on its file
+      name: the installer warns about a missing adapter by probing the folder
+      `register-mcp.cmd` publishes to —
+      `BothScripts_AgreeOnWhereTheAdapterIsPublished`
+- [x] The extension contributes the debug type the documented `launch.json`
+      entries use; a mismatch shows up only as VS Code refusing to start a
+      session — `TheExtension_ContributesTheDocumentedDebugType`

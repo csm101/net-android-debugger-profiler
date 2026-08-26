@@ -118,4 +118,6 @@ with `launch.json` then reading:
 ```
 
 That extension lives in `net-android-debugger/` next to this file — it declares the type and
-nothing else. See its README for how to install it and what is and is not verified about it.
+nothing else, and resolves the adapter path itself rather than hardcoding it as above. Install it
+with `install-vscode-extension.cmd` in the repository root, which junctions it into the user's
+extensions folder. See its README for the details and for what is and is not verified about it.

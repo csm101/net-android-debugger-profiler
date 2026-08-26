@@ -1,24 +1,36 @@
 # Task resume
 
-## Current task
+## Current task (2026-08-26)
 
-Nothing in flight. The suite is green and THIRD-PARTY-NOTICES.txt is in place,
-so nothing blocks a first distribution on the licensing side.
+Nothing in flight.
 
-What the last two commits added:
+Last change: `install-vscode-extension.cmd` in the repository root. Installing the
+VS Code extension was a PowerShell symbolic-link incantation buried in a README,
+which is not something anyone remembers. The script junctions
+`DevTools/vscode/net-android-debugger` into `%USERPROFILE%\.vscode\extensions`
+(`NAD_VSCODE_EXTENSIONS` retargets it), warns when the adapter has not been
+published yet, and is idempotent.
 
-1. `AndroidLauncher.ForeignDebugPropertyWarning` - the launch reads
-   `debug.mono.extra` before writing it and reports a value that has not
-   expired, naming the port and the remaining seconds. It still takes it over.
-2. `get_loaded_assemblies` reports `symbols` / `NO SYMBOLS` / `symbols unknown`
-   from `AssemblyMirror.HasDebugInfo` (protocol 2.51+, try/catch -> null).
-3. `snapshot=true` on continue_and_wait, wait_until_stopped and the three steps
-   folds in stack and locals. Opt-in, unlike the Delphi debugger which always
-   returns one: reading locals invokes code in the debuggee, which disarms
-   breakpoints for the duration.
-4. `SlowStepReceiver` in TestTarget holds one deliberately slow line, which made
-   the race provokable. Answered: `StepOverAsync` returns the breakpoint another
-   thread hit, on that thread, rather than the step - so nothing is lost.
+Decisions worth not re-deriving:
+
+- **Junction, not symbolic link.** `mklink` with the junction flag needs neither
+  elevation nor developer mode, VS Code follows it identically, and it tracks the
+  repository so editing the extension needs no reinstall. A true symbolic link
+  would prompt for elevation on a default Windows install. Copy is the fallback,
+  and the script says which of the two it did, because a copy is a snapshot.
+- **Replacing an existing install**: a plain `rmdir` first, which removes a
+  junction without touching its target, then a recursive one only if something is
+  still there (a previous copy). Verified both ways: the repository folder
+  survives.
+- **Guard**: the script refuses when `NAD_VSCODE_EXTENSIONS` would make the
+  target equal the sources, since the install deletes the target first.
+
+Covered by `InstallScriptTests` (3 facts, no device, 26 ms) - TEST_CATALOG
+section R. They exist because both scripts name folders and file names as
+strings that nothing else in the build reads: a rename elsewhere breaks them
+silently, and only on the machine being set up.
+
+Installed on this machine already, as a junction.
 
 ## State (2026-08-23)
 

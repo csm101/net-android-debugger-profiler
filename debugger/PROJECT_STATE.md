@@ -78,8 +78,9 @@ integration.
   `register-mcp.cmd` publishes both frontends; `DevTools/vscode/DAP_CLIENTS.md`
   documents the client contract; `DevTools/vscode/net-android-debugger` is a
   VS Code extension contributing the `net-android` debug type (offline checks
-  only - never yet run inside a real VS Code). `DevTools/DapSmoke` drives the
-  adapter against any installed app.
+  only - never yet run inside a real VS Code), installed by
+  `install-vscode-extension.cmd` as a junction into the user's extensions
+  folder. `DevTools/DapSmoke` drives the adapter against any installed app.
 
 Open, both needing hardware: attach over `adb connect` and a mid-run debugger
 disconnect (U9). See KNOWN_UNKNOWNS.md for the rest.
