@@ -97,7 +97,9 @@ Every item below came out of driving the real app or re-reading the new code.
 
 - Only ever touch `emulator-5554`; `emulator-5556` is the user's other AVD
   (`devicepersviluppoprofiler`).
-- `bash DevTools/scripts/ensure-emulator.sh` before unattended runs: headless (a
+- `AVD=pixel_7_-_api_33_0 bash DevTools/scripts/ensure-emulator.sh` before
+  unattended runs (two AVDs are installed here, so the script will not guess):
+  headless (a
   windowed emulator cannot start while the desktop is locked), hardware GPU (a
   software GPU makes evaluations time out). Its health check asks the package
   service, because `sys.boot_completed` stays 1 while system_server restarts.

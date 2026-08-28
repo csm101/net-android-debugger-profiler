@@ -24,9 +24,11 @@ Conventions (mirroring the Delphi project's discipline):
   `NAD_DEVICE_SERIAL=<serial>` (mandatory when more than one device is
   attached; the suite never relies on the adb default device).
   `NAD_SKIP_DEPLOY=1` skips the one-time `-t:Install` of TestTarget.
-- Unattended runs: `bash DevTools/scripts/ensure-emulator.sh` first — it starts
-  the AVD headless (a windowed emulator cannot start while the desktop is
-  locked) and clears the locks a crashed qemu leaves behind.
+- Unattended runs: `AVD=<name> bash DevTools/scripts/ensure-emulator.sh` first
+  — it starts the AVD headless (a windowed emulator cannot start while the
+  desktop is locked) and clears the locks a crashed qemu leaves behind. `AVD`
+  can be omitted only when one AVD is installed: with several the script lists
+  them and stops, the same rule the engine applies to devices.
 - `sys.boot_completed` stays `1` when `system_server` has crashed and is coming
   back, and a run started then dies with `Can't find service: package`. The
   script's health check asks the package service itself, not just the property.
