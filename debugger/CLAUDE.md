@@ -169,6 +169,34 @@ C# (`net10.0` for tooling; TestTarget follows the Android TFM it needs):
   understandable; avoid hidden magic; boring robust code
 - ThirdParty/ is upstream code: do not reformat it, do not "improve" it
 
+# File encodings and line endings (blocking)
+
+An existing file's encoding and line endings are never changed as a side effect
+of editing its content, not even when the edit adds only ASCII. This rule lives
+with the repository on purpose: it has to hold on every machine and for everyone
+working here, not only where the code was first written.
+
+- Determine the encoding before editing rather than assuming it from the
+  extension: `head -c3 <path> | od -An -tx1` shows a BOM (`ef bb bf`) if there is
+  one.
+- A file that has a BOM keeps it. The BOM is not a leftover to clean up, it is
+  what declares the encoding. Tools that claim to write "UTF-8" frequently write
+  it without one and strip an existing one silently, so verify afterwards rather
+  than trusting the tool.
+- Sources here are UTF-8 without BOM. A new file matches its siblings.
+- Line endings are pinned in `.gitattributes`: `.sh` is LF, `.cmd`, `.bat` and
+  `.ps1` are CRLF, everything else follows `text=auto`. Do not convert endings by
+  hand, and never as part of a change that is about something else.
+- `sed` and most Unix tools emit LF and strip `\r`, and several editors' write
+  paths do the same. On a CRLF file, edit through PowerShell, or rewrite the file
+  with the endings it already had.
+- Verify after the edit, not before. A diff that marks every line as changed
+  means the endings moved, and that has to be undone before committing.
+
+If a file in another encoding ever enters this repository, the same rule governs
+it: read and write it in its own encoding, and never let a content edit
+transcode it.
+
 # Documentation rules
 
 For generated files, comments, README, docs, commit messages: normal

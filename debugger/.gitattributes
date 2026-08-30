@@ -1,3 +1,14 @@
 * text=auto
+
+# Shell scripts stay LF. A CRLF script breaks under any bash that is not Git for
+# Windows' own - the shebang line is the first casualty - and CRLF leaks into the
+# last token of every assignment.
+*.sh text eol=lf
+
+# Batch and PowerShell are read by Windows shells, which want CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
 *.png binary
 *.apk binary
