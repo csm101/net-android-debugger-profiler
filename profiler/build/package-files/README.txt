@@ -50,9 +50,16 @@ GETTING STARTED
 
   GUI:
 
-      gui\NapGui.exe            opens the last session; File > Open picks another
-      It starts bin\nap.exe serve on loopback for the live controls, so keep the
-      package together.
+      gui\NapGui.exe            the whole flow, without a command prompt
+
+      It starts bin\nap.exe serve on loopback itself, so keep the package together.
+      New session > Solution: point it at your .sln, .csproj or source folder and it
+      lists the Android applications in it, fills in the package, the build output and
+      the assemblies from the project file, and offers the app's own namespaces and
+      types as the callspec. Build & install builds the app with the settings above and
+      deploys it to the selected device. It also checks this machine when it starts and
+      offers to install dotnet-dsrouter if the package's copy is not being used.
+      File > Open picks a session recorded by any frontend.
 
 
 BUILD-TIME WEAVING

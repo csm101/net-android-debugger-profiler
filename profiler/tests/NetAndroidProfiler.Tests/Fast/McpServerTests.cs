@@ -19,6 +19,19 @@ public sealed class McpServerTests : IDisposable
     private readonly string _sessionsRoot;
     private const string PreparedSessionId = "20260101-000000-mcp.test-sampling";
 
+    /// The sources list_app_projects is pointed at: this repository's own test app.
+    private static string TestTargetFolder
+    {
+        get
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidProfiler.slnx")))
+                dir = dir.Parent;
+            Assert.NotNull(dir);
+            return Path.Combine(dir!.FullName, "TestTarget");
+        }
+    }
+
     public McpServerTests()
     {
         _sessionsRoot = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "mcp", Guid.NewGuid().ToString("N"));
@@ -52,8 +65,8 @@ public sealed class McpServerTests : IDisposable
             .EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToHashSet();
         foreach (var expected in new[]
         {
-            "list_devices", "check_app", "profile_run", "profile_start", "profile_stop", "profile_status",
-            "profile_sessions", "profile_hotspots", "profile_flat", "profile_tree", "profile_callers",
+            "list_devices", "check_app", "list_app_projects", "profile_run", "profile_start", "profile_stop", "profile_status",
+            "profile_sessions", "profile_archive", "profile_archives", "profile_hotspots", "profile_flat", "profile_tree", "profile_callers",
             "profile_callees", "profile_timings", "alloc_report", "heap_report", "profile_threads",
             "profile_report", "profile_annotate_source", "get_app_output",
         })
@@ -71,6 +84,11 @@ public sealed class McpServerTests : IDisposable
 
         string hot = _server.CallTool("profile_hotspots", new { sessionId = PreparedSessionId, top = 5 });
         Assert.Contains("CpuBurner.Busy", hot);
+
+        // The tool that turns "here are the sources" into the arguments profile_run needs.
+        string projects = _server.CallTool("list_app_projects", new { path = TestTargetFolder });
+        Assert.Contains("com.mcasoftware.testtarget", projects);
+        Assert.Contains("symbolsDir", projects);
 
         string report = _server.CallTool("profile_report", new { sessionId = PreparedSessionId });
         Assert.Contains("mode=Sampling", report);
@@ -99,6 +117,9 @@ public sealed class McpServerTests : IDisposable
 
         var badMode = _server.CallToolRaw("profile_run", new { deviceSerial = "emulator-test", packageName = "mcp.test", mode = "nonsense" });
         Assert.True(IsError(badMode), "an unknown mode must be reported as an error");
+
+        var badPath = _server.CallToolRaw("list_app_projects", new { path = Path.Combine(Path.GetTempPath(), "nap-no-such-folder") });
+        Assert.True(IsError(badPath), "a path that does not exist must be reported as an error");
 
         // The server must still be alive and answering after the failures.
         Assert.Contains(PreparedSessionId, _server.CallTool("profile_sessions", new { max = 5 }));

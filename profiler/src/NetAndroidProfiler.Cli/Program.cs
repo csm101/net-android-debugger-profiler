@@ -29,7 +29,10 @@ string command = args.Length > 0 ? args[0].ToLowerInvariant() : "help";
 switch (command)
 {
     case "serve":
-        return await ServeAsync(Option(args, "--port") is { } p ? int.Parse(p) : 0, Option(args, "--sessions-root"));
+        return await ServeAsync(
+            Option(args, "--port") is { } p ? int.Parse(p) : 0,
+            Option(args, "--sessions-root"),
+            Option(args, "--parent-pid") is { } pid ? int.Parse(pid) : null);
 
     case "devices":
     {
@@ -52,7 +55,9 @@ switch (command)
         Console.Error.WriteLine("""
             nap - .NET for Android profiler
 
-              nap serve [--port <n>] [--sessions-root <dir>]   local control service (HTTP/JSON on 127.0.0.1)
+              nap serve [--port <n>] [--sessions-root <dir>] [--parent-pid <n>]
+                                                               local control service (HTTP/JSON on 127.0.0.1);
+                                                               --parent-pid ends it when that process exits
               nap devices                                      attached devices as JSON
               nap run --package <id> [options]                 profile once and analyse
               nap doctor                                       report the tools this machine offers
@@ -85,7 +90,7 @@ static string? Option(string[] args, string name)
     return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 }
 
-static async Task<int> ServeAsync(int port, string? sessionsRoot)
+static async Task<int> ServeAsync(int port, string? sessionsRoot, int? parentPid = null)
 {
     await using var service = new ControlService(port, sessionsRoot);
     try
@@ -98,12 +103,34 @@ static async Task<int> ServeAsync(int port, string? sessionsRoot)
         return 1;
     }
 
-    // The GUI spawns this process with no port and reads the chosen one from here.
-    Console.WriteLine(JsonSerializer.Serialize(new PortLine(service.Port, service.SessionsRoot), NapJsonContext.Default.PortLine));
+    // The GUI spawns this process with no port and reads the chosen one from here. One
+    // line, not pretty-printed: a client that reads a line - the obvious way - must get the
+    // whole object and not an opening brace.
+    Console.WriteLine(JsonSerializer.Serialize(new PortLine(service.Port, service.SessionsRoot), NapLineJsonContext.Default.PortLine));
     Console.Out.Flush();
 
     using var stopping = CancellationTokenSource.CreateLinkedTokenSource(service.Stopping);
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; stopping.Cancel(); };
+
+    // A frontend that owns this process asks it to die with it. Without this, a GUI that
+    // is killed rather than closed leaves a service listening for the rest of the day.
+    if (parentPid is { } owner)
+    {
+        try
+        {
+            var parent = System.Diagnostics.Process.GetProcessById(owner);
+            _ = parent.WaitForExitAsync(stopping.Token).ContinueWith(_ =>
+            {
+                Console.Error.WriteLine($"nap serve: parent process {owner} exited");
+                stopping.Cancel();
+            }, TaskContinuationOptions.NotOnCanceled);
+        }
+        catch (ArgumentException)
+        {
+            Console.Error.WriteLine($"nap serve: parent process {owner} is already gone");
+            return 0;
+        }
+    }
     try { await Task.Delay(Timeout.InfiniteTimeSpan, stopping.Token); }
     catch (OperationCanceledException) { /* asked to stop */ }
     Console.Error.WriteLine("nap serve: stopped");
@@ -213,3 +240,11 @@ record RunResult(string Id, string State, string DatabasePath, string? Error, IR
 [JsonSerializable(typeof(PortLine))]
 [JsonSerializable(typeof(RunResult))]
 internal sealed partial class NapJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// The handshake line of `nap serve`, which is a line: what a parent process reads to
+/// learn the port. Everything else nap prints is meant for a human and stays indented.
+/// </summary>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(PortLine))]
+internal sealed partial class NapLineJsonContext : JsonSerializerContext;

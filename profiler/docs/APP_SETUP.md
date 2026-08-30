@@ -9,6 +9,17 @@ builds.
 Verified on .NET SDK 10.0.301 / android workload 36.1.43; facts marked
 *(to verify)* are still open and tracked in KNOWN_UNKNOWNS.md.
 
+## The GUI does this for you
+
+`gui\NapGui.exe` prepares an app without any of the commands below: point its Setup
+dialog at your solution, pick the project, and **Build & install** runs the build with
+`EnableDiagnostics`, fast deployment and `-t:Install` on the selected device, streaming
+msbuild's output into the window. It also checks the machine's prerequisites when it
+starts and offers to install `dotnet-dsrouter` if it is missing. Read on for what those
+settings are and when a permanent project change is the better answer - a Release
+`Profiling` configuration, for instance, is not something a button should write into
+your csproj.
+
 ## Short version
 
 - **Debug builds** (`-c Debug`, the normal development build): add
@@ -40,6 +51,10 @@ profiler detects this and tells you. For a profiling build:
 
 (Or build with `-p:EmbedAssembliesIntoApk=false` and reinstall.) Sampling and
 heap snapshots are unaffected and work with embedded assemblies.
+
+In the GUI this is Build & install with **Clear deployed assemblies first** ticked: it
+sets the property and removes the stale `files/.__override__` in one go, which is the
+trap described at the end of this section.
 
 The weaver also needs the original `.pdb` of a rewritten assembly out of the
 way; the profiler moves it aside for the duration of the session and restores
@@ -148,6 +163,30 @@ Build, deploy and run it as you do with Debug:
 ```
 dotnet build -c Profiling -t:Install -p:AdbTarget="-s <serial>" App.Droid.csproj
 ```
+
+**What it reaches**: the build weaves the application's own assembly, plus every referenced
+assembly named in `-p:NapAssemblies=App.Core;App.GeoLocation` (the GUI sends what is in
+its Assemblies field). An app is more than its own assembly - the business logic usually
+lives in a library - so a callspec that reaches one instruments nothing unless that library
+is named. The app is woven in the intermediate output before packaging; the libraries are
+woven in the output folder, which is the copy that gets packaged, and their methods are
+appended to the same map.
+
+**How the tool avoids double-instrumenting**: it keeps a `.naporig` copy of the assembly
+the compiler produced and weaves from that, so an incremental build never adds a second
+Enter/Leave to the same method. What decides which one is the input is whether the assembly
+in the output *is already woven* (it references the collector) - never the mere existence of
+a backup, which would throw away every compilation after the first.
+
+### From the GUI
+
+*Instrument during the build*, beside Build & install, does all of the above for one build:
+it passes `-p:NapWeave=true`, the callspec, and the targets file through
+`CustomAfterMicrosoftCommonTargets`, so the app project is not edited at all. The session
+that follows reads the `nap-weave.map` the build left in the output folder and changes
+nothing on the device. Note what it costs: the callspec is baked into the build, so
+changing it means building and installing again - which is why on-device weaving stays the
+default whenever the app allows it.
 
 ### Alternative: property switch on top of Debug
 

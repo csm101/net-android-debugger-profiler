@@ -63,7 +63,18 @@ public enum SessionState { Idle, Preparing, WaitingForApp, Collecting, Analyzing
 /// </summary>
 [JsonSourceGenerationOptions(WriteIndented = true)]
 [JsonSerializable(typeof(SessionSpec))]
+[JsonSerializable(typeof(ArchivedResult))]
 internal sealed partial class SessionJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// Results kept under a name while the session went on: an ordinary result database plus
+/// what a frontend needs to list it. See <see cref="ProfilerSession.ArchiveAsync"/>.
+/// </summary>
+/// <param name="Name">What the user called it.</param>
+/// <param name="Path">The archived database, openable like any session database.</param>
+/// <param name="CreatedUtc">When it was taken.</param>
+/// <param name="Segment">The refresh it holds, when it was taken from a running session.</param>
+public sealed record ArchivedResult(string Name, string Path, DateTimeOffset CreatedUtc, int? Segment);
 
 /// <summary>Everything a session needs to run. Immutable; serialized to session.json.</summary>
 public sealed record SessionSpec(
@@ -431,6 +442,24 @@ public sealed class ProfilerSession : IAsyncDisposable
             if (_weaveMap.Count == 0)
                 throw new ProfilerException($"Weave map {Spec.WeaveMapPath} is empty: the build wove no method.");
             Log($"using build-time weave map: {_weaveMap.Count} methods ({Spec.WeaveMapPath})");
+            // The app records what its build baked into it. A session that asked for the
+            // other kind would wait for files nobody writes, so it follows the app and says
+            // so - the alternative is a session that never shows anything and never
+            // explains itself.
+            string bakedMode = CecilWeaver.ReadMapMode(Spec.WeaveMapPath!);
+            var bakedEngine = bakedMode.Equals("tree", StringComparison.OrdinalIgnoreCase)
+                ? InstrumentingEngine.WeaverTree
+                : InstrumentingEngine.Weaver;
+            if (Spec.Engine != bakedEngine)
+            {
+                if (Spec.Engine != InstrumentingEngine.Auto)
+                    _warnings.Add($"The app was woven during its build to record as '{bakedMode}', which is baked into it: " +
+                                  $"this session follows that instead of {Spec.Engine.ToString().ToLowerInvariant()}. " +
+                                  "Rebuild with -p:NapMode=" + (bakedEngine == InstrumentingEngine.WeaverTree ? "trace" : "tree") +
+                                  " to change it.");
+                Spec = Spec with { Engine = bakedEngine };
+                Log($"build-time weave records as '{bakedMode}': engine set to {bakedEngine}");
+            }
         }
         else
         {
@@ -773,6 +802,92 @@ public sealed class ProfilerSession : IAsyncDisposable
         return segment;
     }
 
+    /// <summary>
+    /// Keeps the results as they are now, under a name, and goes on profiling: AQTime's
+    /// habit of collecting a Get Results and never losing it.
+    /// <para>
+    /// A snapshot rewrites the session's result tables, so the way to keep one is to copy
+    /// the database - which is also the cheapest: an archive is an ordinary result
+    /// database, it needs no schema of its own, it opens in any frontend without a live
+    /// session, and nothing is kept that was not asked for. On a live weaver session this
+    /// refreshes the results first, so the archive holds what the app has done up to this
+    /// moment; on a session that has ended it simply keeps a copy of the final results.
+    /// </para>
+    /// </summary>
+    /// <param name="name">Display name; a default is used when it is empty.</param>
+    public async Task<ArchivedResult> ArchiveAsync(string? name, CancellationToken ct = default)
+    {
+        int? segment = null;
+        if (CanControlLive) segment = await SnapshotAsync(ct).ConfigureAwait(false);
+
+        var store = _writeStore;
+        bool borrowed = store is null;
+        if (store is null)
+        {
+            if (!File.Exists(DatabasePath))
+                throw new ProfilerException($"Session {Id} has no results to archive yet (state {_state}).");
+            store = ResultStore.Open(DatabasePath, readOnly: true);
+        }
+        try
+        {
+            var created = DateTimeOffset.UtcNow;
+            string display = string.IsNullOrWhiteSpace(name)
+                ? $"snapshot {_snapshotCount} - {created.ToLocalTime():HH:mm:ss}"
+                : name.Trim();
+            string path = FreeArchivePath(Directory, display);
+            store.BackupTo(path);
+            var archive = new ArchivedResult(display, path, created, segment);
+            File.WriteAllText(Path.ChangeExtension(path, ".json"),
+                JsonSerializer.Serialize(archive, SessionJsonContext.Default.ArchivedResult));
+            Log($"archived '{display}' to {path} (the session continues)");
+            return archive;
+        }
+        finally
+        {
+            if (borrowed) store.Dispose();
+        }
+    }
+
+    /// <summary>The archived results of a session directory, newest first. No session need be running.</summary>
+    public static IReadOnlyList<ArchivedResult> ListArchives(string sessionDirectory)
+    {
+        string folder = Path.Combine(sessionDirectory, ArchivesFolder);
+        if (!System.IO.Directory.Exists(folder)) return [];
+        var list = new List<ArchivedResult>();
+        foreach (string db in System.IO.Directory.GetFiles(folder, "*.db"))
+        {
+            ArchivedResult? described = null;
+            try
+            {
+                string sidecar = Path.ChangeExtension(db, ".json");
+                if (File.Exists(sidecar))
+                    described = JsonSerializer.Deserialize(File.ReadAllText(sidecar), SessionJsonContext.Default.ArchivedResult);
+            }
+            catch (Exception) { /* a lost or broken sidecar only costs the pretty name */ }
+            // The file is the archive; the sidecar only decorates it. One without the other
+            // is still perfectly openable, so it is listed either way.
+            list.Add(described is null
+                ? new ArchivedResult(Path.GetFileNameWithoutExtension(db), db, File.GetCreationTimeUtc(db), null)
+                : described with { Path = db });
+        }
+        return list.OrderByDescending(a => a.CreatedUtc).ToList();
+    }
+
+    private const string ArchivesFolder = "archives";
+
+    /// <summary>A file name for the display name that no other archive is using.</summary>
+    private static string FreeArchivePath(string sessionDirectory, string display)
+    {
+        var slug = new string(display.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c).ToArray()).Trim();
+        if (slug.Length == 0) slug = "archive";
+        if (slug.Length > 80) slug = slug[..80];
+        string folder = Path.Combine(sessionDirectory, ArchivesFolder);
+        System.IO.Directory.CreateDirectory(folder);
+        string path = Path.Combine(folder, slug + ".db");
+        for (int i = 2; File.Exists(path); i++) path = Path.Combine(folder, $"{slug} ({i}).db");
+        return path;
+    }
+
     /// <summary>Stop recording events without stopping the app (AQTime's Disable Profiling).</summary>
     public async Task PauseAsync(CancellationToken ct = default)
     {
@@ -804,6 +919,17 @@ public sealed class ProfilerSession : IAsyncDisposable
         }
         Log("results cleared (the app keeps running and stays instrumented)");
     }
+
+    /// <summary>
+    /// Whether the live verbs (snapshot, pause, resume, clear) can serve this session:
+    /// it is collecting, and its engine writes files rather than one trace that only
+    /// resolves at the end. <see cref="RequireLiveWeaverSession"/> is the same question
+    /// asked when the answer has to be an explanation.
+    /// </summary>
+    public bool CanControlLive =>
+        _state is (SessionState.Collecting or SessionState.WaitingForApp)
+        && Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine.Weaves()
+        && _weaveDeployer is not null && _weaveMap is not null;
 
     private void RequireLiveWeaverSession(string operation)
     {

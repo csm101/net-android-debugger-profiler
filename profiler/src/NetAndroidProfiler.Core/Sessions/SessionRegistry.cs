@@ -63,10 +63,20 @@ public sealed class SessionRegistry : IAsyncDisposable
         return newest.id;
     }
 
-    /// <summary>Open the result store of a session (a live Ready session or a session directory on disk).</summary>
+    /// <summary>
+    /// Open the result store of a session: a live Ready session, a session directory on
+    /// disk, or the path of a result database - which is how an archived Get Results is
+    /// read back, since an archive is an ordinary result database that outlives its
+    /// session (<see cref="ProfilerSession.ArchiveAsync"/>).
+    /// </summary>
     public ResultStore OpenResults(string? sessionId, out string id)
     {
         id = ResolveId(sessionId);
+        if (id.EndsWith(".db", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(id)) throw new ProfilerException($"No result database at '{id}'.");
+            return ResultStore.Open(id);
+        }
         if (_live.TryGetValue(id, out var live))
         {
             if (live.Session.State == SessionState.Ready) return ResultStore.Open(live.Session.DatabasePath);

@@ -31,7 +31,7 @@ and stopping cleanly keeps the names (verified:
 TestTarget.Workloads methods). Live streaming stays reserved for heap snapshots,
 which need no rundown.
 
-## U7 - GUI/Core control contract (decided, not implemented)
+## U7 - CLOSED: GUI/Core control contract
 The Delphi GUI is a frontend beside the MCP server, not a viewer of its output:
 both sit on the same Core. The MCP server calls Core in-process (a library
 reference, no IPC); a VCL application cannot, so Core gets a second entry point.
@@ -88,7 +88,16 @@ The segment question resolved itself: results are cumulative, so a snapshot
 rewrites the result tables and a `segment` row records the refresh (schema v2).
 No segment id on the fact tables, and the GUI contract stays as it was.
 
-Nothing open here beyond the GUI itself.
+Extended 2026-08-26 with what a frontend needs *before* a session, which turned out
+to be the rest of the answer to "the GUI must not send anyone to a command prompt":
+`/prereqs` and `/prereqs/install` (the machine's tools, and installing the one that
+has a command - dsrouter), `/projects` and `/projects/candidates` (the Android
+applications a solution holds, and the namespaces and types their assemblies
+declare), `/builds` (build and install an app with the properties a session needs)
+and `/jobs/{id}` (state and streamed log of the two long-running ones). Anything
+that takes minutes is a job the caller polls, not a blocked request.
+
+Nothing open here.
 
 ## U9 - CoreCLR on Android
 The .NET 10 android workload on this machine already ships

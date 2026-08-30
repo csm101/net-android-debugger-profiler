@@ -21,12 +21,20 @@
 
     Properties:
       NapWeave        true to weave this build (default: false)
+      NapMode         tree (default) or trace: how the app records what it measures. The
+                      session reads it from the map and follows it.
       NapCallspec     which methods to weave (same grammar as the profiler's
                       callspec: all, N:Namespace, T:Type, M:Type:Method, '-' excludes).
                       Keep it narrow: instrumenting thousands of methods makes
                       startup unusably slow.
       NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file)
       NapMapPath      where the id map is written (default: $(OutDir)nap-weave.map)
+      NapAssemblies   names of referenced assemblies to weave as well as the app's own,
+                      semicolon separated (App.Core;App.GeoLocation). An app is more
+                      than its own assembly - the business logic usually lives in a
+                      library - and a callspec that reaches one instruments nothing
+                      unless it is named here. They are woven in the output folder, which
+                      is what the packaging picks up.
       NapExtraAssemblies  additional assemblies to weave (semicolon separated paths)
       NapWeaveArgs    extra arguments passed straight to nap-weave (see its
                       help for the option names, e.g. allocation tracking)
@@ -45,6 +53,14 @@
     <NapWeave Condition="'$(NapWeave)' == ''">false</NapWeave>
     <NapCallspec Condition="'$(NapCallspec)' == ''"></NapCallspec>
     <NapWeaveTool Condition="'$(NapWeaveTool)' == ''">$(MSBuildThisFileDirectory)tools\nap-weave.dll</NapWeaveTool>
+    <!--
+      How the woven app records: tree (a calling context tree kept in the app - the
+      cheapest, and what a session's automatic choice picks) or trace (an event per call,
+      which keeps the order of the calls and every single duration). A build-time weave
+      bakes this into the app's environment, so a session cannot change it afterwards:
+      the map records it and the session follows.
+    -->
+    <NapMode Condition="'$(NapMode)' == ''">tree</NapMode>
     <NapCollectorAssembly Condition="'$(NapCollectorAssembly)' == ''">$(MSBuildThisFileDirectory)tools\NetAndroidProfiler.Collector.dll</NapCollectorAssembly>
     <!-- NapMapPath defaults to $(OutDir)nap-weave.map, but OutDir is only known later:
          it is computed inside the target below. -->
@@ -66,7 +82,7 @@
       <_NapFilesDir>/data/user/0/$(ApplicationId)/files</_NapFilesDir>
     </PropertyGroup>
     <WriteLinesToFile File="$(_NapEnvFile)"
-                      Lines="NAP_PROFILER_OUT=$(_NapEventsDir);NAP_PROFILER_MARKER_DIR=$(_NapFilesDir)"
+                      Lines="NAP_PROFILER_OUT=$(_NapEventsDir);NAP_PROFILER_MARKER_DIR=$(_NapFilesDir);NAP_PROFILER_MODE=$(NapMode)"
                       Overwrite="true" WriteOnlyWhenDifferent="true" />
     <ItemGroup>
       <AndroidEnvironment Include="$(_NapEnvFile)" />
@@ -83,12 +99,40 @@
   </ItemGroup>
 
   <Target Name="NapValidateWeaving" Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true'">
+    <Error Condition="'$(NapMode)' != 'tree' and '$(NapMode)' != 'trace'"
+           Text="NapMode is '$(NapMode)': it must be tree (a call tree kept in the app) or trace (an event per call)." />
     <Error Condition="'$(NapCallspec)' == ''"
            Text="NapWeave is true but NapCallspec is empty. Pass -p:NapCallspec=&quot;T:My.App.Type&quot; (or N:My.Namespace). Weaving everything makes the app unusably slow." />
     <Error Condition="!Exists('$(NapWeaveTool)')"
            Text="nap-weave was not found at $(NapWeaveTool). Publish it (dotnet publish src/NetAndroidProfiler.Weave) or set NapWeaveTool." />
     <Error Condition="!Exists('$(NapCollectorAssembly)')"
            Text="The collector assembly was not found at $(NapCollectorAssembly). Set NapCollectorAssembly to NetAndroidProfiler.Collector.dll." />
+  </Target>
+
+  <!--
+    The libraries, second pass. The app's own assembly is woven in the intermediate output
+    before packaging; a referenced assembly is packaged from the copy in $(OutDir), so that
+    is the one to rewrite, once it is there. The map is appended to rather than replaced:
+    the session needs a single map holding the app and its libraries.
+  -->
+  <Target Name="NapWeaveReferencedAssemblies"
+          Condition="'$(NapWeave)' == 'true' and '$(AndroidApplication)' == 'true' and '$(NapAssemblies)' != ''"
+          DependsOnTargets="NapValidateWeaving"
+          AfterTargets="CopyFilesToOutputDirectory">
+    <PropertyGroup>
+      <NapMapPath Condition="'$(NapMapPath)' == ''">$(OutDir)nap-weave.map</NapMapPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <NapNamedAssembly Include="$(NapAssemblies)" />
+      <NapNamedAssemblyFile Include="@(NapNamedAssembly->'$(OutDir)%(Identity).dll')"
+                            Condition="Exists('$(OutDir)%(Identity).dll')" />
+      <NapReferenceDirs2 Include="@(ReferencePath->'%(RootDir)%(Directory)'->Distinct())" />
+    </ItemGroup>
+    <Warning Condition="'@(NapNamedAssemblyFile)' == ''"
+             Text="NapAssemblies names $(NapAssemblies), but none of them is in $(OutDir): nothing more was woven." />
+    <Exec Condition="'@(NapNamedAssemblyFile)' != ''"
+          Command="dotnet &quot;$(NapWeaveTool)&quot; @(NapNamedAssemblyFile->'--assembly &quot;%(Identity)&quot;', ' ') --callspec &quot;$(NapCallspec)&quot; --mode $(NapMode) --append $(NapWeaveArgs) --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs2->'--reference-dir &quot;%(Identity).&quot;', ' ')"
+          StandardOutputImportance="high" />
   </Target>
 
   <!--
@@ -115,7 +159,7 @@
       quote would escape it for the command processor: a trailing "." keeps the path
       valid and the quoting intact.
     -->
-    <Exec Command="dotnet &quot;$(NapWeaveTool)&quot; $(_NapAssemblyArgs) $(_NapExtraArgs) --callspec &quot;$(NapCallspec)&quot; $(NapWeaveArgs) --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs->'--reference-dir &quot;%(Identity).&quot;', ' ')"
+    <Exec Command="dotnet &quot;$(NapWeaveTool)&quot; $(_NapAssemblyArgs) $(_NapExtraArgs) --callspec &quot;$(NapCallspec)&quot; --mode $(NapMode) $(NapWeaveArgs) --map &quot;$(NapMapPath)&quot; --collector-out &quot;$(OutDir).&quot; @(NapReferenceDirs->'--reference-dir &quot;%(Identity).&quot;', ' ')"
           StandardOutputImportance="high" />
     <ItemGroup>
       <FileWrites Include="$(NapMapPath)" />

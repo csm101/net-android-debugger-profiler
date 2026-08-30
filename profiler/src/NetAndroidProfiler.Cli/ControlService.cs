@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Devices;
+using NetAndroidProfiler.Core.Projects;
 using NetAndroidProfiler.Core.Sessions;
 
 namespace NetAndroidProfiler.Cli;
@@ -22,6 +23,7 @@ public sealed class ControlService : IAsyncDisposable
 {
     private readonly HttpListener _listener = new();
     private readonly SessionRegistry _registry;
+    private readonly JobRegistry _jobs = new();
     private readonly CancellationTokenSource _stopping = new();
     private Task? _loop;
 
@@ -126,6 +128,63 @@ public sealed class ControlService : IAsyncDisposable
                 return (200, new CheckResponse(prereq, prereq.Check(mode)));
             }
 
+            // ---------------------------------------------------------- the machine
+
+            case ["prereqs"] when method == "GET":
+                return (200, new PrereqResponse(ToolLocator.Prerequisites()));
+
+            case ["prereqs", "install"] when method == "POST":
+            {
+                var request = await ReadBodyAsync<InstallToolRequest>(ctx).ConfigureAwait(false)
+                    ?? throw new ProfilerException("Which tool to install is required.");
+                string tool = Required(request.Tool, "tool");
+                // Refuse an unknown tool here rather than inside the job: a caller that got
+                // the name wrong should see a 400, not a job that fails a second later.
+                var known = ToolLocator.Prerequisites()
+                    .FirstOrDefault(t => t.Name.Equals(tool, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ProfilerException($"'{tool}' is not one of the tools this profiler installs.");
+                if (known.InstallCommand is null)
+                    throw new ProfilerException($"{known.Name} cannot be installed automatically. {known.Fix}");
+                var job = _jobs.Start("install", (log, token) => ToolLocator.InstallAsync(known.Name, log, token));
+                return (201, Describe(job, 0));
+            }
+
+            // ---------------------------------------------------------- the sources
+
+            case ["projects"] when method == "GET":
+                return (200, AppProjectFinder
+                    .Find(Required(query["path"], "path"), query["configuration"] ?? "Debug")
+                    .ToList());
+
+            case ["projects", "candidates"] when method == "GET":
+            {
+                string outputDir = Required(query["outputDir"], "outputDir");
+                var assemblies = (query["assemblies"] ?? "")
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (assemblies.Length == 0) throw new ProfilerException("Query parameter 'assemblies' is required.");
+                return (200, AppProjectFinder.Candidates(outputDir, assemblies).ToList());
+            }
+
+            case ["builds"] when method == "POST":
+            {
+                var request = await ReadBodyAsync<BuildRequest>(ctx).ConfigureAwait(false)
+                    ?? throw new ProfilerException("A build request body is required.");
+                var build = request.ToRequest();
+                AppBuilder.ArgumentsFor(build);          // fail now, with a 400, not inside the job
+                var job = _jobs.Start("build", (log, token) => AppBuilder.RunAsync(build, log, token));
+                return (201, Describe(job, 0));
+            }
+
+            case ["jobs", var id] when method == "GET":
+                return (200, Describe(JobOrThrow(id), int.TryParse(query["from"], out int from) ? from : 0));
+
+            case ["jobs", var id, "cancel"] when method == "POST":
+            {
+                var job = JobOrThrow(id);
+                job.Cancel();
+                return (200, Describe(job, 0));
+            }
+
             case ["sessions"] when method == "GET":
                 return (200, ProfilerSession.ListSessions(SessionsRoot)
                     .Select(s => new SessionListItem(s.id, s.ready))
@@ -177,6 +236,24 @@ public sealed class ControlService : IAsyncDisposable
                 return (200, new SnapshotResponse(segment, live.Session.DatabasePath, Describe(live)));
             }
 
+            // Keeping a Get Results: the copy is taken by the session that owns the
+            // database, but listing them is a question about a directory, which is why an
+            // old session answers it too.
+            case ["sessions", var id, "archive"] when method == "POST":
+            {
+                var request = await ReadBodyAsync<ArchiveRequest>(ctx).ConfigureAwait(false);
+                var live = LiveOrThrow(id);
+                return (201, await live.Session.ArchiveAsync(request?.Name, ct).ConfigureAwait(false));
+            }
+
+            case ["sessions", var id, "archives"] when method == "GET":
+            {
+                string directory = Path.Combine(SessionsRoot, id);
+                if (!System.IO.Directory.Exists(directory))
+                    throw new ProfilerException($"No session '{id}' under {SessionsRoot}.");
+                return (200, ProfilerSession.ListArchives(directory).ToList());
+            }
+
             case ["sessions", var id, "clear"] when method == "POST":
             {
                 var live = LiveOrThrow(id);
@@ -187,6 +264,15 @@ public sealed class ControlService : IAsyncDisposable
             default:
                 return (404, new ErrorResponse($"No route for {method} {ctx.Request.Url?.AbsolutePath}."));
         }
+    }
+
+    private JobRegistry.Job JobOrThrow(string id) =>
+        _jobs.Find(id) ?? throw new ProfilerException($"Job '{id}' was not started by this service.");
+
+    private static JobResponse Describe(JobRegistry.Job job, int from)
+    {
+        var (first, total, lines) = job.LogFrom(from);
+        return new JobResponse(job.Id, job.Kind, job.State, job.ExitCode, job.Error, first, total, lines);
     }
 
     private SessionRegistry.LiveSession LiveOrThrow(string id) =>
@@ -236,6 +322,7 @@ public sealed class ControlService : IAsyncDisposable
     {
         try { _listener.Stop(); } catch { }
         try { _listener.Close(); } catch { }
+        _jobs.Dispose();
         if (_loop is not null) { try { await _loop.ConfigureAwait(false); } catch { } }
         await _registry.DisposeAsync().ConfigureAwait(false);
         _stopping.Dispose();
@@ -248,6 +335,12 @@ public sealed record ErrorResponse(string Error);
 public sealed record SessionListItem(string Id, bool Ready);
 public sealed record SnapshotResponse(int Segment, string DatabasePath, SessionResponse Session);
 public sealed record CheckResponse(AppPrerequisites App, IReadOnlyList<PrerequisiteProblem> Problems);
+/// <summary>The external tools this machine offers, so a frontend can say what is missing before a session fails.</summary>
+public sealed record PrereqResponse(IReadOnlyList<ToolStatus> Tools);
+/// <summary>A background job (a build, a tool install) with the slice of its log the caller asked for.</summary>
+public sealed record JobResponse(
+    string Id, string Kind, string State, int? ExitCode, string? Error,
+    int LogFrom, int LogTotal, IReadOnlyList<string> Log);
 public sealed record SessionResponse(
     string Id, string State, string Directory, string DatabasePath,
     string? Error, IReadOnlyList<string> Warnings, IReadOnlyList<string> Log);
@@ -283,6 +376,47 @@ public sealed class StartRequest
         Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb, SymbolsDir);
 }
 
+/// <summary>Body of POST /sessions/{id}/archive: what to call the results being kept.</summary>
+public sealed class ArchiveRequest
+{
+    public string? Name { get; set; }
+}
+
+/// <summary>Body of POST /prereqs/install: which of the known tools to install.</summary>
+public sealed class InstallToolRequest
+{
+    public string Tool { get; set; } = "";
+}
+
+/// <summary>
+/// Body of POST /builds: build and install an app project with the properties a
+/// profiling session needs. The profiler never rebuilds on its own - this runs only when
+/// a frontend asks.
+/// </summary>
+public sealed class BuildRequest
+{
+    public string ProjectPath { get; set; } = "";
+    public string Configuration { get; set; } = "Debug";
+    public string? DeviceSerial { get; set; }
+    public bool EnableDiagnostics { get; set; } = true;
+    public bool FastDeployment { get; set; } = true;
+    public bool Install { get; set; } = true;
+    /// <summary>Clear the app's fast-deployment directory first: for an app changing deployment mode.</summary>
+    public bool ClearDeployedAssemblies { get; set; }
+    /// <summary>The app's package, needed only to clear its deployed assemblies.</summary>
+    public string? PackageName { get; set; }
+    /// <summary>Weave the app while it is built: for an app that keeps its assemblies inside the APK.</summary>
+    public bool Weave { get; set; }
+    /// <summary>Which methods that weave covers; required with <see cref="Weave"/>.</summary>
+    public string? Callspec { get; set; }
+    /// <summary>Referenced assemblies to weave as well as the app own assembly, by name.</summary>
+    public List<string>? WeaveAssemblies { get; set; }
+
+    public AppBuildRequest ToRequest() =>
+        new(ProjectPath, Configuration, DeviceSerial, EnableDiagnostics, FastDeployment, Install,
+            ClearDeployedAssemblies, PackageName, Weave, Callspec, null, WeaveAssemblies);
+}
+
 /// <summary>
 /// Everything the control service puts on the wire, in one place. A response type that is
 /// missing here fails loudly at the first request rather than silently in a published
@@ -302,6 +436,17 @@ public sealed class StartRequest
 [JsonSerializable(typeof(SessionResponse))]
 [JsonSerializable(typeof(StartRequest))]
 [JsonSerializable(typeof(SessionCounters))]
+[JsonSerializable(typeof(PrereqResponse))]
+[JsonSerializable(typeof(InstallToolRequest))]
+[JsonSerializable(typeof(BuildRequest))]
+[JsonSerializable(typeof(JobResponse))]
+[JsonSerializable(typeof(AppProjectInfo))]
+[JsonSerializable(typeof(List<AppProjectInfo>))]
+[JsonSerializable(typeof(ArchiveRequest))]
+[JsonSerializable(typeof(ArchivedResult))]
+[JsonSerializable(typeof(List<ArchivedResult>))]
+[JsonSerializable(typeof(CallspecCandidate))]
+[JsonSerializable(typeof(List<CallspecCandidate>))]
 [JsonSerializable(typeof(IReadOnlyList<DeviceInfo>))]
 [JsonSerializable(typeof(List<DeviceInfo>))]
 internal sealed partial class ControlJsonContext : JsonSerializerContext;

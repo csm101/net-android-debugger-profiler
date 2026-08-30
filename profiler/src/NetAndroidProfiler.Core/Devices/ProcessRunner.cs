@@ -70,6 +70,64 @@ public static class ProcessRunner
         return new ProcessResult(p.ExitCode, await stdout.ConfigureAwait(false), await stderr.ConfigureAwait(false));
     }
 
+    /// <summary>
+    /// Runs a tool whose output is worth watching while it works - a build takes minutes -
+    /// handing every line to <paramref name="onLine"/> as it arrives, and answers the exit
+    /// code. A non-zero code is not an exception here: the output is the diagnosis.
+    /// </summary>
+    public static async Task<int> RunStreamingAsync(
+        string fileName, IReadOnlyList<string> args, Action<string> onLine, CancellationToken ct, TimeSpan? timeout = null)
+    {
+        var psi = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,          // see RunAsync: a child must never inherit our stdin
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        using var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var done = new TaskCompletionSource();
+        int pending = 2;
+        void Line(object _, DataReceivedEventArgs e)
+        {
+            if (e.Data is null)
+            {
+                if (Interlocked.Decrement(ref pending) == 0) done.TrySetResult();
+                return;
+            }
+            try { onLine(e.Data); } catch { /* a frontend's logging must not kill the build */ }
+        }
+        p.OutputDataReceived += Line;
+        p.ErrorDataReceived += Line;
+
+        try { p.Start(); }
+        catch (Exception e) { throw new ToolException($"Cannot start '{fileName}': {e.Message}", e); }
+        p.StandardInput.Close();
+        p.BeginOutputReadLine();
+        p.BeginErrorReadLine();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (timeout is not null) cts.CancelAfter(timeout.Value);
+        try
+        {
+            await p.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            await done.Task.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        }
+        catch (TimeoutException) { /* the pipes did not close; the exit code is still the answer */ }
+        catch (OperationCanceledException)
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
+            if (ct.IsCancellationRequested) throw;
+            throw new ToolException($"'{fileName} {string.Join(' ', args)}' timed out after {timeout}");
+        }
+        return p.ExitCode;
+    }
+
     /// <summary>Run and throw <see cref="ToolException"/> on a non-zero exit code.</summary>
     public static async Task<ProcessResult> RunCheckedAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct, TimeSpan? timeout = null, byte[]? stdin = null)
     {

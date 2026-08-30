@@ -136,6 +136,14 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Automated in CI: today it is built and run by hand (see gui/tests/build-tests.cmd, then run StoreTests.exe with a session database)
 
 ## H4. GUI application (gui/tests/smoke.ps1; starts the real window, no device)
+- [x] `--dialog=crash` produces a crash report whose **first** stack frame is the raising
+  line, with unit and line number (checked by hand on 2026-08-28: `uMainForm.TMainForm.ShowPendingDialog
+  (Line 1724, "uMainForm.pas")`). Deliberately outside the smoke loop, which treats any
+  error log as a failure - it is the one case where the log must exist.
+- [ ] A panel that is closed or on a background tab still receives what is written to it
+  (the Log and the Summary buffer it): found by hand on 2026-08-26, when it was taking the
+  application down through `--export`. The harness starts the window with the default
+  layout, so it never had those panels hidden - worth a case that closes them first.
 Every panel and dialog is opened against real session databases of each mode: the
 crashes worth catching - a panel touching a control before it exists, a query that no
 longer matches the schema - all happen while the window is being built.
@@ -144,6 +152,65 @@ longer matches the schema - all happen while the window is being built.
 - [x] The Settings and the Layouts dialog open on each of them
 - [x] `--export=<file>` writes a non-empty csv and xlsx for each of them
 - [ ] Automated in CI: today it is run by hand, like the data layer checks
+
+## H7. Sources and machine (Fast/AppProjectFinderTests, Fast/AppBuilderTests, no device)
+What a frontend fills a session in from, read from the project files rather than typed.
+- [x] A solution offers its Android applications and not its libraries - `A_solution_offers_the_applications_and_not_the_libraries`
+- [x] The package comes from the manifest when the project does not declare it - `The_package_can_come_from_the_manifest_when_the_project_does_not_declare_it`
+- [x] The build output follows the configuration asked for - `The_build_output_follows_the_configuration_that_was_asked_for`
+- [x] The assemblies to weave include the referenced projects, transitively - `The_assemblies_to_weave_include_the_referenced_projects`
+- [x] EnableDiagnostics / EmbedAssembliesIntoApk are reported as declared, absent means unknown - `The_properties_a_profiling_build_needs_are_reported_as_declared`
+- [x] A folder walk ignores the copies under bin and obj - `Walking_a_folder_ignores_the_copies_under_bin_and_obj`
+- [x] A folder with nothing profilable is empty, not an error; a stray file is an error naming the reason - `A_path_that_holds_nothing_profilable_answers_an_empty_list`, `A_path_that_is_neither_solution_nor_project_says_so`
+- [x] Callspec candidates come from the built assemblies; an unbuilt app offers none - `Callspec_candidates_come_from_the_assemblies_that_were_built`, `An_app_that_was_never_built_offers_no_candidates`
+- [x] The build command carries exactly the properties a session needs, and nothing that was not asked for - `The_default_build_installs_a_diagnostics_enabled_fast_deployment_debug_build`, `Nothing_is_added_that_was_not_asked_for`
+- [x] A project that does not exist is refused before msbuild starts - `A_project_that_does_not_exist_is_refused_before_msbuild_is_started`
+- [x] Keeping the assemblies in the APK is stated explicitly, not left to the project's default - `Keeping_the_assemblies_in_the_apk_is_said_explicitly`
+- [x] Weaving during the build passes the targets file and escapes the commas of the callspec; without a callspec it is refused; a build that does not weave says nothing about weaving - `Weaving_during_the_build_passes_the_targets_and_the_callspec`, `Weaving_during_the_build_without_a_callspec_is_refused`, `A_build_that_does_not_weave_says_nothing_about_weaving`
+- [ ] The Setup dialog's own validation rules (which combinations it refuses): checked by hand on 2026-08-26 - a remembered runtime-provider choice on the net9 the reference application project showed the red line and disabled Start. No harness drives DevExpress controls, which is why this is not automated.
+- [x] Clearing the app's deployed assemblies is an adb step, never an msbuild property - `Clearing_the_deployed_assemblies_is_an_adb_step_and_never_an_msbuild_property`
+- [ ] A build actually run end to end, and the clearing of files/.__override__ with it (needs the android workload, a device and minutes): covered by hand through the GUI's Build & install
+
+## Known flake
+- `Fast/WeaverTests.Async_state_machine_records_every_resumption` failed once on
+  2026-08-26 in a full fast-set run (`Assert.Equal(2, body.Calls)`) and passed on two
+  immediate re-runs and inside the full suite. The tests of that collection share the
+  collector's single output directory, which is the first place to look: an analysis that
+  reads a file left by a neighbour counts calls that are not its own. Not yet reproduced
+  on purpose, so not yet fixed - do not "fix" it by loosening the assertion.
+
+## H10. What a build-time weave records (Fast/WeaveMapModeTests, no device)
+A build-time weave bakes the recording mode into the app; the session cannot change it, so
+the map declares it and the session follows. Found in the field the same day: a session
+asked for the in-app call tree, the app had been built to write events, and it waited for
+files nobody would write - with nothing said.
+- [x] The map records tree or trace without disturbing the methods - `The_map_records_the_mode_the_app_was_built_with`
+- [x] A map from before the mode existed reads as events, which is what those apps do - `A_map_from_before_the_mode_was_recorded_reads_as_events`
+- [x] An unreadable header still yields the safe answer - `An_unreadable_header_still_yields_the_safe_answer`
+- [ ] The session following a map that disagrees with the engine it was asked for (device): to check on the next the reference application run
+
+## H9. The build-time weaver's backup (Fast/WeaveToolBackupTests, no device)
+Found in the field on the reference application, 2026-08-27: the app crashed at startup with a
+TypeLoadException for a class that had been deleted weeks earlier. nap-weave took its
+`.naporig` backup as the input whenever one existed, so every build after the first threw
+away the compilation that had just been produced and re-wove code from days before.
+- [x] A second build is woven, not replaced by the first build's backup - `The_second_build_is_woven_and_not_replaced_by_the_first_ones_backup`
+- [x] Weaving the same build twice does not instrument it twice (the invariant the backup exists for) - `Weaving_the_same_build_twice_does_not_instrument_it_twice`
+- [x] An already woven assembly whose backup is gone is refused, not woven again - `An_already_woven_assembly_without_its_backup_is_refused_rather_than_woven_again`
+- Verified to catch the defect: with the old logic two of the three fail.
+
+## H8. Keeping results (Fast/ArchiveTests, no device)
+An archive is a named copy of the result database, taken while the session goes on.
+- [x] An archive is a result database that opens on its own, with its segment history - `An_archive_is_a_result_database_that_opens_on_its_own`
+- [x] Archives are listed newest first, with no session running - `Archives_are_listed_newest_first_without_a_running_session`
+- [x] The same name twice keeps both - `The_same_name_twice_keeps_both_archives`
+- [x] A name that is not a file name still produces one, inside the session directory - `A_name_that_is_not_a_file_name_still_produces_one_inside_the_session`
+- [x] No name given: still named and dated - `An_archive_without_a_name_is_still_named_and_dated`
+- [x] A lost sidecar costs the pretty name and nothing else - `An_archive_whose_sidecar_was_lost_is_still_listed_and_openable`
+- [x] A session with no results yet refuses instead of writing an empty archive - `A_session_with_no_results_yet_says_so_instead_of_writing_an_empty_archive`
+- [x] An archive is read back through the registry by its path, which is how a frontend opens one - `An_archive_is_read_back_through_the_registry_by_its_path`
+- [x] The service answers a session's archives from its directory, running or not - `The_archives_of_a_session_are_answered_from_its_directory_even_when_nothing_is_running`
+- [x] Archiving from a live weaver session on a device: the archive is written, opens as an instrumenting session, is listed from disk and keeps its name - `ControlTests`
 
 ## H5. GUI control path (gui/tests/ControlTests.dpr, Delphi; needs a device)
 Drives a real session through the client the GUI uses: nap.exe serve, device list,
@@ -154,6 +221,10 @@ the GUI's own data layer.
 - [x] Snapshot, pause, resume and clear all answer on the weaver engine - `ControlTests`
 - [x] A session cleared and stopped before new events arrive ends Ready with an empty
   result and a warning, not Failed - `ControlTests`
+- [x] The Setup dialog's inputs, which need no device: the prerequisites are reported
+  with dsrouter's install command, TestTarget is found from its folder with its package
+  and both assemblies, and the callspec the sessions use is among the candidates -
+  `RunSetupInputs`
 - [ ] Automated in CI: it needs a device, like the .NET device suite
 
 ## H2. Control service (Fast/ControlServiceTests, no device)
@@ -169,6 +240,13 @@ the GUI's own data layer.
 - [x] A session driven end to end over HTTP: devices, POST /sessions, counters while it
   collects, stop, and the database the service reports opened and read -
   `A_session_runs_from_start_to_database_over_http` (device)
+- [x] /prereqs names every tool with its purpose, and dsrouter carries the command that installs it - `Prereqs_name_every_tool_and_how_to_get_the_ones_that_are_missing`
+- [x] /projects lists the applications of a solution with package, assembly and output dir - `Projects_lists_the_android_applications_of_a_solution`
+- [x] A path the finder cannot use, or no path at all, is a 400 - `A_path_the_finder_cannot_use_comes_back_as_400`
+- [x] A build of a project that is not there is refused without starting a job - `A_build_of_a_project_that_is_not_there_is_refused_without_starting_a_job`
+- [x] A tool the profiler does not install, or one with no install command, is refused rather than run - `A_tool_the_profiler_does_not_install_is_refused_rather_than_run`
+- [x] A job this service did not start is named in the error - `A_job_this_service_did_not_start_is_named_in_the_error`
+- [x] `nap serve` prints its port and ends itself when the process that owns it exits - `Serve_ends_itself_when_the_process_that_owns_it_exits`
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
 - [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`

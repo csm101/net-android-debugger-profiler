@@ -157,5 +157,104 @@ public class ControlServiceTests : IAsyncLifetime
         Assert.Contains("411", statusLine);
     }
 
+    // ------------------------------------------------------- the machine and the sources
+
+    [Fact]
+    public async Task Prereqs_name_every_tool_and_how_to_get_the_ones_that_are_missing()
+    {
+        using var doc = JsonDocument.Parse(await _client.GetStringAsync("prereqs"));
+        var tools = doc.RootElement.GetProperty("tools").EnumerateArray().ToList();
+
+        Assert.Contains(tools, t => t.GetProperty("name").GetString() == "adb");
+        var dsrouter = tools.Single(t => t.GetProperty("name").GetString() == "dotnet-dsrouter");
+        // The one prerequisite nobody remembers: the answer must carry the command itself,
+        // so a frontend can offer to run it instead of printing a note.
+        Assert.Equal("dotnet tool install -g dotnet-dsrouter", dsrouter.GetProperty("installCommand").GetString());
+        Assert.True(dsrouter.GetProperty("required").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(dsrouter.GetProperty("purpose").GetString()));
+    }
+
+    [Fact]
+    public async Task Projects_lists_the_android_applications_of_a_solution()
+    {
+        string folder = Path.Combine(_root, "src", "Acme.Droid");
+        Directory.CreateDirectory(folder);
+        string project = Path.Combine(folder, "Acme.Droid.csproj");
+        await File.WriteAllTextAsync(project, """
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net9.0-android35.0</TargetFramework>
+                <ApplicationId>com.acme.app</ApplicationId>
+              </PropertyGroup>
+            </Project>
+            """);
+
+        using var doc = JsonDocument.Parse(await _client.GetStringAsync("projects?path=" + Uri.EscapeDataString(folder)));
+        var first = doc.RootElement.EnumerateArray().Single();
+
+        Assert.Equal("com.acme.app", first.GetProperty("applicationId").GetString());
+        Assert.Equal("Acme.Droid", first.GetProperty("assemblyName").GetString());
+        Assert.Contains("net9.0-android35.0", first.GetProperty("outputDir").GetString());
+    }
+
+    [Fact]
+    public async Task A_path_the_finder_cannot_use_comes_back_as_400()
+    {
+        var response = await _client.GetAsync("projects?path=" + Uri.EscapeDataString(Path.Combine(_root, "nowhere")));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("No such solution", await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("projects")).StatusCode);   // no path at all
+    }
+
+    [Fact]
+    public async Task A_build_of_a_project_that_is_not_there_is_refused_without_starting_a_job()
+    {
+        var response = await _client.PostAsync("builds", Body($$"""
+            { "projectPath": {{JsonSerializer.Serialize(Path.Combine(_root, "Nope.csproj"))}} }
+            """));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("No such project", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_tool_the_profiler_does_not_install_is_refused_rather_than_run()
+    {
+        var response = await _client.PostAsync("prereqs/install", Body("""{ "tool": "rm -rf /" }"""));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("not one of the tools", await response.Content.ReadAsStringAsync());
+
+        // adb is a real prerequisite, but there is no command that installs it.
+        var adb = await _client.PostAsync("prereqs/install", Body("""{ "tool": "adb" }"""));
+        Assert.Equal(HttpStatusCode.BadRequest, adb.StatusCode);
+        Assert.Contains("cannot be installed automatically", await adb.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task The_archives_of_a_session_are_answered_from_its_directory_even_when_nothing_is_running()
+    {
+        // Archives outlive the session that took them, so listing them must not need one.
+        string directory = Path.Combine(_root, "20260101-000000-acme-instrumenting", "archives");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "the customers screen.db"), "not really a database");
+
+        using var doc = JsonDocument.Parse(
+            await _client.GetStringAsync("sessions/20260101-000000-acme-instrumenting/archives"));
+
+        var only = doc.RootElement.EnumerateArray().Single();
+        Assert.Equal("the customers screen", only.GetProperty("name").GetString());
+
+        var unknown = await _client.GetAsync("sessions/no-such-session/archives");
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_job_this_service_did_not_start_is_named_in_the_error()
+    {
+        var response = await _client.GetAsync("jobs/build-99");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("build-99", await response.Content.ReadAsStringAsync());
+    }
+
     private static StringContent Body(string json) => new(json, Encoding.UTF8, "application/json");
 }

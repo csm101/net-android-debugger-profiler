@@ -158,13 +158,44 @@ public sealed class CecilWeaver
     }
 
     /// <summary>Write the id map as a tab-separated sidecar (id, module, token, fullName).</summary>
-    public void WriteMap(string path)
+    /// <param name="path">Where to write the map.</param>
+    /// <param name="mode">
+    /// How the app this map describes records: "tree" (a calling context tree kept in the
+    /// app) or "trace" (an event per call). A build-time weave bakes that choice into the
+    /// app, so the map has to carry it - otherwise a session asks for one while the app
+    /// writes the other, and the results stay empty with nobody saying why.
+    /// </param>
+    /// <param name="carried">
+    /// Entries from an earlier pass to keep, written before this one's: a build weaves the
+    /// app and then its libraries, and the session needs one map holding both.
+    /// </param>
+    public void WriteMap(string path, string mode = "trace", IReadOnlyList<WovenMethod>? carried = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         using var w = new StreamWriter(path);
-        w.WriteLine("#napw-map\t1");
+        w.WriteLine($"#napw-map\t1\tmode={mode}");
+        if (carried is not null)
+            foreach (var m in carried)
+                w.WriteLine($"{m.Id}\t{m.Module}\t0x{m.Token:X8}\t{m.FullName}");
         foreach (var m in _map)
             w.WriteLine($"{m.Id}\t{m.Module}\t0x{m.Token:X8}\t{m.FullName}");
+    }
+
+    /// <summary>
+    /// The recording mode a map declares: "tree" or "trace". A map written before the mode
+    /// was recorded says nothing, and those apps record events - which is what the collector
+    /// does when its environment does not ask for a tree.
+    /// </summary>
+    public static string ReadMapMode(string path)
+    {
+        foreach (var line in File.ReadLines(path))
+        {
+            if (!line.StartsWith('#')) break;
+            foreach (var part in line.Split('\t'))
+                if (part.StartsWith("mode=", StringComparison.OrdinalIgnoreCase))
+                    return part["mode=".Length..].Trim();
+        }
+        return "trace";
     }
 
     /// <summary>Read a sidecar written by <see cref="WriteMap"/>.</summary>

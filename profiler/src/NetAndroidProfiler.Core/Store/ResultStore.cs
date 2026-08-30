@@ -103,6 +103,26 @@ public sealed class ResultStore : IDisposable
         return new ResultStore(conn);
     }
 
+    /// <summary>
+    /// A consistent copy of this database at <paramref name="path"/>, taken through
+    /// SQLite's own backup so it is safe while a session keeps writing into the original.
+    /// The copy is a complete result database - schema, results and segment history - so
+    /// it opens in any frontend exactly like the session it came from, long after that
+    /// session has ended.
+    /// </summary>
+    public void BackupTo(string path)
+    {
+        string? folder = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (folder is not null) Directory.CreateDirectory(folder);
+        using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = path,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+        }.ToString());
+        destination.Open();
+        _conn.BackupDatabase(destination);
+    }
+
     public void Dispose() => _conn.Dispose();
 
     // ------------------------------------------------------------------ write

@@ -76,6 +76,22 @@ once per item produced, plus the call that ends the sequence. All of these are w
 by default; `weaveAsyncBodies=false` (nap-weave: `--no-async-bodies`) keeps the
 stubs only.
 
+Keeping partial results while the app runs (AQTime's Get Results / Clear Results):
+
+```
+profile_start ... mode=instrumenting callspec="T:Acme.Sync.SyncService"
+profile_clear                          # start measuring from here
+   ... exercise the feature in the app ...
+profile_archive name="the customers screen"    # keep it, and go on profiling
+profile_clear                          # next interval
+   ...
+profile_archives                       # everything kept, newest first
+profile_hotspots sessionId=<path of an archive>   # read one back, any time later
+```
+
+`profile_snapshot` refreshes the results in place; `profile_archive` refreshes them **and**
+keeps a named copy that outlives the session. Weaver engines only, the app never stops.
+
 Long sessions: a trace grows at the rate the app produces events (a real app
 samples at roughly 1.5 MB/s), so collection stops at `maxTraceMb` (default 512)
 and the session reports a warning. The part collected before the limit is a

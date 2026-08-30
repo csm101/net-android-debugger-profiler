@@ -4,6 +4,7 @@ using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using NetAndroidProfiler.Core.Apps;
 using NetAndroidProfiler.Core.Devices;
+using NetAndroidProfiler.Core.Projects;
 using NetAndroidProfiler.Core.Sessions;
 
 namespace NetAndroidProfiler.Mcp;
@@ -47,6 +48,31 @@ public sealed class ProfilerTools(SessionHost host)
             var problems = p.Check(mode);
             sb.AppendLine($"{mode}: {(problems.Any(x => x.IsBlocking) ? "NOT AVAILABLE" : problems.Count > 0 ? "ok with warnings" : "ok")}");
             foreach (var pr in problems) sb.AppendLine($"  - {(pr.IsBlocking ? "blocking" : "warning")}: {pr.Message}");
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    [McpServerTool(Name = "list_app_projects", ReadOnly = true), Description(
+        "Reads a solution, a .csproj or a folder of sources and lists the .NET for Android application projects in it, " +
+        "with the package they install, the build output holding their pdbs (pass it as symbolsDir), and the assemblies " +
+        "to weave. Use it to turn 'here are the sources' into the arguments profile_run needs.")]
+    public string ListAppProjects(
+        [Description("Solution (.sln/.slnx), project (.csproj) or folder to search")] string path,
+        [Description("Build configuration whose output directory is reported")] string configuration = "Debug")
+    {
+        var projects = AppProjectFinder.Find(path, configuration);
+        if (projects.Count == 0) return $"No .NET for Android application project under {path}.";
+        var sb = new StringBuilder();
+        foreach (var p in projects)
+        {
+            sb.AppendLine($"{p.Name}  package={p.ApplicationId ?? "(not declared)"}  tfm={p.TargetFramework}");
+            sb.AppendLine($"  project      {p.ProjectPath}");
+            sb.AppendLine($"  symbolsDir   {p.OutputDir}{(p.OutputExists ? "" : "   (not built yet)")}");
+            sb.AppendLine($"  assemblies   {string.Join(", ", p.Assemblies)}");
+            if (p.EnableDiagnostics != true)
+                sb.AppendLine("  warning      EnableDiagnostics is not in the project file: build with -p:EnableDiagnostics=true (docs/APP_SETUP.md).");
+            if (p.EmbedAssembliesIntoApk == true)
+                sb.AppendLine("  warning      EmbedAssembliesIntoApk=true: the weaver engines need fast deployment, or a build-time weave.");
         }
         return sb.ToString().TrimEnd();
     }
@@ -174,6 +200,40 @@ public sealed class ProfilerTools(SessionHost host)
 
     private SessionRegistry.LiveSession LiveOrThrow(string? sessionId) =>
         host.Live(sessionId) ?? throw new McpException("No running session in this server. See profile_sessions for finished ones.");
+
+    [McpServerTool(Name = "profile_archive"), Description(
+        "Keeps the results as they are now, under a name, and goes on profiling: the AQTime habit of collecting a " +
+        "Get Results and never losing it. On a running weaver session this refreshes the results first. An archive is " +
+        "an ordinary result database: profile_archives lists them and every read-only tool opens one through sessionId.")]
+    public async Task<string> ProfileArchive(
+        [Description("What to call it; a dated default is used when omitted")] string? name = null,
+        [Description("Session id (default: current)")] string? sessionId = null,
+        CancellationToken ct = default)
+    {
+        var live = LiveOrThrow(sessionId);
+        try
+        {
+            var archive = await live.Session.ArchiveAsync(name, ct);
+            return $"Archived '{archive.Name}' ({archive.CreatedUtc.ToLocalTime():HH:mm:ss}). The session keeps collecting."
+                + Environment.NewLine + archive.Path;
+        }
+        catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
+    }
+
+    [McpServerTool(Name = "profile_archives", ReadOnly = true), Description(
+        "The archived results of a session, newest first. They outlive the session: open one by passing its path as sessionId.")]
+    public string ProfileArchives([Description("Session id (default: current/last)")] string? sessionId = null)
+    {
+        var archives = ProfilerSession.ListArchives(Path.Combine(host.SessionsRoot, host.ResolveId(sessionId)));
+        if (archives.Count == 0) return "No archived results for this session.";
+        var sb = new StringBuilder();
+        foreach (var a in archives)
+        {
+            sb.AppendLine($"{a.CreatedUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss}  {a.Name}");
+            sb.AppendLine("  " + a.Path);
+        }
+        return sb.ToString().TrimEnd();
+    }
 
     [McpServerTool(Name = "profile_status", ReadOnly = true), Description("State of a session started in this server (default: current) with the last log lines.")]
     public string ProfileStatus([Description("Session id (default: current)")] string? sessionId = null, [Description("Log lines to include")] int logLines = 15)
