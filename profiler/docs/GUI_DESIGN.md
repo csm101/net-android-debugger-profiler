@@ -25,6 +25,7 @@ Established from the official documentation (SmartBear, August 2026):
 | Monitor panel | live counters while the app runs | live session state: events/s, trace size, state |
 | Result views (`.qtview`) | saved column layout + filter per profiler, as a preset question | saved grid layouts (cxGrid persists its own) |
 | Run > **Get Results** | produce results from what is collected so far, keep running | `snapshot` |
+| Left tree of saved results (project > session > each Get Results) | every result set collected over time, reopenable | `archive`: a named copy of the result database per Get Results worth keeping, listed in the Explorer under its session |
 | Run > **Clear Results** | throw away what was collected, keep running | `clear` |
 | Actions: **Enable / Disable Profiling** | toggle collection for all threads, optionally bound to entering/leaving a routine | `pause` / `resume` (routine-bound triggers: later, weaver only) |
 
@@ -254,12 +255,27 @@ writing to files that had been deleted under it.
 - `src/uControlClient.pas` - the control-service client: it starts `nap.exe serve`,
   reads the port from the JSON line the service prints, owns the process and shuts
   it down with the GUI.
-- `src/uSetupDialog.pas` - the Setup screen: device list, package, mode, engine,
-  callspec, duration, build output for the symbols, and the prerequisite check
-  before anything starts.
+- `src/uSetupDialog.pas` - the Setup screen. It starts from the sources: point it
+  at a solution, a project or a folder and it lists the Android applications it
+  holds, then fills in the package, the build output and the assemblies from the
+  project file, and offers the app's own namespaces and types as the callspec.
+  **Build & install** runs the build a session needs (`EnableDiagnostics`, fast
+  deployment, `-t:Install` on the selected device) and shows msbuild's output while
+  it runs, so preparing an app never leaves the window. **Check app** then answers
+  for the APK that is actually installed.
+- `src/uJobDialog.pas` - the window a background job of the service reports through
+  (a build, a tool install): it polls for the log lines it has not seen yet rather
+  than waiting for the exit code.
 - The live toolbar (New session / Snapshot / Pause / Stop) with a log pane, and a
   Source panel: SynEdit with C# highlighting, the method's line range washed, fed
   by the source locations the analysis recorded in the database.
+
+- **Archive** on the toolbar, beside Snapshot: it refreshes the results and keeps a named
+  copy of them, then goes on profiling. The copy appears in the Explorer under its session
+  and opens on a double click with no session running - which is what makes the AQTime
+  habit work: `Clear`, exercise the feature, `Archive` under a name that will still mean
+  something in three days, and keep going. Repeat as often as you like; nothing is kept
+  that was not asked for, so the disk holds the result sets you chose and no others.
 
 - The visual layer AQTime is known for: percentage columns drawn as bars in the
   Report, a pie beside each of the Details tables (the share each caller and callee
@@ -285,15 +301,69 @@ a table of numbers that would all belong to one line.
 ## Screens
 
 1. **Start page** - devices, recent sessions, "new session".
-2. **Setup** - device and package pickers (from `list_devices` / `check_app`),
-   mode, engine, callspec or weave filter with a class/method browser, duration
-   and limits. Prerequisite problems appear here as blocking errors with the same
-   guidance text the engine already produces.
+The device pickers show what a person recognises - the AVD or the phone's model, with the
+serial after it - and send the serial. A list of bare serials is unreadable the moment two
+emulators are up, which is the normal case here.
+
+**One list of profilers, not a mode and an engine.** The dialog asks which profiler runs -
+CPU sampling, one of the three instrumenting ones, or the heap snapshot - and explains the
+chosen one underneath in the terms that matter when choosing: what it modifies, whether the
+app restarts, what a call costs, and what it cannot tell you. Two combos to combine were a
+puzzle ("where is sampling?"), and a word like `weaver-tree` is implementation vocabulary,
+not a choice a person can weigh.
+
+**Choosing what to instrument is a tree, not a combo.** `Choose...` beside the callspec
+opens a picker over what the app declares: namespaces inside namespaces, types inside them,
+a box on every node, and the method count next to each - its own plus everything under it,
+because that number is what the choice costs (`OxyPlot 3329` is an answer in itself). The
+filter matches anywhere in the name, not only at the start. The result is an ordinary
+callspec: a ticked namespace becomes `N:Full.Name` and swallows what is under it, so the
+string stays short and readable. A second column marks the namespaces that deserve per-line
+detail; the engine does not collect that yet, and the dialog says so rather than pretending.
+
+**The build's two properties are choices too**: *Keep assemblies inside the APK (no fast
+deployment)* and *Instrument during the build*. An app can have a reason to ship its
+assemblies inside the APK, and then weaving during the build is the only way to instrument
+it - so both are on the screen rather than assumed, and the combinations that cannot work
+are refused **before** Start: a red line says which constraint is broken and Start stays
+disabled while it is there. The rules are the engine's, not taste - a rewriting profiler
+with the assemblies inside the APK has nothing to rewrite; a build-time weave needs to know
+which profiler will read it; the runtime provider crashes a .NET 9 runtime.
+
+2. **Setup** - the sources first (solution / project / folder, configuration),
+   then device and package pickers (from `list_devices` / `check_app`), mode,
+   engine, callspec chosen from what the app declares, duration and limits.
+   Prerequisite problems appear here as blocking errors with the same guidance
+   text the engine already produces, and the app can be built and installed from
+   the same window.
 3. **Live** - state, elapsed, events/s, trace size, log tail, and the run
    controls. Snapshot switches to Analysis without stopping the app.
 4. **Analysis** - the AQTime layout: Report grid on top, Details (Calls / Lines)
    below, Call Tree and Editor as dockable panels, Summary as a page.
 5. **Memory** - allocations by type / by site, heap snapshots, growth diff.
+
+## When it crashes
+
+Every exception - one escaping the startup, and one raised while the window is running -
+opens a dialog holding the whole report and writes the same text to `NapGui.error.log`:
+the class, the message, what was happening, and the **call stack resolved to units and
+lines**. The dialog is deliberately plain VCL, with Copy and "Open the log": it runs after
+something has already failed, possibly inside the skinning or the docking library, and a
+reporter that needs the framework that just crashed is no reporter at all. A second
+failure while it is up is ignored rather than stacking dialogs (JclDebug, reading the detailed map file the
+build produces beside the executable). Before that, a crash report said `EInvalidOperation:
+Control 'PanelSummary' has no parent window` and nothing else, and finding the line cost an
+hour of reading code.
+
+`--dialog=crash` raises on purpose: it is how the reporter itself is checked, and the only
+way to notice that a change to the build has stopped the stack from resolving.
+
+The symbols travel **inside the executable**: `build-gui.cmd` runs the JCL's
+`InsertJCLDebugInfo` over the detailed map after compiling, which costs about 3 MB in the
+exe instead of the 100 MB map nobody would ship - so a distributed GUI reports lines too.
+Point `NAP_JCLDEBUG` at the tool if it lives elsewhere; without it the build still succeeds
+and says what is lost. The first frames, which belong to the hook that captures the
+exception, are trimmed so the line that matters is the first one.
 
 ## Settings and layouts
 
@@ -314,12 +384,54 @@ so a build script can produce the same spreadsheet the Export button produces.
 
 ## Starting a session
 
-The Setup dialog asks for device, package, mode, engine, callspec, **assemblies**,
+Nothing about a session has to be typed twice. The dialog starts at **Solution**: a
+`.sln`/`.slnx`, a `.csproj`, or a folder to search. `GET /projects` reads the project
+files and answers the Android applications it found - a library that targets Android is
+not one - and picking a project fills in the package (from `ApplicationId`, or the
+manifest), the build output (`bin/<Configuration>/<tfm>`, which is what carries the pdbs)
+and the assembly it produces. The callspec is a list rather than a field:
+`GET /projects/candidates` reads the app's own assemblies with Cecil and offers their
+namespaces and types, largest first - and each candidate names the assemblies it came out
+of, so choosing one narrows **Assemblies** to what actually has to be woven. A product
+with thirty assemblies must not pay a pull, a rewrite and a push for each of them
+because one type is being measured. The last solution and project come back on the next run.
+
+Two things that used to send the user to a command prompt are buttons here:
+
+- **Build & install**, with **Clear deployed assemblies first** beside it (ticked by
+  itself when the project says the app embeds its assemblies, which is exactly when
+  switching to fast deployment can leave stale ones behind), builds the selected project
+  with the properties a session needs -
+  `-p:EnableDiagnostics=true`, `-p:EmbedAssembliesIntoApk=false` for the weaver engines,
+  `-t:Install -p:AdbTarget=-s <serial>` - as a background job whose output streams into a
+  window. The profiler still never rebuilds anything by itself: this runs only on a click.
+- **Check app** answers for the APK on the device, which is a different question from
+  what the project file says.
+
+The hint under the project says what this build is missing (`EnableDiagnostics` absent,
+assemblies embedded in the APK, never built in this configuration) and what Build &
+install would add.
+
+At startup, when the control service comes up, the GUI asks `GET /prereqs` for the tools
+a session needs. A missing `dotnet-dsrouter` - the one nobody remembers installing - is
+offered as a one-click install (`POST /prereqs/install`, the same job machinery), and
+anything that cannot be installed automatically (adb) is reported with its fix.
+
+The dialog also asks for device, package, mode, engine, callspec, **assemblies**,
 duration and build output. The assemblies field is the one that is easy to leave out and
 expensive to get wrong: the service infers the assembly from the first two dotted
 segments of the callspec, which is right when the namespace and the assembly agree and
 wrong when they do not - `N:TestTarget.Workloads` lives in `TestTarget.dll`. Empty means
 "infer"; naming them settles it.
+
+## Windows and dialogs
+
+Every dialog is resizable, with anchors that put the extra room where it is worth having:
+the wide fields (paths, callspecs, package names) take the width, the lists and logs take
+the height, and the buttons and the answer keep to their edges. Each form sets
+`Constraints.MinWidth` / `MinHeight` so it cannot be shrunk into overlapping controls -
+the smallest useful size is the size it opens at. A dialog whose content is a path or a
+call stack must not be read through a keyhole.
 
 ## Working with the tables
 

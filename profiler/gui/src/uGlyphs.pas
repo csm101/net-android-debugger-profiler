@@ -19,7 +19,7 @@ uses
 type
   /// The glyphs, in the order they sit in the image list: ImageIndex = Ord(kind).
   TGlyphKind = (gkOpen, gkRefresh, gkRun, gkSnapshot, gkPause, gkStop, gkSettings, gkLayouts,
-    gkExport, gkClear);
+    gkExport, gkClear, gkArchive);
 
 /// A 16x16 alpha image list holding every glyph, tinted with AColor.
 function BuildGlyphs(AOwner: TComponent; AColor: TColor): TImageList;
@@ -100,6 +100,16 @@ begin
       ACanvas.Rectangle(16, 16, 48, 48);
     gkSettings:
       DrawGear(ACanvas);
+    gkArchive:
+      begin
+        // A box with a lid and a label: results put away under a name.
+        ACanvas.Rectangle(10, 22, 54, 56);
+        ACanvas.Rectangle(6, 10, 58, 24);
+        ACanvas.Brush.Color := clWhite;
+        ACanvas.Pen.Color := clWhite;
+        ACanvas.Rectangle(24, 32, 40, 40);
+      end;
+
     gkClear:
       begin
         // A bin: what Clear does to the results collected so far.

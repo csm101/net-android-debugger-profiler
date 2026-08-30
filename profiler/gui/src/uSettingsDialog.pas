@@ -62,10 +62,13 @@ var
   LFontButton, LRootButton, LNapButton, LOk, LCancel: TcxButton;
 begin
   Caption := 'Settings';
-  BorderStyle := bsDialog;
+  BorderStyle := bsSizeable;
   Position := poOwnerFormCenter;
   ClientWidth := 620;
   ClientHeight := 260;
+  // The two path fields are what makes width worth having here.
+  Constraints.MinWidth := 636;
+  Constraints.MinHeight := 300;
 
   Caption_('Theme', 16);
   FTheme := TcxComboBox.Create(Self);
@@ -91,9 +94,11 @@ begin
   FFontPreview.Transparent := True;
   FFontPreview.Parent := Self;
   FFontPreview.SetBounds(160, 84, 320, 20);
+  FFontPreview.Anchors := [akLeft, akTop, akRight];
   LFontButton := TcxButton.Create(Self);
   LFontButton.Parent := Self;
   LFontButton.SetBounds(496, 80, 100, 26);
+  LFontButton.Anchors := [akTop, akRight];
   LFontButton.Caption := 'Choose...';
   LFontButton.OnClick := PickFontClick;
 
@@ -101,10 +106,12 @@ begin
   FSessionsRoot := TcxTextEdit.Create(Self);
   FSessionsRoot.Parent := Self;
   FSessionsRoot.SetBounds(160, 116, 330, 24);
+  FSessionsRoot.Anchors := [akLeft, akTop, akRight];
   FSessionsRoot.TextHint := 'default: %LOCALAPPDATA%\net-android-profiler\sessions';
   LRootButton := TcxButton.Create(Self);
   LRootButton.Parent := Self;
   LRootButton.SetBounds(496, 115, 100, 26);
+  LRootButton.Anchors := [akTop, akRight];
   LRootButton.Caption := 'Browse...';
   LRootButton.OnClick := BrowseRootClick;
 
@@ -112,10 +119,12 @@ begin
   FNapPath := TcxTextEdit.Create(Self);
   FNapPath.Parent := Self;
   FNapPath.SetBounds(160, 148, 330, 24);
+  FNapPath.Anchors := [akLeft, akTop, akRight];
   FNapPath.TextHint := 'default: next to this application';
   LNapButton := TcxButton.Create(Self);
   LNapButton.Parent := Self;
   LNapButton.SetBounds(496, 147, 100, 26);
+  LNapButton.Anchors := [akTop, akRight];
   LNapButton.Caption := 'Browse...';
   LNapButton.OnClick := BrowseNapClick;
 
@@ -128,6 +137,7 @@ begin
   LOk := TcxButton.Create(Self);
   LOk.Parent := Self;
   LOk.SetBounds(420, 216, 90, 28);
+  LOk.Anchors := [akRight, akBottom];
   LOk.Caption := 'OK';
   LOk.ModalResult := mrOk;
   LOk.Default := True;
@@ -135,6 +145,7 @@ begin
   LCancel := TcxButton.Create(Self);
   LCancel.Parent := Self;
   LCancel.SetBounds(516, 216, 90, 28);
+  LCancel.Anchors := [akRight, akBottom];
   LCancel.Caption := 'Cancel';
   LCancel.ModalResult := mrCancel;
   LCancel.Cancel := True;

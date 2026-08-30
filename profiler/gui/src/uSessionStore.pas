@@ -18,7 +18,7 @@ uses
   FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf, FireDAC.Stan.Async,
   FireDAC.Phys, FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteDef, FireDAC.Stan.ExprFuncs,
   FireDAC.Comp.Client, FireDAC.Comp.DataSet, FireDAC.DApt,
-  System.IOUtils, System.Generics.Defaults, Data.DB;
+  System.IOUtils, System.Generics.Defaults, System.JSON, Data.DB;
 
 type
   ESessionStore = class(Exception);
@@ -145,8 +145,23 @@ type
 
   TSessionEntries = TArray<TSessionEntry>;
 
+  /// Results kept under a name while a session went on (its Archive button). An archive
+  /// is an ordinary result database, so it opens exactly like a session - which is what
+  /// makes it readable long after that session ended.
+  TArchiveEntry = record
+    Name: string;
+    DatabasePath: string;
+    CreatedUtc: string;
+  end;
+
+  TArchiveEntries = TArray<TArchiveEntry>;
+
 /// Sessions under a sessions root, newest first (a session directory holds session.db).
 function ListSessions(const ARoot: string): TSessionEntries;
+
+/// The archives of one session directory, newest first. Read from disk, not from the
+/// control service: browsing yesterday's results must not need a running profiler.
+function ListArchives(const ASessionDirectory: string): TArchiveEntries;
 
 function ModeToString(AMode: TSessionMode): string;
 
@@ -163,6 +178,57 @@ function FormatNs(ANs: Int64): string;
 function TimeUnitName(AUnit: TTimeUnit): string;
 
 implementation
+
+/// The mode and package from the session's own session.json. False when there is none,
+/// which is the caller's cue to fall back to the database.
+function ReadIdentityFromJson(const ADirectory: string; var AEntry: TSessionEntry): Boolean;
+var
+  LPath: string;
+  LJson: TJSONValue;
+  LObject: TJSONObject;
+  LValue: TJSONValue;
+  LMode: string;
+begin
+  Result := False;
+  LPath := TPath.Combine(ADirectory, 'session.json');
+  if not TFile.Exists(LPath) then
+    Exit;
+  try
+    LJson := TJSONObject.ParseJSONValue(TFile.ReadAllText(LPath));
+  except
+    Exit;
+  end;
+  try
+    if not (LJson is TJSONObject) then
+      Exit;
+    LObject := TJSONObject(LJson);
+    // The spec serializes the mode as the enum's ordinal, not its name: 0 sampling,
+    // 1 instrumenting, 2 heap snapshot (Core.Apps.ProfilingMode). A name is accepted too,
+    // so a hand-written or future spec still reads.
+    LValue := LObject.GetValue('Mode');
+    if LValue = nil then
+      LValue := LObject.GetValue('mode');
+    if LValue = nil then
+      Exit;
+    LMode := LValue.Value;
+    if LMode = '0' then
+      AEntry.Mode := 'Sampling'
+    else if LMode = '1' then
+      AEntry.Mode := 'Instrumenting'
+    else if LMode = '2' then
+      AEntry.Mode := 'Heap snapshot'
+    else if SameText(LMode, 'HeapSnapshot') then
+      AEntry.Mode := 'Heap snapshot'
+    else if LMode = '' then
+      Exit
+    else
+      AEntry.Mode := LMode;
+    AEntry.Package := LObject.GetValue<string>('Package', LObject.GetValue<string>('package', ''));
+    Result := True;
+  finally
+    LJson.Free;
+  end;
+end;
 
 function ListSessions(const ARoot: string): TSessionEntries;
 var
@@ -185,22 +251,85 @@ begin
       if not TFile.Exists(LEntry.DatabasePath) then
         Continue;
       LEntry.Id := TPath.GetFileName(LDirectories[I]);
-      // Reading the identity costs one small query and is what makes the list useful.
-      LStore := TSessionStore.Create;
-      try
+      // The identity comes from session.json, which the session writes before it runs:
+      // opening every session.db to read three fields is what made the window take
+      // seconds to appear once a few dozen sessions had piled up. The database is only
+      // opened when that file is missing.
+      if not ReadIdentityFromJson(LDirectories[I], LEntry) then
+      begin
+        LStore := TSessionStore.Create;
         try
-          LStore.Open(LEntry.DatabasePath);
-          LEntry.Mode := ModeToString(LStore.Mode);
-          LEntry.Package := LStore.Package;
-          LEntry.StartedUtc := LStore.StartedUtc;
-        except
-          LEntry.Mode := '(unreadable)';
+          try
+            LStore.Open(LEntry.DatabasePath);
+            LEntry.Mode := ModeToString(LStore.Mode);
+            LEntry.Package := LStore.Package;
+            LEntry.StartedUtc := LStore.StartedUtc;
+          except
+            LEntry.Mode := '(unreadable)';
+          end;
+        finally
+          LStore.Free;
         end;
-      finally
-        LStore.Free;
       end;
       LList.Add(LEntry);
     end;
+    Result := LList.ToArray;
+  finally
+    LList.Free;
+  end;
+end;
+
+function ListArchives(const ASessionDirectory: string): TArchiveEntries;
+var
+  LFolder: string;
+  LFiles: TArray<string>;
+  LList: TList<TArchiveEntry>;
+  LEntry: TArchiveEntry;
+  LJson: TJSONValue;
+  I: Integer;
+begin
+  LFolder := TPath.Combine(ASessionDirectory, 'archives');
+  if not TDirectory.Exists(LFolder) then
+    Exit(nil);
+  LList := TList<TArchiveEntry>.Create;
+  try
+    LFiles := TDirectory.GetFiles(LFolder, '*.db');
+    TArray.Sort<string>(LFiles);
+    for I := Low(LFiles) to High(LFiles) do
+    begin
+      LEntry := Default(TArchiveEntry);
+      LEntry.DatabasePath := LFiles[I];
+      // The name the user gave it lives in the sidecar; the file name is the fallback,
+      // so an archive whose sidecar was lost is still listed and still opens.
+      LEntry.Name := TPath.GetFileNameWithoutExtension(LFiles[I]);
+      if TFile.Exists(TPath.ChangeExtension(LFiles[I], '.json')) then
+        try
+          LJson := TJSONObject.ParseJSONValue(TFile.ReadAllText(TPath.ChangeExtension(LFiles[I], '.json')));
+          try
+            if LJson is TJSONObject then
+            begin
+              // The engine writes the sidecar PascalCase and the control service speaks
+              // camelCase: read both, so a policy on either side cannot empty this.
+              LEntry.Name := TJSONObject(LJson).GetValue<string>('Name',
+                TJSONObject(LJson).GetValue<string>('name', LEntry.Name));
+              LEntry.CreatedUtc := TJSONObject(LJson).GetValue<string>('CreatedUtc',
+                TJSONObject(LJson).GetValue<string>('createdUtc', ''));
+            end;
+          finally
+            LJson.Free;
+          end;
+        except
+          // a broken sidecar costs the pretty name, nothing else
+        end;
+      LList.Add(LEntry);
+    end;
+    LList.Sort(TComparer<TArchiveEntry>.Construct(
+      function(const A, B: TArchiveEntry): Integer
+      begin
+        Result := CompareStr(B.CreatedUtc, A.CreatedUtc);       // newest first
+        if Result = 0 then
+          Result := CompareText(A.Name, B.Name);
+      end));
     Result := LList.ToArray;
   finally
     LList.Free;

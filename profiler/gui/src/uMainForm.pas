@@ -31,10 +31,19 @@ uses
   dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
-  uSessionStore, uControlClient, uSetupDialog, uTheme, uSettings, uSettingsDialog,
+  uSessionStore, uControlClient, uSetupDialog, uJobDialog, uTheme, uSettings, uSettingsDialog,
   uLayouts, uLayoutDialog, uGlyphs;
 
 type
+  TExplorerKind = (ekSession, ekCategory, ekArchive);
+
+  /// A row of the Explorer: a result database to open, or a way to regroup the Report.
+  TExplorerRef = record
+    Kind: TExplorerKind;
+    DatabasePath: string;
+    Category: string;
+  end;
+
   TMainForm = class(TForm)
   private
     FStore: TSessionStore;
@@ -76,6 +85,10 @@ type
     FHeapGrowth: TcxCheckBox;
     FHeapChart: TPaintBox;
     FHeapPoints: TArray<THeapTotal>;
+    /// What a node of the Explorer stands for. The tree mixes sessions, the categories
+    /// of the open one and the archived results of each, so the node carries its meaning
+    /// instead of it being guessed from the node's level.
+    FExplorerRefs: TArray<TExplorerRef>;
     FExplorer: TcxTreeList;
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
@@ -140,6 +153,7 @@ type
     FPoll: TTimer;
     FStartButton: TdxBarButton;
     FSnapshotButton: TdxBarButton;
+    FArchiveButton: TdxBarButton;
     FPauseButton: TdxBarButton;
     FStopButton: TdxBarButton;
     FClearButton: TdxBarButton;
@@ -147,6 +161,15 @@ type
     /// True while the running session is one the live controls can act on.
     FLiveControllable: Boolean;
     FPendingDialog: string;
+
+    /// Said once per session, in the log, rather than on every state poll.
+    FLiveExplained: Boolean;
+    FBuildStarted: UInt64;
+    FBuildFinished: UInt64;
+    /// Lines written while the Log panel had no window: kept until it has one.
+    FPendingLog: TStringList;
+    /// The same, for the Summary panel.
+    FSummaryPending: TStringList;
     FLog: TcxMemo;
     procedure BuildToolbar;
     procedure BuildExplorer;
@@ -180,6 +203,13 @@ type
     function FocusedGrid: TcxGrid;
     procedure ApplyCodeFont;
     procedure ShowPendingDialog(Sender: TObject);
+
+    procedure ExplainLiveButtons(ARunning: Boolean);
+    procedure LogLine(const AText: string);
+    procedure SetSummary(ALines: TStrings);
+    procedure FlushSummary;
+    procedure SummaryPanelActivated(Sender: TdxCustomDockControl; AActive: Boolean);
+    function AddExplorerRef(AKind: TExplorerKind; const APath, ACategory: string): Pointer;
     procedure ReloadExplorer;
     procedure ExplorerDblClick(Sender: TObject);
     procedure BuildReportTab;
@@ -213,12 +243,14 @@ type
     procedure DressColumns(AView: TcxGridDBTableView);
     procedure StartButtonClick(Sender: TObject);
     procedure SnapshotButtonClick(Sender: TObject);
+    procedure ArchiveButtonClick(Sender: TObject);
     procedure ClearButtonClick(Sender: TObject);
     procedure PauseButtonClick(Sender: TObject);
     procedure StopButtonClick(Sender: TObject);
     procedure PollTimer(Sender: TObject);
     procedure UpdateButtons(const AState: string);
     function EnsureService: Boolean;
+    procedure CheckPrerequisites;
     procedure ShowLog(const ALines: TArray<string>);
     procedure NanosecondDisplayText(Sender: TcxCustomGridTableItem;
       ARecord: TcxCustomGridRecord; var AText: string);
@@ -229,6 +261,13 @@ type
     function FocusedMethodId: Integer;
     procedure UpdateInfo;
     function ValueCaption: string;
+  protected
+    /// The whole window is built inside the constructor, so its handle is created before
+    /// Application.CreateForm has had a chance to say that this is the main form - and a
+    /// VCL form that is not (yet) the main form is created without WS_EX_APPWINDOW and
+    /// owned by the hidden application window. That is why the profiler had no taskbar
+    /// button. Saying it here settles it whatever the order.
+    procedure CreateParams(var Params: TCreateParams); override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -236,6 +275,9 @@ type
 
 var
   MainForm: TMainForm;
+  /// Set by the program before anything else, so the log can say how long starting took.
+  /// A number in the log beats an argument about whether it "feels" slow.
+  GStartTicks: UInt64 = 0;
 
 implementation
 
@@ -243,12 +285,20 @@ const
   /// Node.Data marks the critical path: the heaviest child of its parent.
   DataCritical: Pointer = Pointer(1);
 
+procedure TMainForm.CreateParams(var Params: TCreateParams);
+begin
+  inherited CreateParams(Params);
+  Params.ExStyle := Params.ExStyle or WS_EX_APPWINDOW;
+  Params.WndParent := 0;
+end;
+
 constructor TMainForm.Create(AOwner: TComponent);
 var
   LTab: string;
   LIndex: Integer;
 begin
   inherited CreateNew(AOwner);
+  FBuildStarted := GetTickCount64;
   Caption := '.NET for Android profiler';
   Width := 1200;
   Height := 800;
@@ -322,11 +372,17 @@ begin
   // After the panels have their content: the layout moves them around, and the
   // preferences decide how everything is drawn.
   uSettings.LoadSettings;
+  // An empty setting means "wherever the service keeps them", and that is a real place:
+  // without this the Explorer is empty on a machine that has never been to Settings,
+  // which reads as "the profiler found none of my sessions".
   if GSettings.SessionsRoot <> '' then
-  begin
-    FSessionsRoot := GSettings.SessionsRoot;
-    ReloadExplorer;
-  end;
+    FSessionsRoot := GSettings.SessionsRoot
+  else if GetEnvironmentVariable('NAP_SESSIONS_ROOT') <> '' then
+    FSessionsRoot := GetEnvironmentVariable('NAP_SESSIONS_ROOT')
+  else
+    FSessionsRoot := TPath.Combine(TPath.Combine(GetEnvironmentVariable('LOCALAPPDATA'),
+      'net-android-profiler'), 'sessions');
+  ReloadExplorer;
   ShowPreferencesInToolbar;
   LoadLayout;
   ApplyTheme;
@@ -337,14 +393,15 @@ begin
   FPoll.Interval := 1000;
   FPoll.Enabled := False;
   FPoll.OnTimer := PollTimer;
+  FBuildFinished := GetTickCount64;
   OnShow := ShowPendingDialog;
 
   if (ParamCount >= 1) and not ParamStr(1).StartsWith('--') then
     LoadSession(ParamStr(1));
   // --tab=<report|tree|source> selects the visible panel: handy for a screenshot or a
   // shortcut that always opens where you left off.
-  // --dialog=<settings|layouts> opens one straight away: it is how the dialogs get
-  // exercised without a hand on the mouse.
+  // --dialog=<settings|layouts|setup> opens one straight away: it is how the dialogs
+  // get exercised without a hand on the mouse.
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--dialog=', True) then
       FPendingDialog := ParamStr(LIndex).Substring(9);
@@ -361,7 +418,9 @@ begin
       else FReportPanel.Activate;
     end;
   // --export=<file> writes the report of the session given on the command line and
-  // quits: the same export the button performs, available to a build script.
+  // quits: the same export the button performs, available to a build script. It runs
+  // with the rest of the startup work, because it has nothing to export until the
+  // session named on the command line has been read.
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--export=', True) then
     begin
@@ -376,6 +435,8 @@ destructor TMainForm.Destroy;
 var
   I: Integer;
 begin
+  FPendingLog.Free;
+  FSummaryPending.Free;
   SaveLayout;
   uSettings.SaveSettings;
   // Dock panels created at runtime must go before the form takes its own children down,
@@ -463,6 +524,10 @@ begin
   FSnapshotButton := NewButton(LSession, 'Snapshot',
     'Refresh the results from what has been collected so far, without stopping the app',
     gkSnapshot, SnapshotButtonClick);
+  FArchiveButton := NewButton(LSession, 'Archive...',
+    'Keep the results as they are now, under a name, and go on profiling: they stay in the '
+    + 'Explorer and open again whenever you want',
+    gkArchive, ArchiveButtonClick);
   FPauseButton := NewButton(LSession, 'Pause',
     'Stop recording without stopping the app: the methods stay instrumented, so their overhead remains',
     gkPause, PauseButtonClick);
@@ -576,7 +641,7 @@ begin
       Exit;
     except
       on E: Exception do
-        FLog.Lines.Add('layout "' + GSettings.DefaultLayout + '" not restored: ' + E.Message);
+        LogLine('layout "' + GSettings.DefaultLayout + '" not restored: ' + E.Message);
     end;
   end;
   if not TFile.Exists(LayoutFile) then
@@ -586,7 +651,7 @@ begin
   except
     // an old or broken layout file must not stop the application from opening
     on E: Exception do
-      FLog.Lines.Add('layout not restored: ' + E.Message);
+      LogLine('layout not restored: ' + E.Message);
   end;
 end;
 
@@ -607,6 +672,9 @@ begin
   FExplorer.OptionsSelection.CellSelect := False;
   FExplorer.OptionsView.Headers := False;
   FExplorer.OptionsView.ShowRoot := True;
+  // Without this the column keeps the width it was created with, however wide the user
+  // makes the panel.
+  FExplorer.OptionsView.ColumnAutoWidth := True;
   FExplorer.OnDblClick := ExplorerDblClick;
   FExplorerColumn := FExplorer.CreateColumn;
   FExplorerColumn.Caption.Text := 'Results';
@@ -614,15 +682,30 @@ begin
 
 end;
 
+/// A node's meaning, kept in an array the node indexes into. Index 0 means "nothing to
+/// open": TcxTreeListNode.Data is nil on a node nobody assigned.
+function TMainForm.AddExplorerRef(AKind: TExplorerKind; const APath, ACategory: string): Pointer;
+var
+  LRef: TExplorerRef;
+begin
+  LRef.Kind := AKind;
+  LRef.DatabasePath := APath;
+  LRef.Category := ACategory;
+  FExplorerRefs := FExplorerRefs + [LRef];
+  Result := Pointer(NativeInt(Length(FExplorerRefs)));
+end;
+
 procedure TMainForm.ReloadExplorer;
 var
   LSessions: TSessionEntries;
+  LArchives: TArchiveEntries;
   LRoot, LNode, LChild: TcxTreeListNode;
-  I: Integer;
+  I, J: Integer;
 begin
   FExplorer.BeginUpdate;
   try
     FExplorer.Clear;
+    FExplorerRefs := nil;
     LRoot := FExplorer.Add;
     LRoot.Values[0] := 'Sessions';
     LRoot.Data := nil;
@@ -633,20 +716,30 @@ begin
     begin
       LNode := LRoot.AddChild;
       LNode.Values[0] := Format('%s  (%s)', [LSessions[I].Id, LSessions[I].Mode]);
-      // The path travels with the node so a double-click knows what to open.
-      LNode.Texts[0] := LNode.Texts[0];
-      LNode.Data := Pointer(NativeInt(I));
+      LNode.Data := AddExplorerRef(ekSession, LSessions[I].DatabasePath, '');
       if SameText(LSessions[I].DatabasePath, FStore.Path) then
       begin
         // The open session shows the categories, like AQTime's Routines / Modules tree.
         LChild := LNode.AddChild;
         LChild.Values[0] := 'Routines';
+        LChild.Data := AddExplorerRef(ekCategory, '', 'Routines');
         LChild := LNode.AddChild;
         LChild.Values[0] := 'Modules';
+        LChild.Data := AddExplorerRef(ekCategory, '', 'Modules');
         LChild := LNode.AddChild;
         LChild.Values[0] := 'Source files';
-        LNode.Expand(True);
+        LChild.Data := AddExplorerRef(ekCategory, '', 'Source files');
       end;
+      // The results that were kept during that session, whether or not it is still open.
+      LArchives := ListArchives(TPath.GetDirectoryName(LSessions[I].DatabasePath));
+      for J := 0 to High(LArchives) do
+      begin
+        LChild := LNode.AddChild;
+        LChild.Values[0] := LArchives[J].Name;
+        LChild.Data := AddExplorerRef(ekArchive, LArchives[J].DatabasePath, '');
+      end;
+      if LNode.Count > 0 then
+        LNode.Expand(True);
     end;
     LRoot.Expand(False);
   finally
@@ -656,17 +749,28 @@ end;
 
 procedure TMainForm.ExplorerDblClick(Sender: TObject);
 var
-  LSessions: TSessionEntries;
   LIndex: Integer;
+  LRef: TExplorerRef;
   LCategory: string;
   LColumn: TcxGridDBColumn;
 begin
   if FExplorer.FocusedNode = nil then
     Exit;
-  // A category under the open session regroups the Report instead of loading anything.
-  if FExplorer.FocusedNode.Level = 2 then
+  LIndex := Integer(NativeInt(FExplorer.FocusedNode.Data));
+  if (LIndex < 1) or (LIndex > Length(FExplorerRefs)) then
+    Exit;
+  LRef := FExplorerRefs[LIndex - 1];
+  // An archive is an ordinary result database: opening one is opening a session, which is
+  // what lets it be read long after the session that produced it ended.
+  if LRef.Kind in [ekSession, ekArchive] then
   begin
-    LCategory := VarToStr(FExplorer.FocusedNode.Values[0]);
+    if TFile.Exists(LRef.DatabasePath) then
+      LoadSession(LRef.DatabasePath);
+    Exit;
+  end;
+  // A category under the open session regroups the Report instead of loading anything.
+  begin
+    LCategory := LRef.Category;
     FGridView.BeginUpdate;
     try
       FGridView.DataController.Groups.ClearGrouping;
@@ -686,14 +790,7 @@ begin
     end;
     FGridView.ViewData.Expand(True);
     FReportPanel.Activate;
-    Exit;
   end;
-  if FExplorer.FocusedNode.Level <> 1 then
-    Exit;
-  LSessions := ListSessions(FSessionsRoot);
-  LIndex := Integer(NativeInt(FExplorer.FocusedNode.Data));
-  if (LIndex >= 0) and (LIndex <= High(LSessions)) then
-    LoadSession(LSessions[LIndex].DatabasePath);
 end;
 
 procedure TMainForm.BuildReportTab;
@@ -1443,6 +1540,7 @@ end;
 procedure TMainForm.BuildSummaryTab;
 begin
   FSummary := TcxMemo.Create(Self);
+  FSummaryPanel.OnActivate := SummaryPanelActivated;
   FSummary.Parent := FSummaryPanel;
   FSummary.Align := alClient;
   FSummary.Properties.ReadOnly := True;
@@ -1467,7 +1565,7 @@ begin
     if not FStore.IsOpen then
     begin
       LLines.Add('No session open.');
-      FSummary.Lines.Assign(LLines);
+      SetSummary(LLines);
       Exit;
     end;
     LLines.Add(Format('%s session of %s on %s', [ModeToString(FStore.Mode), FStore.Package, FStore.Device]));
@@ -1534,7 +1632,7 @@ begin
     for I := 0 to High(LSegments) do
       LLines.Add(Format('  segment %d: %s at %s (%d events)',
         [LSegments[I].Id, LSegments[I].Kind, LSegments[I].TakenUtc, LSegments[I].Events]));
-    FSummary.Lines.Assign(LLines);
+    SetSummary(LLines);
   finally
     LLines.Free;
   end;
@@ -1613,16 +1711,27 @@ begin
   end;
 end;
 
+/// The window is up: from here on the user can see that something is happening.
 procedure TMainForm.ShowPendingDialog(Sender: TObject);
 var
   LWhich: string;
 begin
   LWhich := FPendingDialog;
   FPendingDialog := '';
-  if SameText(LWhich, 'settings') then
+  // --dialog=crash raises on purpose: it is how the crash report itself is tested, and
+  // the only way to know the call stack still resolves after a change to the build.
+  if SameText(LWhich, 'crash') then
+    raise EProgrammerNotFound.Create('deliberate crash: --dialog=crash')
+  else if SameText(LWhich, 'settings') then
     SettingsClick(nil)
   else if SameText(LWhich, 'layouts') then
-    LayoutsClick(nil);
+    LayoutsClick(nil)
+  // The Setup dialog builds itself from the sources and the device, so opening it is
+  // the only way to find out that it still builds at all. It starts the service, which
+  // is what it does on the New session button too.
+  else if SameText(LWhich, 'setup') or SameText(LWhich, 'callspec') then
+    // callspec goes through Setup: the picker needs the project the dialog has scanned.
+    StartButtonClick(nil);
 end;
 
 procedure TMainForm.SettingsClick(Sender: TObject);
@@ -2179,7 +2288,8 @@ begin
         // The sessions folder from the settings, so the Explorer and the service agree
         // on where results live.
         FClient.StartService(TPath.GetFullPath(LPath), GSettings.SessionsRoot);
-        FLog.Lines.Add('control service: ' + FClient.BaseUrl);
+        LogLine('control service: ' + FClient.BaseUrl);
+        CheckPrerequisites;
         Exit(True);
       except
         on E: Exception do
@@ -2193,6 +2303,73 @@ begin
     'beside it.' + sLineBreak +
     'Point Settings at it, or keep the package together.', mtError, [mbOK], 0);
   Result := False;
+end;
+
+/// The tools a session needs are installed outside this application, and the one that is
+/// usually missing - dsrouter - is a single command away. Asking here, the moment the
+/// service comes up, is the difference between one click and a session that dies later
+/// with a message about an executable nobody remembers having to install.
+procedure TMainForm.CheckPrerequisites;
+var
+  LTools: TArray<TToolStatus>;
+  LTool: TToolStatus;
+  LJob: TJobStatus;
+  LMissing: Integer;
+begin
+  try
+    LTools := FClient.Prerequisites;
+  except
+    on E: Exception do
+    begin
+      LogLine('prerequisites: ' + E.Message);
+      Exit;
+    end;
+  end;
+
+  LMissing := 0;
+  for LTool in LTools do
+  begin
+    if LTool.Found then
+    begin
+      LogLine(Format('%s: %s', [LTool.Name, LTool.Path]));
+      Continue;
+    end;
+    // Something that is only needed to build from here is worth a line in the log, not a
+    // dialog in front of someone who came to read a session.
+    if not LTool.Required then
+    begin
+      LogLine(Format('%s: not found. %s', [LTool.Name, LTool.Fix]));
+      Continue;
+    end;
+
+    Inc(LMissing);
+    LogLine(Format('%s: NOT FOUND. %s', [LTool.Name, LTool.Fix]));
+    if LTool.InstallCommand = '' then
+    begin
+      MessageDlg(Format('%s was not found.'#13#10#13#10'%s'#13#10#13#10'%s',
+        [LTool.Name, LTool.Purpose, LTool.Fix]), mtWarning, [mbOK], 0);
+      Continue;
+    end;
+
+    if MessageDlg(Format('%s was not found, and every profiling session needs it.'#13#10#13#10 +
+      '%s'#13#10#13#10'Install it now?'#13#10#13#10'    %s',
+      [LTool.Name, LTool.Purpose, LTool.InstallCommand]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+      Continue;
+    try
+      LJob := FClient.InstallTool(LTool.Name);
+    except
+      on E: Exception do
+      begin
+        MessageDlg(E.Message, mtError, [mbOK], 0);
+        Continue;
+      end;
+    end;
+    if TJobDialog.Run(Self, FClient, LJob, 'Installing ' + LTool.Name, LTool.InstallCommand) then
+      Dec(LMissing);
+  end;
+
+  if LMissing > 0 then
+    SetStatus('A tool that profiling needs is missing - see the log.');
 end;
 
 procedure TMainForm.StartButtonClick(Sender: TObject);
@@ -2213,7 +2390,7 @@ begin
   try
     LStatus := FClient.StartSession(LSetup.DeviceSerial, LSetup.Package, LSetup.Mode,
       LSetup.Engine, LSetup.Callspec, LSetup.DurationSeconds, LSetup.SymbolsDir,
-      LSetup.Assemblies);
+      LSetup.Assemblies, LSetup.WeaveMapPath);
   except
     on E: Exception do
     begin
@@ -2223,6 +2400,7 @@ begin
   end;
   FSessionId := LStatus.Id;
   FPaused := False;
+  FLiveExplained := False;
   // Snapshot, Pause and Clear read and rewrite files the collector flushes as it goes,
   // which only the weaver engine produces. A runtime-provider trace becomes readable
   // when the session ends, so the buttons stay off rather than failing on the click.
@@ -2233,7 +2411,7 @@ begin
   if SameText(LSetup.Engine, 'auto') then
     FLiveControllable := SameText(LSetup.Mode, 'instrumenting');
   SetLength(FMonitorSamples, 0);
-  FLog.Lines.Add('session ' + FSessionId + ' started');
+  LogLine('session ' + FSessionId + ' started');
   UpdateButtons(LStatus.State);
   FPoll.Enabled := True;
 end;
@@ -2253,7 +2431,7 @@ begin
     on E: Exception do
     begin
       FPoll.Enabled := False;
-      FLog.Lines.Add('status failed: ' + E.Message);
+      LogLine('status failed: ' + E.Message);
       Exit;
     end;
   end;
@@ -2271,6 +2449,119 @@ begin
   end;
 end;
 
+/// AQTime's habit: collect a Get Results and never lose it. The name is asked for
+/// because "snapshot 3" tells you nothing in three days and "the customers screen" does.
+procedure TMainForm.ArchiveButtonClick(Sender: TObject);
+var
+  LName, LPath: string;
+begin
+  if FSessionId = '' then
+    Exit;
+  LName := Format('snapshot %s', [FormatDateTime('hh:nn:ss', Now)]);
+  if not InputQuery('Archive results', 'Keep the results collected so far as:', LName) then
+    Exit;
+  try
+    LPath := FClient.Archive(FSessionId, Trim(LName));
+    LogLine(Format('archived "%s" to %s', [Trim(LName), LPath]));
+    // The archive was taken from a fresh snapshot, so the panels are behind by one.
+    LoadSession(FStore.Path);
+    ReloadExplorer;
+  except
+    on E: Exception do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
+/// The Log panel is dockable, which means it can be closed, auto-hidden, or simply not
+/// realised yet while the window is still coming up - and writing into a control whose
+/// parent has no window handle raises "has no parent window" and takes the application
+/// down with it. Lines written in those moments wait here instead of being lost.
+/// The Summary lives in a dock panel, which can be a background tab, closed, or not yet
+/// realised while the window is coming up. Writing into a control whose parent has no
+/// window raises "has no parent window" - the text waits instead, and goes in when the
+/// panel is next shown.
+procedure TMainForm.SetSummary(ALines: TStrings);
+begin
+  if FSummaryPending = nil then
+    FSummaryPending := TStringList.Create;
+  FSummaryPending.Assign(ALines);
+  FlushSummary;
+end;
+
+procedure TMainForm.FlushSummary;
+begin
+  if (FSummary = nil) or (FSummaryPending = nil) or (FSummary.Parent = nil)
+    or not FSummary.Parent.HandleAllocated then
+    Exit;
+  try
+    FSummary.Lines.Assign(FSummaryPending);
+  except
+    // The panel was not ready after all: the text stays where it is and goes in later.
+  end;
+end;
+
+procedure TMainForm.SummaryPanelActivated(Sender: TdxCustomDockControl; AActive: Boolean);
+begin
+  if AActive then
+    FlushSummary;
+end;
+
+procedure TMainForm.LogLine(const AText: string);
+var
+  I: Integer;
+begin
+  if FPendingLog = nil then
+    FPendingLog := TStringList.Create;
+  if (FLog = nil) or (FLog.Parent = nil) or not FLog.Parent.HandleAllocated then
+  begin
+    FPendingLog.Add(AText);
+    Exit;
+  end;
+  try
+    for I := 0 to FPendingLog.Count - 1 do
+      FLog.Lines.Add(FPendingLog[I]);
+    FPendingLog.Clear;
+    FLog.Lines.Add(AText);
+  except
+    on E: Exception do
+      // Never let logging be the thing that fails: the line waits for a better moment.
+      FPendingLog.Add(AText);
+  end;
+end;
+
+/// A disabled button that does not say why is a bug report waiting to happen. Sampling
+/// and the runtime-provider engine cannot produce partial results at all: a .nettrace
+/// resolves its method names only when the session ends.
+procedure TMainForm.ExplainLiveButtons(ARunning: Boolean);
+const
+  CWhy = 'Only an instrumenting session on a weaver engine can do this while the app runs: '
+    + 'the collector writes files it flushes as it goes. Sampling and the provider engine '
+    + 'produce a trace that only becomes readable when the session ends.';
+  CIdle = 'Available while an instrumenting session is running.';
+var
+  LHint: string;
+begin
+  if ARunning and not FLiveControllable then
+    LHint := CWhy
+  else if not ARunning then
+    LHint := CIdle
+  else
+    LHint := '';
+  if LHint <> '' then
+  begin
+    FSnapshotButton.Hint := LHint;
+    FArchiveButton.Hint := LHint;
+    FPauseButton.Hint := LHint;
+    FClearButton.Hint := LHint;
+  end;
+  // Say it once, where the user is already looking, rather than only in a tooltip.
+  if ARunning and not FLiveControllable and not FLiveExplained then
+  begin
+    FLiveExplained := True;
+    LogLine('Snapshot, Archive, Pause and Clear are off for this session: ' + CWhy);
+  end;
+end;
+
 procedure TMainForm.SnapshotButtonClick(Sender: TObject);
 var
   LSegment: Integer;
@@ -2281,7 +2572,7 @@ begin
   try
     LSegment := FClient.Snapshot(FSessionId);
     LStatus := FClient.Status(FSessionId);
-    FLog.Lines.Add(Format('snapshot %d', [LSegment]));
+    LogLine(Format('snapshot %d', [LSegment]));
     // Results are cumulative: the tables were rewritten with everything collected so
     // far, so this is a plain reload rather than a merge.
     if (LStatus.DatabasePath <> '') and TFile.Exists(LStatus.DatabasePath) then
@@ -2307,7 +2598,7 @@ begin
     Exit;
   try
     LStatus := FClient.Clear(FSessionId);
-    FLog.Lines.Add('results cleared');
+    LogLine('results cleared');
     if (LStatus.DatabasePath <> '') and TFile.Exists(LStatus.DatabasePath) then
       LoadSession(LStatus.DatabasePath);
     SetStatus(Format('session %s: %s, results cleared', [FSessionId, LStatus.State]));
@@ -2326,13 +2617,13 @@ begin
     begin
       FClient.Resume(FSessionId);
       FPaused := False;
-      FLog.Lines.Add('resumed');
+      LogLine('resumed');
     end
     else
     begin
       FClient.Pause(FSessionId);
       FPaused := True;
-      FLog.Lines.Add('paused - the methods stay instrumented, so the overhead remains');
+      LogLine('paused - the methods stay instrumented, so the overhead remains');
     end;
     FPauseButton.Caption := IfThen(FPaused, 'Resume', 'Pause');
   except
@@ -2347,7 +2638,7 @@ begin
     Exit;
   try
     FClient.Stop(FSessionId);
-    FLog.Lines.Add('stopping...');
+    LogLine('stopping...');
     FPoll.Enabled := True;         // the analysis runs after collection ends
   except
     on E: Exception do
@@ -2362,6 +2653,9 @@ begin
   LRunning := (FSessionId <> '') and
     ((AState = 'Collecting') or (AState = 'WaitingForApp') or (AState = 'Preparing'));
   FSnapshotButton.Enabled := LRunning and FLiveControllable;
+  // Archiving a finished session would only copy what the Explorer already shows.
+  FArchiveButton.Enabled := LRunning and FLiveControllable;
+  ExplainLiveButtons(LRunning);
   FPauseButton.Enabled := LRunning and FLiveControllable;
   FClearButton.Enabled := LRunning and FLiveControllable;
   FStopButton.Enabled := LRunning;
@@ -2379,7 +2673,7 @@ begin
   // The service answers with the tail of the log; show what is new, not the whole tail.
   for I := 0 to High(ALines) do
     if FLog.Lines.IndexOf(ALines[I]) < 0 then
-      FLog.Lines.Add(ALines[I]);
+      LogLine(ALines[I]);
   while FLog.Lines.Count > 500 do
     FLog.Lines.Delete(0);
 end;

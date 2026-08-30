@@ -9,6 +9,9 @@ program ControlTests;
     - an instrumenting session on the weaver engine: snapshot, pause, resume and clear,
       the four live controls, which only that engine can serve.
 
+  It also covers what the Setup dialog reads before any of that and what needs no device:
+  the machine's prerequisites, and the projects a folder of sources holds.
+
   The split is the product's, not the test's: a runtime-provider trace only becomes
   readable when its session ends, which is why the toolbar greys those buttons out.
 
@@ -21,7 +24,7 @@ program ControlTests;
 {$APPTYPE CONSOLE}
 
 uses
-  System.SysUtils, System.IOUtils, System.Classes, System.DateUtils,
+  System.SysUtils, System.IOUtils, System.Classes, System.DateUtils, System.StrUtils,
   FireDAC.Comp.Client,
   uControlClient in '..\src\uControlClient.pas',
   uSessionStore in '..\src\uSessionStore.pas';
@@ -84,6 +87,9 @@ var
   LStatus: TSessionStatus;
   LSegment: Integer;
   LProblems: TArray<string>;
+  LArchive: string;
+  LArchives: TArchiveEntries;
+  LStore: TSessionStore;
   I: Integer;
 begin
   Writeln;
@@ -114,6 +120,31 @@ begin
     Sleep(5000);
     LSegment := AClient.Snapshot(LStatus.Id);
     Check(LSegment >= 0, Format('snapshot taken (segment %d)', [LSegment]));
+    // Keeping a Get Results: the archive must be a database that opens on its own, which
+    // is the whole promise of the Explorer's tree of saved results.
+    LArchive := AClient.Archive(LStatus.Id, 'the smoke test screen');
+    Check(TFile.Exists(LArchive), 'the archive was written: ' + LArchive);
+    if TFile.Exists(LArchive) then
+    begin
+      LStore := TSessionStore.Create;
+      try
+        try
+          LStore.Open(LArchive);
+          Check(LStore.Mode = smInstrumenting, 'the archive opens as an instrumenting session');
+          Check(LStore.Package <> '', 'the archive knows its package: ' + LStore.Package);
+        except
+          on E: Exception do
+            Check(False, 'the archive opens: ' + E.Message);
+        end;
+      finally
+        LStore.Free;
+      end;
+      LArchives := ListArchives(TPath.GetDirectoryName(TPath.GetDirectoryName(LArchive)));
+      Check(Length(LArchives) >= 1, Format('%d archive(s) listed from disk', [Length(LArchives)]));
+      if Length(LArchives) > 0 then
+        Check(LArchives[0].Name = 'the smoke test screen', 'the name survives: ' + LArchives[0].Name);
+    end;
+
     Check(AClient.Pause(LStatus.Id).State <> '', 'pause answered');
     Check(AClient.Resume(LStatus.Id).State <> '', 'resume answered');
     Check(AClient.Clear(LStatus.Id).State <> '', 'clear answered');
@@ -126,7 +157,64 @@ begin
   end;
 end;
 
-procedure Run(const ANapPath, ASerial, APackage: string);
+/// What the Setup dialog fills itself in from, none of which needs a device: the tools
+/// this machine offers, and the application projects in a folder of sources.
+procedure RunSetupInputs(AClient: TControlClient; const ARepoRoot: string);
+var
+  LTools: TArray<TToolStatus>;
+  LProjects: TArray<TAppProject>;
+  LCandidates: TArray<TCallspecCandidate>;
+  LDsRouter: TToolStatus;
+  LTestTarget: TAppProject;
+  I: Integer;
+begin
+  Writeln;
+  Writeln('setup inputs:');
+  LTools := AClient.Prerequisites;
+  Check(Length(LTools) > 0, Format('%d prerequisites reported', [Length(LTools)]));
+  LDsRouter := Default(TToolStatus);
+  for I := 0 to High(LTools) do
+  begin
+    Writeln(Format('        %-16s %s', [LTools[I].Name,
+      IfThen(LTools[I].Found, LTools[I].Path, 'NOT FOUND - ' + LTools[I].Fix)]));
+    if LTools[I].Name = 'dotnet-dsrouter' then
+      LDsRouter := LTools[I];
+  end;
+  // The command is what lets the GUI offer to install it instead of printing a note.
+  Check(LDsRouter.InstallCommand <> '', 'dsrouter carries the command that installs it');
+
+  if ARepoRoot = '' then
+  begin
+    Writeln('        (no repository root: skipping the project scan)');
+    Exit;
+  end;
+  LProjects := AClient.Projects(TPath.Combine(ARepoRoot, 'TestTarget'), 'Debug');
+  Check(Length(LProjects) = 1, Format('%d application project(s) under TestTarget', [Length(LProjects)]));
+  if Length(LProjects) = 0 then
+    Exit;
+  LTestTarget := LProjects[0];
+  Writeln(Format('        %s  %s  %s', [LTestTarget.Name, LTestTarget.ApplicationId, LTestTarget.OutputDir]));
+  Check(LTestTarget.ApplicationId = CDefaultPackage, 'the package comes from the project file');
+  Check(Length(LTestTarget.Assemblies) >= 2, Format('%d assemblies to weave, references included',
+    [Length(LTestTarget.Assemblies)]));
+
+  if not LTestTarget.OutputExists then
+  begin
+    Writeln('        (TestTarget is not built: skipping the callspec candidates)');
+    Exit;
+  end;
+  LCandidates := AClient.Candidates(LTestTarget.OutputDir, LTestTarget.Assemblies);
+  Check(Length(LCandidates) > 0, Format('%d callspec candidates offered', [Length(LCandidates)]));
+  for I := 0 to High(LCandidates) do
+    if LCandidates[I].Callspec = CCallspec then
+    begin
+      Check(True, 'the callspec the sessions use is one of them: ' + CCallspec);
+      Exit;
+    end;
+  Check(False, 'the callspec the sessions use is one of them: ' + CCallspec);
+end;
+
+procedure Run(const ANapPath, ASerial, APackage, ARepoRoot: string);
 var
   LClient: TControlClient;
   LDevices: TDeviceInfos;
@@ -142,6 +230,8 @@ begin
   try
     LClient.StartService(ANapPath);
     Check(LClient.IsConnected, 'the service answered with a port: ' + LClient.BaseUrl);
+
+    RunSetupInputs(LClient, ARepoRoot);
 
     LDevices := LClient.Devices;
     Check(Length(LDevices) > 0, Format('%d device(s) visible', [Length(LDevices)]));
@@ -213,23 +303,45 @@ begin
   end;
 end;
 
+/// The repository this test runs from, found by walking up until TestTarget is in sight.
+function FindRepoRoot: string;
 var
-  LNap, LSerial, LPackage: string;
+  LFolder: string;
+  I: Integer;
+begin
+  LFolder := TPath.GetDirectoryName(ParamStr(0));
+  for I := 0 to 5 do
+  begin
+    if TDirectory.Exists(TPath.Combine(LFolder, 'TestTarget')) then
+      Exit(LFolder);
+    LFolder := TPath.GetDirectoryName(LFolder);
+    if LFolder = '' then
+      Break;
+  end;
+  Result := '';
+end;
+
+var
+  LNap, LSerial, LPackage, LRepo: string;
 begin
   try
     if ParamCount = 0 then
     begin
-      Writeln('usage: ControlTests <nap.exe> [device serial] [package]');
+      Writeln('usage: ControlTests <nap.exe> [device serial] [package] [repository root]');
       Halt(2);
     end;
     LNap := ParamStr(1);
     LSerial := ParamStr(2);
     LPackage := ParamStr(3);
+    LRepo := ParamStr(4);
     if LPackage = '' then
       LPackage := CDefaultPackage;
+    if LRepo = '' then
+      LRepo := FindRepoRoot;
     Writeln('nap:     ', LNap);
     Writeln('package: ', LPackage);
-    Run(LNap, LSerial, LPackage);
+    Writeln('repo:    ', LRepo);
+    Run(LNap, LSerial, LPackage, LRepo);
     Writeln;
     if GFailures = 0 then
       Writeln('all checks passed')

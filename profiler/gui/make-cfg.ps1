@@ -1,5 +1,8 @@
-# Writes NapGui.cfg from the IDE's Win64 library path: DevExpress and SynEdit are
+# Writes NapGui.cfg from the IDE's Win64 library path: DevExpress, SynEdit and the JCL are
 # used from source there, so the compiler needs the same folders the IDE uses.
+#
+# -GD produces the detailed map file JclDebug reads at run time: without it a crash report
+# has addresses and no unit or line, which is the half that matters.
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'dcu') | Out-Null
 $key = 'HKCU:\SOFTWARE\Embarcadero\BDS\23.0\Library\Win64'
@@ -16,4 +19,5 @@ $own = Join-Path $PSScriptRoot 'src'
 -N0"$PSScriptRoot\dcu"
 -\$O+
 -W-SYMBOL_PLATFORM
+-GD
 "@ | Set-Content -Path (Join-Path $PSScriptRoot 'NapGui.cfg') -Encoding ASCII

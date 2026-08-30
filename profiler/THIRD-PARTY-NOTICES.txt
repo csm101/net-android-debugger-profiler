@@ -89,6 +89,12 @@ COMPONENTS
       gui - the source editor of the Source panel. SynEdit is dual-licensed
       MPL-1.1 / LGPL-2.1; it is used here under the MPL, unmodified, so its
       per-file copyleft covers SynEdit's own files only.
+
+  JEDI Code Library (JclDebug)                          MPL-1.1       [5]
+      https://github.com/project-jedi/jcl
+      gui - resolves a crash to the unit and line that raised it, reading the
+      map file beside the executable. Used unmodified, under the MPL half of
+      its licence, so its per-file copyleft covers the JCL's own files only.
 
 --------------------------------------------------------------------------
 [1] MIT License - .NET Foundation and Contributors

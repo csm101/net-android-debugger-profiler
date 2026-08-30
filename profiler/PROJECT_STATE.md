@@ -127,7 +127,13 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   official AQTime documentation (Report / Details / Call Tree / Call Graph /
   Editor / Summary / Monitor panels, and its Get Results / Clear Results /
   Enable-Disable Profiling actions, which became the pause/resume/snapshot/clear
-  contract of U7).
+  contract of U7). It owns the whole flow, not only the results: it starts
+  `nap serve` itself, checks the machine's prerequisites and offers to install
+  dotnet-dsrouter when it is missing, reads the user's solution to find the Android
+  applications in it, fills the session in from the project file (package, build
+  output, assemblies, callspec candidates read from the app's assemblies), and can
+  build and install the app with the properties a session needs. Nothing about a
+  session has to be typed twice, and nothing about it needs a command prompt.
 - P5 - Packaging (docs/PACKAGING.md): `build\package.ps1` publishes the MCP
   server, `nap` and `nap-weave` into one bin\, ships dotnet-dsrouter in tools\
   (preferred over a globally installed one), carries the weaving targets and the

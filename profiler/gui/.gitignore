@@ -16,3 +16,5 @@ layouts/
 *.map.idx
 ControlTests.cfg
 ControlTests.exe
+*.ini.bak
+*.jdbg

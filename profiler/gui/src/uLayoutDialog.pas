@@ -53,43 +53,52 @@ var
   LClose: TcxButton;
 begin
   Caption := 'Saved layouts';
-  BorderStyle := bsDialog;
+  BorderStyle := bsSizeable;
   Position := poOwnerFormCenter;
   ClientWidth := 480;
   ClientHeight := 320;
+  // The list takes the room; the buttons keep to the right edge.
+  Constraints.MinWidth := 496;
+  Constraints.MinHeight := 300;
 
   FList := TcxListBox.Create(Self);
   FList.Parent := Self;
   FList.SetBounds(16, 16, 300, 240);
+  FList.Anchors := [akLeft, akTop, akRight, akBottom];
   FList.OnClick := ListClick;
 
   FLoad := TcxButton.Create(Self);
   FLoad.Parent := Self;
   FLoad.SetBounds(332, 16, 130, 28);
+  FLoad.Anchors := [akTop, akRight];
   FLoad.Caption := 'Load';
   FLoad.OnClick := LoadClick;
 
   FRename := TcxButton.Create(Self);
   FRename.Parent := Self;
   FRename.SetBounds(332, 52, 130, 28);
+  FRename.Anchors := [akTop, akRight];
   FRename.Caption := 'Rename...';
   FRename.OnClick := RenameClick;
 
   FDelete := TcxButton.Create(Self);
   FDelete.Parent := Self;
   FDelete.SetBounds(332, 88, 130, 28);
+  FDelete.Anchors := [akTop, akRight];
   FDelete.Caption := 'Delete';
   FDelete.OnClick := DeleteClick;
 
   FDefault := TcxButton.Create(Self);
   FDefault.Parent := Self;
   FDefault.SetBounds(332, 124, 130, 28);
+  FDefault.Anchors := [akTop, akRight];
   FDefault.Caption := 'Open with this';
   FDefault.OnClick := DefaultClick;
 
   FSaveAs := TcxButton.Create(Self);
   FSaveAs.Parent := Self;
   FSaveAs.SetBounds(332, 172, 130, 28);
+  FSaveAs.Anchors := [akTop, akRight];
   FSaveAs.Caption := 'Save current as...';
   FSaveAs.OnClick := SaveAsClick;
 
@@ -97,10 +106,12 @@ begin
   FHint.Transparent := True;
   FHint.Parent := Self;
   FHint.SetBounds(16, 264, 440, 20);
+  FHint.Anchors := [akLeft, akRight, akBottom];
 
   LClose := TcxButton.Create(Self);
   LClose.Parent := Self;
   LClose.SetBounds(372, 284, 90, 28);
+  LClose.Anchors := [akRight, akBottom];
   LClose.Caption := 'Close';
   LClose.ModalResult := mrCancel;
   LClose.Cancel := True;

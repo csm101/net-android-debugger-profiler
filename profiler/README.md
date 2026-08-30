@@ -48,6 +48,14 @@ See [docs/APP_SETUP.md](docs/APP_SETUP.md): what each profiling mode
 requires from the app build (EnableDiagnostics, MONO_DIAGNOSTICS environment
 file for instrumenting, pdbs) and how to keep it out of normal Debug builds.
 
+## Using the GUI
+
+`gui\NapGui.exe` (build it with `gui\build-gui.cmd`) owns everything else: it starts
+`nap serve` itself, checks the machine's prerequisites and offers to install the missing
+ones, reads your solution to find the Android applications in it, builds and installs the
+one you pick with the properties a session needs, then runs the session and shows the
+results it reads straight from `session.db`. See [docs/GUI_DESIGN.md](docs/GUI_DESIGN.md).
+
 ## Using the MCP server
 
     dotnet tool install -g dotnet-dsrouter        # once; adb must be on PATH (or ANDROID_HOME)

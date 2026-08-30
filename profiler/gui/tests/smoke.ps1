@@ -48,7 +48,9 @@ foreach ($session in $Sessions) {
   foreach ($tab in @('report', 'tree', 'graph', 'source', 'summary', 'memory', 'monitor')) {
     if (-not (Invoke-Gui @("`"$db`"", "--tab=$tab") "panel $tab")) { $failures++ }
   }
-  foreach ($dialog in @('settings', 'layouts')) {
+  # setup builds itself from the sources and the device and starts the control service,
+  # which is the only way to find out that it still opens at all.
+  foreach ($dialog in @('settings', 'layouts', 'setup')) {
     if (-not (Invoke-Gui @("`"$db`"", "--dialog=$dialog") "dialog $dialog")) { $failures++ }
   }
 
