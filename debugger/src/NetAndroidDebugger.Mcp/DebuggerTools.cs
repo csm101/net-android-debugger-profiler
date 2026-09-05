@@ -28,7 +28,10 @@ public sealed class DebuggerTools(SessionHost host)
     [McpServerTool(Name = "list_devices", ReadOnly = true), Description("Lists adb devices/emulators (serial, state, model). Pick a serial for launch_app.")]
     public async Task<string> ListDevices(CancellationToken ct)
     {
-        var devices = await new DebugSession().ListDevicesAsync(ct);
+        IReadOnlyList<DeviceInfo> devices;
+        try { devices = await new DebugSession().ListDevicesAsync(ct); }
+        // "adb not found" is the first thing a fresh machine says; the message lists where it looked.
+        catch (LaunchException ex) { throw new McpException(ex.Message); }
         if (devices.Count == 0) return "No adb devices attached.";
         var sb = new StringBuilder();
         foreach (var d in devices)
@@ -72,6 +75,7 @@ public sealed class DebuggerTools(SessionHost host)
         [Description("msbuild Configuration for deploy")] string configuration = "Debug",
         [Description("How long (seconds) the device-side debug property stays valid after launch (default 180). Helper processes of the app that start later than this run without debugger; any OTHER Mono app starting within this window is disturbed (it waits for a debugger on our port), so keep it short.")] int? propertyLifetimeSeconds = null,
         [Description("Keep the debug property valid for the whole session, so processes the app starts much later (on-demand services, crash reporters) are still debugged. Leaves the window open for other Mono apps to pick up our port the entire time.")] bool keepPropertyFresh = false,
+        [Description("adb executable (or its SDK/platform-tools folder). Omit to use NAD_ADB_PATH, then the SDK named by ANDROID_HOME/ANDROID_SDK_ROOT or the registry, then PATH.")] string? adbPath = null,
         CancellationToken ct = default)
     {
         var deduced = new StringBuilder();
@@ -120,13 +124,14 @@ public sealed class DebuggerTools(SessionHost host)
         }
 
         // Resolved before the session exists, so a device that cannot be chosen leaves nothing behind.
-        var serial = await ResolveSerialAsync(deviceSerial, null, deduced, ct);
+        var serial = await ResolveSerialAsync(deviceSerial, null, deduced, ct, adbPath);
 
         var session = await host.ForLaunchAsync(ct);
         var app = new AppTarget(packageName, activityName, projectPath);
         var options = new LaunchOptions(serial, basePort, deploy, configuration,
             PropertyLifetime: propertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(propertyLifetimeSeconds.Value) : null,
-            KeepPropertyFresh: keepPropertyFresh);
+            KeepPropertyFresh: keepPropertyFresh,
+            AdbPath: adbPath);
         await session.LaunchAsync(app, options, ct);
 
         return "Launched and attached.\n"
@@ -149,7 +154,7 @@ public sealed class DebuggerTools(SessionHost host)
     /// device while looking like it worked.
     /// </para>
     /// </summary>
-    private async Task<string> ResolveSerialAsync(string? fromCall, string? fromConfig, StringBuilder deduced, CancellationToken ct)
+    private async Task<string> ResolveSerialAsync(string? fromCall, string? fromConfig, StringBuilder deduced, CancellationToken ct, string? adbPath = null)
     {
         var requested = fromCall ?? fromConfig ?? Environment.GetEnvironmentVariable(DeviceSerialVariable);
         var source = fromCall is not null ? null
@@ -159,7 +164,7 @@ public sealed class DebuggerTools(SessionHost host)
 
         try
         {
-            var chosen = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, requestedFrom: source);
+            var chosen = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, adbPath, requestedFrom: source);
             if (requested is null) deduced.AppendLine($"device {chosen}, the only one ready");
             else if (source is not null) deduced.AppendLine($"device {chosen} from {source}");
             return chosen;
@@ -231,7 +236,7 @@ public sealed class DebuggerTools(SessionHost host)
         // sensible thing to commit - still launches on the only ready device.
         if (deviceSerial is not null && config.DeviceSerial is not null && deviceSerial != config.DeviceSerial)
             notes.AppendLine($"Device {deviceSerial} overrides {config.DeviceSerial} from the configuration.");
-        var serial = await ResolveSerialAsync(deviceSerial, config.DeviceSerial, notes, ct);
+        var serial = await ResolveSerialAsync(deviceSerial, config.DeviceSerial, notes, ct, config.AdbPath);
 
         var app = new AppTarget(config.PackageName, config.ActivityName, config.ProjectPath);
         var options = new LaunchOptions(
@@ -240,7 +245,8 @@ public sealed class DebuggerTools(SessionHost host)
             Deploy: deploy ?? config.Deploy,
             Configuration: config.Configuration,
             PropertyLifetime: config.PropertyLifetimeSeconds is > 0 ? TimeSpan.FromSeconds(config.PropertyLifetimeSeconds.Value) : null,
-            KeepPropertyFresh: config.KeepPropertyFresh);
+            KeepPropertyFresh: config.KeepPropertyFresh,
+            AdbPath: config.AdbPath);
         await session.LaunchAsync(app, options, ct);
 
         return $"Launched '{config.Name}' from {config.Origin}.\n{notes}{TextFormat.Status(session.GetStatus())}";

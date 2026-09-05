@@ -19,11 +19,24 @@ public sealed class AdbException(string message) : Exception(message);
 /// serial: the engine never relies on the adb default device (other emulators or
 /// devices may be attached).
 /// </summary>
-public sealed class AdbClient(string adbPath = "adb")
+public sealed class AdbClient
 {
     private static readonly Regex DeviceLine = new(@"^(?<serial>\S+)\s+(?<state>\S+)(?<rest>.*)$", RegexOptions.Compiled);
 
-    public string AdbPath { get; } = adbPath;
+    /// <summary>
+    /// Wraps the adb at <paramref name="adbPath"/>, or the one <see cref="AdbLocator"/> finds when
+    /// none is given. Nothing here assumes adb is on PATH.
+    /// </summary>
+    /// <exception cref="LaunchException">adb cannot be found, or the given path has nothing at it.</exception>
+    public AdbClient(string? adbPath = null, string adbPathSource = "the call")
+    {
+        Location = AdbLocator.Locate(adbPath, adbPathSource);
+    }
+
+    /// <summary>Where this client's adb is and which source named it.</summary>
+    public AdbLocation Location { get; }
+
+    public string AdbPath => Location.Path;
 
     /// <summary>Runs <c>adb [args]</c> (no serial) and returns the result without throwing on non-zero exit.</summary>
     public Task<AdbResult> RunAsync(IReadOnlyList<string> args, CancellationToken ct, TimeSpan? timeout = null)

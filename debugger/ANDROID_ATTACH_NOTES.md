@@ -341,7 +341,11 @@ it is the only way to attach to MonoVM on Android.]**
   silently falls back to SwiftShader here. **[verified 2026-08-20]**
 
 - Second machine (2026-09-05, repo under `C:\Athens\GitHub`): adb is not on
-  PATH in Claude's shells; AVDs installed are `pixel_7_-_api_30` (used as
+  PATH in Claude's shells, which no longer matters to the engine - `AdbLocator`
+  finds it through `HKCU\SOFTWARE\Novell\Mono for Android\AndroidSdkDirectory`
+  (= `C:\Program Files (x86)\Android\android-sdk`), the key Visual Studio's
+  .NET Android workload writes; `HKLM\SOFTWARE\Android Studio\SdkPath` exists
+  here but is empty. AVDs installed are `pixel_7_-_api_30` (used as
   `emulator-5554`, `ANDROID_SDK_ROOT` needed by ensure-emulator.sh) and
   `pixel_5_-_api_22_0`; there is no `pixel_7_-_api_33_0`. Its clock is 2 h off
   the host. Gboard on that image crash-loops when a text field gets focus; it is

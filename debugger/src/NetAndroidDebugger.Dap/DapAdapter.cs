@@ -149,7 +149,9 @@ public sealed class DapAdapter : IAsyncDisposable
         var serialSource = Str(args, "deviceSerial") is not null ? null
             : requestedSerial is not null ? "NAD_DEVICE_SERIAL"
             : null;
-        var serial = await _session.ResolveDeviceSerialAsync(requestedSerial, ct, requestedFrom: serialSource);
+        // adbPath follows the same idea: the request, else NAD_ADB_PATH and the SDK the machine declares.
+        var adbPath = Str(args, "adbPath");
+        var serial = await _session.ResolveDeviceSerialAsync(requestedSerial, ct, adbPath, requestedFrom: serialSource);
         if (Str(args, "deviceSerial") is null) Log($"device {serial}{(serialSource is null ? " (the only one ready)" : $" from {serialSource}")}");
 
         var package = Str(args, "packageName") ?? throw new ArgumentException("'packageName' is required (the app's ApplicationId)");
@@ -164,7 +166,8 @@ public sealed class DapAdapter : IAsyncDisposable
             Deploy: deploy,
             Configuration: Str(args, "configuration") ?? "Debug",
             PropertyLifetime: lifetime is > 0 ? TimeSpan.FromSeconds(lifetime.Value) : null,
-            KeepPropertyFresh: Bool(args, "keepPropertyFresh") ?? false);
+            KeepPropertyFresh: Bool(args, "keepPropertyFresh") ?? false,
+            AdbPath: adbPath);
 
         ApplyExceptionRules(args);
 

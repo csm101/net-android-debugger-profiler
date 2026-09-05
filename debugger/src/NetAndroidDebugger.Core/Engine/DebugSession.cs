@@ -118,7 +118,8 @@ public sealed class DebugSession : IAsyncDisposable
 
     // ------------------------------------------------------------------ lifecycle
 
-    public Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken ct, string adbPath = "adb")
+    /// <summary>Devices adb reports. <paramref name="adbPath"/> null means the adb <see cref="AdbLocator"/> finds.</summary>
+    public Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken ct, string? adbPath = null)
         => new AdbClient(adbPath).ListDevicesAsync(ct);
 
     /// <summary>
@@ -161,7 +162,7 @@ public sealed class DebugSession : IAsyncDisposable
         string.Join('\n', devices.Select(d => $"  {d.Serial}  state={d.State}  model={d.Model ?? "?"}"));
 
     /// <summary><see cref="ChooseDevice"/> applied to the devices adb reports right now.</summary>
-    public async Task<string> ResolveDeviceSerialAsync(string? requested, CancellationToken ct, string adbPath = "adb", string? requestedFrom = null)
+    public async Task<string> ResolveDeviceSerialAsync(string? requested, CancellationToken ct, string? adbPath = null, string? requestedFrom = null)
         => ChooseDevice(await ListDevicesAsync(ct, adbPath), requested, requestedFrom).Serial;
 
     /// <summary>
@@ -178,7 +179,8 @@ public sealed class DebugSession : IAsyncDisposable
             _launchOptions = options;
         }
 
-        _adb = new AdbClient(options.AdbPath);
+        _adb = new AdbClient(options.AdbPath, "the launch options");
+        _log($"adb: {_adb.Location}");
         var launcher = new AndroidLauncher(_adb, app, options, _log);
         _launcher = launcher;
         launcher.AppOutput += AppendAppOutput;

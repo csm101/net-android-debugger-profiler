@@ -1,6 +1,17 @@
 # Task resume
 
-## Current task (2026-09-05): device control through adb
+## Current task (2026-09-05, later): adb found without PATH
+
+`Core/Adb/AdbLocator.cs` resolves adb (explicit `adbPath` > `NAD_ADB_PATH` >
+`ANDROID_HOME`/`ANDROID_SDK_ROOT` > registry > default folders > PATH);
+`AdbClient()` with no path uses it and `DebugSession` logs the result.
+`adbPath` is accepted by `launch_app`, `launch_from_config` (launch.json),
+the DAP request and the VS Code extension. `AdbLocatorTests` (6, no device)
+green; launch and MCP tests pass from a shell without adb on PATH. Full suite
+via test-runner in progress; then commit. Docs: README section 4,
+ARCHITECTURE, TEST_CATALOG N2, PROJECT_STATE, DAP_CLIENTS.
+
+## Previous task (2026-09-05): device control through adb
 
 Screen tools for the MCP server: screenshot, UI hierarchy, tap/swipe/key/text,
 so an agent can bring the app to the point worth debugging by itself. Debugging

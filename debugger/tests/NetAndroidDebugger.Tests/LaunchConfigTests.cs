@@ -51,6 +51,7 @@ public sealed class LaunchConfigTests
                   "deploy": true,
                   "keepPropertyFresh": true,
                   "basePort": 10500,
+                  "adbPath": "tools/platform-tools/adb.exe",
                 },
               ]
             }
@@ -60,6 +61,7 @@ public sealed class LaunchConfigTests
 
         Assert.Equal("App.Droid on the tablet", config.Name);
         Assert.Equal("emulator-5554", config.DeviceSerial);
+        Assert.Equal(Path.Combine(ws.Root, "tools", "platform-tools", "adb.exe"), config.AdbPath);
         Assert.Equal("App.Droid", config.PackageName);
         Assert.Equal(Path.Combine(ws.Root, "src", "App.Droid", "App.Droid.csproj"), config.ProjectPath);
         Assert.True(config.Deploy);

@@ -54,7 +54,9 @@ public sealed record AppProjectInfo(string ProjectPath, string? ApplicationId, s
 /// Needed when the debuggee starts processes long after launch (an on-demand service, a crash reporter): with the
 /// default they read an expired property and run without a debugger. The cost is that the window in which another
 /// Mono app can pick up our port stays open for the whole session.</param>
-/// <param name="AdbPath">adb executable; defaults to <c>adb</c> on PATH.</param>
+/// <param name="AdbPath">adb executable, or the SDK or platform-tools folder holding it. Null means
+/// "find it": <c>NAD_ADB_PATH</c>, then the SDK the environment or the registry names, then PATH
+/// (see <c>AdbLocator</c>). A path that is given but wrong is an error, never replaced by a guess.</param>
 public sealed record LaunchOptions(
     string DeviceSerial,
     int BaseSdbPort = 10000,
@@ -64,7 +66,7 @@ public sealed record LaunchOptions(
     int AgentLogLevel = 0,
     TimeSpan? PropertyLifetime = null,
     bool KeepPropertyFresh = false,
-    string AdbPath = "adb")
+    string? AdbPath = null)
 {
     public TimeSpan EffectiveConnectTimeout => ConnectTimeout ?? TimeSpan.FromSeconds(25);
     public TimeSpan EffectivePropertyLifetime => PropertyLifetime ?? TimeSpan.FromMinutes(3);

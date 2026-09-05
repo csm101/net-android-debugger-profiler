@@ -60,6 +60,12 @@ Conventions (mirroring the Delphi project's discipline):
   MCP screen test close that dialog when they see it; the durable fix on that
   emulator is `adb shell ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME`
   (`input text` needs no IME). Applied on this machine 2026-09-05.
+- `ABreakpointHitByAnotherThread_DuringAStep_IsStillReported` failed once in a
+  full run on the api_30 emulator (2026-09-05, 169/170): the `SLOW_STEP`
+  broadcast's breakpoint never hit within its 40 s, and the session log shows
+  both processes attached and nothing else. It passed twice in isolation right
+  after and in the two full runs before. Not explained; if it returns, the
+  question is whether the broadcast was delivered at all.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
 - TestTarget is shared by every test: a member that is deliberately slow or
@@ -500,6 +506,31 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A requested serial that is not attached lists what is — the typical stale
       copy from an earlier session — `ARequestedSerialThatIsNotAttached_ListsWhatIs`
 - [x] A named device is used as given — `ANamedDevice_IsUsedAsGiven`
+
+## N2. Finding adb (`AdbLocatorTests`, no device except the last one)
+
+adb is not on PATH on a machine set up by Visual Studio, and the engine used to
+assume it was. Every source is injected, so what is tested is the order and the
+rule that a named source which is wrong stops the search.
+
+- [x] An explicit path wins and may name the exe, its folder, or the SDK —
+      `ExplicitPath_Wins_AndAcceptsTheExe_ItsFolder_OrTheSdk`
+- [x] An explicit path that is wrong is an error even when PATH would do —
+      `ExplicitPath_ThatIsWrong_IsAnError_NotAFallback`
+- [x] `NAD_ADB_PATH` beats the SDK variables and is an error when stale —
+      `NadAdbPath_Wins_OverTheSdkVariables_AndIsAnErrorWhenWrong`
+- [x] `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the registry, the default folders,
+      then PATH, in that order — `SdkVariables_Registry_Defaults_ThenPath_InThatOrder`
+- [x] Nothing found: the message lists every source tried —
+      `NothingFound_ListsEverySourceTried`
+- [x] On the machine running the suite, adb is found with PATH emptied
+      (the registry key or the default folder is enough) —
+      `OnThisMachine_AdbIsFound_WithoutPath`
+- [x] `adbPath` in launch.json is read and made absolute (in
+      `LaunchConfigTests.AFileAsVsCodeWritesIt_IsRead_CommentsTrailingCommasAndVariablesIncluded`)
+- Verified 2026-09-05: the launch and MCP end-to-end tests pass from a shell
+  whose PATH has no adb; the log reads `adb: ...\adb.exe (from the .NET Android
+  workload's registry key)`.
 
 ## O. Sharing the device with another debugger (`DebugPropertyTests`, no device)
 `debug.mono.extra` is device-global, so two debuggers overwrite each other in

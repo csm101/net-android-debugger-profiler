@@ -79,6 +79,16 @@ ready. With several it never guesses — it fails listing them. `NAD_DEVICE_SERI
 is the per-machine answer, overridden by a serial passed in a call, and it also
 selects the device the test suite uses.
 
+adb itself does not have to be on PATH. The debugger looks for it in this order:
+an `adbPath` given in the call or in `launch.json`, then `NAD_ADB_PATH` (the
+executable or its SDK / platform-tools folder), then the SDK named by
+`ANDROID_HOME` or `ANDROID_SDK_ROOT`, then the SDK directory the .NET Android
+workload and Android Studio record in the registry, then the SDK's default
+folders, and PATH last. A machine set up by Visual Studio needs nothing: the
+workload's registry entry is enough. A path that is given but wrong is an error,
+never replaced by a guess; `list_devices` is where a fresh machine finds out,
+and its message lists every place that was tried.
+
 ### 5. What to enable on the device
 
 Debugging needs **USB debugging** in Developer options, and that is all it needs

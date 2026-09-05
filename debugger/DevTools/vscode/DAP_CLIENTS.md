@@ -18,6 +18,7 @@ attach to an already-running process.
 |---|---|---|
 | `packageName` | yes | The app's ApplicationId, e.g. `App.Droid`. |
 | `deviceSerial` | no | adb serial, from `adb devices`. Omit it and the adapter uses `NAD_DEVICE_SERIAL`, or the only ready device; several ready devices fail listing them. A serial names a machine, so leaving it out is usually what belongs in a committed file. |
+| `adbPath` | no | adb executable, or the SDK / platform-tools folder holding it. Omit it and the adapter uses `NAD_ADB_PATH`, then the SDK named by `ANDROID_HOME` / `ANDROID_SDK_ROOT` or recorded in the registry by the .NET Android workload, then PATH. A given path that is wrong is an error, never replaced by a guess. |
 | `activityName` | no | `pkg/fully.qualified.Activity`; resolved automatically when omitted. |
 | `projectPath` | no | Android `.csproj`; needed only with `deploy`. |
 | `deploy` | no | Build and install before launching (`launch` only). |

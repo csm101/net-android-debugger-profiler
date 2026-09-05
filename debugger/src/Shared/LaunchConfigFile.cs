@@ -23,7 +23,8 @@ public sealed record LaunchConfig(
     bool KeepPropertyFresh = false,
     IReadOnlyList<ExceptionRule>? ExceptionRules = null,
     bool UseGlobalExceptionRules = true,
-    string? GlobalExceptionRulesPath = null)
+    string? GlobalExceptionRulesPath = null,
+    string? AdbPath = null)
 {
     /// <summary>Rules carried by the configuration itself; empty when it names none.</summary>
     public IReadOnlyList<ExceptionRule> Rules => ExceptionRules ?? [];
@@ -159,7 +160,10 @@ public static class LaunchConfigFile
             Bool(chosen, "keepPropertyFresh") ?? false,
             rules,
             Bool(chosen, "useGlobalExceptionRules") ?? true,
-            Absolute(Field("globalExceptionRulesPath"), workspaceFolder));
+            Absolute(Field("globalExceptionRulesPath"), workspaceFolder),
+            // adbPath, like deviceSerial, names a machine rather than the app: optional, and usually
+            // better left to NAD_ADB_PATH or the SDK the machine already declares.
+            Absolute(Field("adbPath"), workspaceFolder));
     }
 
     /// <summary>

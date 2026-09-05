@@ -54,6 +54,10 @@
                 "type": "string",
                 "description": "adb serial of the target device, from `adb devices`. Optional: when omitted, NAD_DEVICE_SERIAL is used, and failing that the only ready device. With several devices ready the launch fails listing them - none is ever guessed. A serial names a machine, so leaving it out is usually the right thing to commit."
               },
+              "adbPath": {
+                "type": "string",
+                "description": "adb executable, or the SDK or platform-tools folder holding it. Optional: when omitted, NAD_ADB_PATH is used, then the SDK named by ANDROID_HOME / ANDROID_SDK_ROOT or recorded in the registry by the .NET Android workload, then PATH. Like deviceSerial it names a machine, so it rarely belongs in a committed file."
+              },
               "packageName": {
                 "type": "string",
                 "description": "The app's ApplicationId, e.g. App.Droid."
@@ -152,6 +156,10 @@
               "deviceSerial": {
                 "type": "string",
                 "description": "adb serial of the target device. Optional; see the launch configuration."
+              },
+              "adbPath": {
+                "type": "string",
+                "description": "adb executable or its folder. Optional; see the launch configuration."
               },
               "packageName": {
                 "type": "string",

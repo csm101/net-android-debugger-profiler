@@ -206,10 +206,12 @@ public sealed class DeviceTools(SessionHost host, ILogger<DeviceTools> logger)
         var fromSession = host.Current?.GetStatus().DeviceSerial;
         var requested = deviceSerial ?? fromSession ?? Environment.GetEnvironmentVariable("NAD_DEVICE_SERIAL");
         var source = deviceSerial is not null ? null : fromSession is not null ? "the debug session" : requested is not null ? "NAD_DEVICE_SERIAL" : null;
-        string serial;
-        try { serial = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, requestedFrom: source); }
+        try
+        {
+            var serial = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, requestedFrom: source);
+            return new DeviceControl(new AdbClient(), serial, line => logger.LogInformation("{Line}", line));
+        }
         catch (LaunchException ex) { throw new McpException(ex.Message); }
-        return new DeviceControl(new AdbClient(), serial, line => logger.LogInformation("{Line}", line));
     }
 
     private async Task<UiNode> ResolveSingleAsync(DeviceControl control, UiSelector selector, CancellationToken ct)

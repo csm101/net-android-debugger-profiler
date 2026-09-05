@@ -153,6 +153,11 @@ per-vendor table.
   offset measured once per launch (`AndroidLauncher.DeviceClockOffset`).
 - Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md; open questions in
   KNOWN_UNKNOWNS.md (U13 hit-count baseline is the notable one).
+- **adb is found, not assumed on PATH** (2026-09-05): `AdbLocator` resolves it
+  from an explicit `adbPath` (call or launch.json), `NAD_ADB_PATH`, the SDK
+  variables, the SDK directory the .NET Android workload records in the
+  registry, the default SDK folders, and PATH last. A named source that is
+  wrong is an error. A machine set up by Visual Studio needs no configuration.
 - **`logcat -c` does not clear on Android 11** (emulator API 30, 2026-09-05):
   the buffer stays readable and a launch used to attach to the previous
   session's dead pid. The stream now starts at the buffer's own newest stamp
