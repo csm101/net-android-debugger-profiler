@@ -652,6 +652,15 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
             "terminate_app",
             "use_global_exception_rules",
             "wait_until_stopped",
+            // Screen tools (DeviceTools): see the screen and act on it through adb.
+            "capture_screenshot",
+            "check_device_control",
+            "get_ui_hierarchy",
+            "press_key",
+            "swipe_screen",
+            "tap_screen",
+            "type_text",
+            "wake_screen",
         ];
 
         var exposed = (await client.ListToolsAsync(cancellationToken: cts.Token)).Select(t => t.Name).OrderBy(n => n).ToArray();
@@ -871,5 +880,79 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
         {
             workspace.Delete(recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task ScreenTools_ScreenshotIsAnImage_AndATapBySelectorHitsABreakpoint()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var client = await ConnectAsync(cts.Token);
+        var ct = cts.Token;
+
+        var tools = (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToHashSet();
+        foreach (var expected in new[] { "check_device_control", "capture_screenshot", "get_ui_hierarchy", "tap_screen", "swipe_screen", "press_key", "type_text", "wake_screen" })
+            Assert.Contains(expected, tools);
+
+        // Before any session: the device comes from NAD_DEVICE_SERIAL or is the only one ready, as for launch_app.
+        await CallAsync(client, "wake_screen", new Dictionary<string, object?> { ["deviceSerial"] = device.Serial }, ct);
+        var shot = await client.CallToolAsync("capture_screenshot", new Dictionary<string, object?> { ["deviceSerial"] = device.Serial }, cancellationToken: ct);
+        Assert.False(shot.IsError == true, string.Join(" ", shot.Content.OfType<TextContentBlock>().Select(c => c.Text)));
+        var image = Assert.Single(shot.Content.OfType<ImageContentBlock>());
+        Assert.Equal("image/png", image.MimeType);
+        Assert.True(image.DecodedData.Length > 1000);
+        Assert.Contains(" px", Assert.Single(shot.Content.OfType<TextContentBlock>()).Text);
+
+        var clickLine = TestEnvironment.LineOf(TestEnvironment.MainActivitySource, "_counter = previous + 1;");
+        await CallAsync(client, "set_breakpoint", new Dictionary<string, object?>
+        {
+            ["file"] = TestEnvironment.MainActivitySource,
+            ["line"] = clickLine,
+        }, ct);
+        var launched = await CallAsync(client, "launch_app", new Dictionary<string, object?>
+        {
+            ["deviceSerial"] = device.Serial,
+            ["packageName"] = TestEnvironment.TestTargetPackage,
+        }, ct);
+        Assert.Contains("state=Running", launched);
+
+        // With a session, the device is implied. The activity takes a moment to draw after `am start`.
+        string hierarchy = "";
+        for (var attempt = 0; attempt < 20 && !hierarchy.Contains("id=increment_button"); attempt++)
+        {
+            await Task.Delay(500, ct);
+            var started = DateTime.UtcNow;
+            var r = await client.CallToolAsync("get_ui_hierarchy", null, cancellationToken: ct);
+            hierarchy = string.Join("\n", r.Content.OfType<TextContentBlock>().Select(c => c.Text));
+            output.WriteLine($"[get_ui_hierarchy] attempt {attempt} {(DateTime.UtcNow - started).TotalSeconds:F1}s {(r.IsError == true ? "ERROR " : "")}{hierarchy.Split('\n')[0]}");
+            // An "X keeps stopping" dialog (Gboard, on the API 30 emulator image) covers the activity.
+            if (hierarchy.Contains("id=aerr_close"))
+                await CallAsync(client, "tap_screen", new Dictionary<string, object?> { ["resourceId"] = "android:id/aerr_close" }, ct);
+        }
+        Assert.Contains("id=increment_button", hierarchy);
+        Assert.Contains("clickable", hierarchy);
+
+        // A selector nobody matches is an error that says so, not a tap somewhere.
+        var missing = await client.CallToolAsync("tap_screen", new Dictionary<string, object?> { ["text"] = "no such button anywhere" }, cancellationToken: ct);
+        Assert.True(missing.IsError == true);
+        Assert.Contains("No view matches", string.Join(" ", missing.Content.OfType<TextContentBlock>().Select(c => c.Text)));
+
+        var tapped = await CallAsync(client, "tap_screen", new Dictionary<string, object?> { ["resourceId"] = "increment_button" }, ct);
+        Assert.StartsWith("tapped", tapped);
+        Assert.Contains($"on {device.Serial}", tapped);
+
+        var stop = await CallAsync(client, "wait_until_stopped", new Dictionary<string, object?> { ["timeoutSeconds"] = 30 }, ct);
+        Assert.Contains("reason=Breakpoint", stop);
+        Assert.Contains($":{clickLine}", stop);
+
+        // Suspended: `input` would block until the app consumes the event, so input tools refuse up
+        // front and say why, instead of sitting on the 30 s timeout. A screenshot still works.
+        var whileStopped = await client.CallToolAsync("press_key", new Dictionary<string, object?> { ["key"] = "back" }, cancellationToken: ct);
+        Assert.True(whileStopped.IsError == true);
+        Assert.Contains("suspended", string.Join(" ", whileStopped.Content.OfType<TextContentBlock>().Select(c => c.Text)));
+        var stoppedShot = await client.CallToolAsync("capture_screenshot", null, cancellationToken: ct);
+        Assert.False(stoppedShot.IsError == true);
+        Assert.Single(stoppedShot.Content.OfType<ImageContentBlock>());
+
+        Assert.Contains("Terminated", await CallAsync(client, "terminate_app", null, ct));
     }
 }

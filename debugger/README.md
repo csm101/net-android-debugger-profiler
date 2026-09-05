@@ -79,6 +79,29 @@ ready. With several it never guesses — it fails listing them. `NAD_DEVICE_SERI
 is the per-machine answer, overridden by a serial passed in a call, and it also
 selects the device the test suite uses.
 
+### 5. What to enable on the device
+
+Debugging needs **USB debugging** in Developer options, and that is all it needs
+on stock Android and on the emulator. Two more things are optional, and each one
+is refused by some vendors until a further switch is on. The debugger keeps
+working without them; only the feature that depends on them is lost, and the
+error says which switch to flip.
+
+| Feature | Needs | Stock Android | Xiaomi / MIUI |
+|---|---|---|---|
+| Debugging: attach, breakpoints, inspection | USB debugging | on by itself | on by itself |
+| Deploying from the debugger (`deploy: true`) | installing over adb | on by itself | Developer options › **Install via USB** (MIUI asks for a Mi account, on some models for a SIM). Even with it on, **the phone shows a confirmation dialog for every install**, for a few seconds; unanswered, the install fails as `INSTALL_FAILED_USER_RESTRICTED` ("Install canceled by user"). Keep an eye on the screen the first time. Turning off **Turn on MIUI optimization** removes the dialog. |
+| Screen tools: `tap_screen`, `swipe_screen`, `press_key`, `type_text` | adb input injection | on by itself | Developer options › **USB debugging (Security settings)** — "allow granting permissions and simulating input via USB debugging". Off, every input tool fails with `INJECT_EVENTS permission`, and the message names this switch. Same Mi-account requirement. |
+| Screen tools: `capture_screenshot`, `get_ui_hierarchy` | nothing beyond USB debugging | works | works |
+
+`check_device_control` probes all of this on a device and reports it in one
+call, without changing anything on the device.
+
+Other vendors gate the same two things behind switches of their own in Developer
+options; the MIUI column is the one verified here (Redmi Note 8 Pro, MIUI 12.5).
+A screen that is off or locked has no hierarchy to read: `wake_screen` turns it
+on and dismisses a lock screen that has no PIN.
+
 ### Debugging an app from VS Code
 
 Three conditions on the app, and no change to its project file:
@@ -227,6 +250,22 @@ frontend reads, so pressing F5 and launching through MCP cannot drift apart.
 Exception rules given in the configuration are applied to the session, which is
 where "this app throws these on purpose" belongs — with the app, rather than in
 one person's profile. This repository's own `.vscode/launch.json` is an example.
+
+The agent can also drive the screen, so it reaches the point worth debugging by
+itself instead of asking someone to tap through the app: `capture_screenshot`
+returns the screen as an image (it works while the app is stopped at a
+breakpoint), `get_ui_hierarchy` lists the views with their ids, texts and centre
+coordinates, and `tap_screen(resourceId: "login_button")` or
+`tap_screen(text: "Login")` taps the one view a selector identifies. There are
+also `swipe_screen`, `press_key`, `type_text` (ASCII, into the focused field) and
+`wake_screen`. Everything goes through adb: no agent app on the device, nothing
+inside the debuggee. All coordinates are physical pixels, the same in screenshots,
+the hierarchy and taps. The one thing to know is that a suspended app has no
+live main thread: `get_ui_hierarchy` fails, in words, and a tap or key would
+block until the app consumes it, so the input tools refuse while the session is
+stopped — resume first, or take a screenshot, which works at any time. Section 5
+above says what a vendor may require before input injection works;
+`check_device_control` reports it for a device.
 
 ## Using the DAP adapter from an editor
 

@@ -54,6 +54,12 @@ Conventions (mirroring the Delphi project's discipline):
   reported) and passed in the confirmation run and three times in isolation. Not
   explained; if it returns, the question is whether the app died on its own or
   the stop was lost.
+- On the `pixel_7_-_api_30` image Gboard crash-loops (ML Kit initializer) the
+  moment a text field gets focus, and Android's "keeps stopping" dialog then
+  covers the activity and owns the UI hierarchy. `DeviceControlTests` and the
+  MCP screen test close that dialog when they see it; the durable fix on that
+  emulator is `adb shell ime disable com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME`
+  (`input text` needs no IME). Applied on this machine 2026-09-05.
 - Source lines are located by code markers (`TestEnvironment.LineOf`), never
   by hardcoded numbers.
 - TestTarget is shared by every test: a member that is deliberately slow or
@@ -95,6 +101,14 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] Launch fails cleanly when the package is not installed (error names the
       package, session ends, property cleared) — `Launch_UnknownPackage_FailsCleanly`
 - [x] Launch fails cleanly when the serial is unknown — `Launch_UnknownDeviceSerial_FailsCleanly`
+
+- [x] A logcat stream started at the buffer's own boundary does not replay a
+      line logged before it, even where `logcat -c` leaves the buffer readable
+      (Android 11) — `StreamLogcat_StartedSinceNow_DoesNotReplayLinesLoggedBefore_EvenWhenClearIsIneffective`
+      (`LogcatTests`)
+- [x] Three launches in a row each attach to their own new process, never to
+      the previous session's dead pid (the alternating handshake failure of
+      2026-09-05) — `Launch_RightAfterAPreviousSession_AttachesToTheNewProcess_NotTheDeadOne`
 
 ## A2. Multi-process (port rotation)
 - [x] Helper process (`:helper`) attached on the next port, breakpoint hit
@@ -536,6 +550,67 @@ the event thread or matches rules against data that is not there.
 Verified end to end on the reference application with `DevTools/ExceptionTypeProbe`, not in this
 suite: it needs a real app whose exceptions come out of an assembly without
 symbols, which TestTarget cannot provide. See KNOWN_UNKNOWNS U15.
+## S. Driving the screen (`UiHierarchyTests` no device, `DeviceControlTests` device, one MCP end-to-end)
+
+The screen tools exist so an agent reaches the point worth debugging by itself.
+What they promise: seeing the screen (screenshot, hierarchy) never needs more
+than USB debugging; acting on it may be refused by a vendor, and then the
+refusal says which switch to flip and nothing else is lost.
+
+- [x] The uiautomator XML parses into nodes with bounds, centres, flags and depth;
+      layouts are not "interesting", controls are —
+      `Parse_ReadsNodes_WithBoundsAndFlags`
+- [x] Noise a vendor prints before the XML (MIUI's theme stack trace) is skipped —
+      `Parse_SkipsTheNoise_AVendorPrintsBeforeTheXml`
+- [x] Output without a hierarchy is an error naming that, not an empty tree —
+      `Parse_RejectsOutputWithoutAHierarchy`
+- [x] Selectors match short and full resource ids, short and full classes, text
+      case-insensitively, and combine — `Find_MatchesShortIds_ShortClasses_AndTextCaseInsensitively`
+- [x] Several top-level windows (a dialog over the activity) become one root —
+      `Parse_WrapsSeveralTopLevelWindows_InOneRoot`
+- [x] Key names with or without `KEYCODE_`, with spaces, or numeric —
+      `NormalizeKey_AcceptsNames_WithOrWithoutPrefix_AndCodes`
+- [x] Text survives `adb shell input text`: spaces as `%s`, quotes escaped —
+      `QuoteForInputText_EscapesSpaces_AndShellQuotes`
+- [x] The vendor's injection refusal is recognised by its text, other `input`
+      errors are not — `LooksLikeInjectionDenied_RecognisesTheVendorRefusal`
+- [x] PNG dimensions come from the header; non-PNG bytes and empty output are
+      errors — `ReadPngDimensions_ReadsTheHeader_AndRejectsOtherBytes`
+- [x] The device allows injection (fails in words on a MIUI device with the
+      security toggle off) — `InputInjection_IsAllowed_OnThisDevice`
+- [x] A screenshot is a PNG the size of the display, either orientation —
+      `Screenshot_IsAPng_TheSizeOfTheDisplay`
+- [x] TestTarget's button, label and text field are in the hierarchy by short
+      resource id — `UiHierarchy_ListsTestTargetsControls_ByResourceId`
+- [x] **The loop that matters**: a tap on the button hits a breakpoint in the
+      click handler, with its locals — `Tap_OnTheButton_HitsTheClickHandlersBreakpoint`
+- [x] While the app is suspended the hierarchy fails saying so (uiautomator
+      waits for an idle UI) and a screenshot still works —
+      `UiHierarchy_FailsInWords_WhileTheAppIsSuspended`
+- [x] Typed text lands in the focused field, quote included —
+      `TypeText_IntoTheFocusedField_ShowsUpInTheHierarchy`
+- [x] Non-ASCII text is refused rather than typed as garbage —
+      `TypeText_RefusesNonAscii_InsteadOfTypingGarbage`
+- [x] Through the MCP server: the screen tools are listed, `capture_screenshot`
+      returns an image block, the device is implied by the session,
+      `tap_screen` by selector hits a breakpoint, a selector nobody matches is
+      an error, and input tools say when the debuggee is suspended —
+      `ScreenTools_ScreenshotIsAnImage_AndATapBySelectorHitsABreakpoint`
+- `ScreenTools_ScreenshotIsAnImage_AndATapBySelectorHitsABreakpoint` once ran
+  into its 3-minute budget right after `launch_app` (2026-09-05, first run
+  after the Gboard dialog episode) and passed in 13 s on the next run. Not
+  explained. The test now logs each `get_ui_hierarchy` attempt with its
+  duration; if it hangs again, that line says whether uiautomator or the launch
+  is what stalls.
+- [ ] Deploy refused by a vendor (`INSTALL_FAILED_USER_RESTRICTED`) is explained
+      (`AndroidLauncher.DeployHint`) — seen on the Redmi when MIUI's per-install
+      confirmation dialog went unanswered; not a test because it needs a person
+      not tapping
+- The whole section also passed on the Redmi Note 8 Pro (MIUI 12.5, Android 11)
+  on 2026-09-05, 10/10 including `LogcatTests`.
+- [ ] Long press and swipe on a real control — TestTarget has nothing that reacts
+      to either; add a list when a feature needs one
+
 ## R. Install scripts (`InstallScriptTests`, no device)
 `register-mcp.cmd` and `install-vscode-extension.cmd` are the only path a new
 machine has to a working setup, and they name folders and file names as strings.

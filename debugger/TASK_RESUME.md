@@ -1,6 +1,69 @@
 # Task resume
 
-## Current task (2026-08-26)
+## Current task (2026-09-05): device control through adb
+
+Screen tools for the MCP server: screenshot, UI hierarchy, tap/swipe/key/text,
+so an agent can bring the app to the point worth debugging by itself. Debugging
+must keep working when the device refuses input injection (MIUI gates it behind
+"USB debugging (Security settings)").
+
+Substep: code and tests done and green in isolation (12 no-device tests, 7
+`DeviceControlTests` and the MCP screen test on `emulator-5554`; 3 of the device
+tests also on the Redmi). First full run: 141/162, one stale tool-surface list
+(fixed) and 20 launch handshake failures caused by `logcat -c` not clearing on
+this Android 11 image (fixed in `AndroidLauncher`/`AdbClient`, covered by
+`LogcatTests`, recorded in ANDROID_ATTACH_NOTES). Second full run:
+**164/164 green, 12m59s** on `emulator-5554` (`NAD_SKIP_DEPLOY=1`).
+Task complete; nothing in flight. Docs updated
+(README section 5 + MCP paragraph, ARCHITECTURE rows, PROJECT_STATE tool
+surface, TEST_CATALOG section S, ANDROID_ATTACH_NOTES screen section).
+
+Found while testing, already handled in code and docs:
+- `input` blocks until the focused app consumes the event: with the main thread
+  at a breakpoint the adb call never returns. Input tools refuse while the
+  session is stopped (`DeviceTools.RefuseWhileSuspended`).
+- Suspended app: uiautomator says `could not get idle state` on MIUI and
+  `null root node` on the API 30 emulator; both mapped to the same explanation.
+- Gboard crash-loops on the api_30 image when a text field gets focus; the
+  dialog covers the activity. Tests dismiss it; Gboard disabled on that AVD.
+- The MCP screen test hung once for its whole 3-minute budget after launch_app,
+  then passed in 13 s. Instrumented, not explained.
+
+Not committed yet.
+
+Files: `Core/Device/DeviceControl.cs`, `Core/Device/UiHierarchy.cs`,
+`Core/Adb/AdbClient.cs` (`RunDeviceBytesAsync` for `exec-out`),
+`Mcp/DeviceTools.cs` (registered in `Program.cs`), tests `UiHierarchyTests`
+(no device), `DeviceControlTests` (device), one MCP end-to-end test.
+TestTarget's layout gained an `EditText` (`input_field`) for the type_text
+test - the suite must deploy once (drop `NAD_SKIP_DEPLOY`).
+
+Device for this work: the user's Redmi Note 8 Pro, serial `a-physical-device`
+(MIUI 12.5, Android 11, 1080x2340, injection allowed - the toggle is on).
+The first deploy to it failed (`INSTALL_FAILED_USER_RESTRICTED`): MIUI shows a
+confirmation dialog on the phone for every adb install and it went unanswered.
+Approved on retry; the 7 `DeviceControlTests`, the 2 `LogcatTests` and the MCP
+screen test all pass on the Redmi too. `AndroidLauncher.DeployHint` explains
+that failure.
+
+This machine differs from the one the docs describe: the repo is under
+`C:\Athens\GitHub`, adb is NOT on PATH in Claude's shells (use
+`C:\Program Files (x86)\Android\android-sdk\platform-tools\adb.exe`, and add
+the folder to PATH before `dotnet test`), and the installed AVDs are
+`pixel_7_-_api_30` and `pixel_5_-_api_22_0` - there is no `pixel_7_-_api_33_0`.
+Device tests run on `AVD=pixel_7_-_api_30` as `emulator-5554`
+(`ANDROID_SDK_ROOT` must be set for ensure-emulator.sh to find the binary).
+
+Measured on the Redmi: `screencap -p` 112 KB PNG; `uiautomator dump` 2 s, with
+a MIUI stack trace (missing theme_compatibility.xml) on stderr before the XML;
+`input keyevent 0` accepted (the injection probe).
+
+Next: build tests, run `UiHierarchyTests` then `DeviceControlTests` and the MCP
+test on the Redmi, then docs (README "What to enable on the device",
+ARCHITECTURE module row, PROJECT_STATE tool surface, TEST_CATALOG section S,
+ANDROID_ATTACH_NOTES device-control facts), then the full suite via test-runner.
+
+## Previous task (2026-08-26)
 
 Nothing in flight.
 

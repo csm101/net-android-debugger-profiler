@@ -103,8 +103,25 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await proc.WaitForExitAsync(ct).ConfigureAwait(false);
         var output = await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false);
         if (proc.ExitCode != 0)
-            throw new LaunchException($"deploy failed (exit {proc.ExitCode}):\n{output}");
+            throw new LaunchException($"deploy failed (exit {proc.ExitCode}):{DeployHint(output)}\n{output}");
         _log("deploy: ok");
+    }
+
+    /// <summary>
+    /// A one-line explanation for the install failures whose text points anywhere but at the cause.
+    /// `INSTALL_FAILED_USER_RESTRICTED` is MIUI: either a confirmation dialog on the phone was
+    /// not answered in time (it shows for a few seconds and then counts as refused), or the
+    /// developer option "Install via USB" is off.
+    /// </summary>
+    internal static string DeployHint(string output)
+    {
+        if (output.Contains("INSTALL_FAILED_USER_RESTRICTED", StringComparison.Ordinal))
+            return " the device refused the install (INSTALL_FAILED_USER_RESTRICTED). On Xiaomi/MIUI this is a confirmation " +
+                   "dialog on the phone that nobody approved - watch the screen and retry - or Developer options > " +
+                   "\"Install via USB\" being off; see README.md, \"What to enable on the device\".";
+        if (output.Contains("INSTALL_FAILED_VERIFICATION_FAILURE", StringComparison.Ordinal))
+            return " the device's app verifier blocked the install; disable \"Verify apps over USB\" in Developer options.";
+        return "";
     }
 
     /// <summary>
@@ -134,9 +151,14 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await ForwardAsync(_nextPort, ct).ConfigureAwait(false);
 
         await _adb.LogcatClearAsync(serial, ct).ConfigureAwait(false);
+        // The clear alone is not trusted: on Android 11 images the buffer stays readable after it,
+        // and the previous session's agent line would then be attached to as if it were this launch's.
+        // The stream starts right after the newest line the buffer holds now; the process is only
+        // started after this, so nothing of its own can be older than that.
+        var logcatSince = AdbClient.LogcatSinceArgs(await _adb.ReadLogcatBoundaryAsync(serial, ct).ConfigureAwait(false));
         _logcatCts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken.None);
         var logcatCt = _logcatCts.Token;
-        _logcatTask = Task.Run(() => _adb.StreamLogcatAsync(serial, line => OnLogcatLine(line, logcatCt), logcatCt), CancellationToken.None);
+        _logcatTask = Task.Run(() => _adb.StreamLogcatAsync(serial, line => OnLogcatLine(line, logcatCt), logcatCt, logcatSince), CancellationToken.None);
 
         await _adb.StartActivityAsync(serial, component, ct).ConfigureAwait(false);
         if (_options.KeepPropertyFresh)

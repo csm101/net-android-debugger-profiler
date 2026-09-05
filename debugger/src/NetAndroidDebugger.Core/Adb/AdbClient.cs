@@ -40,6 +40,48 @@ public sealed class AdbClient(string adbPath = "adb")
         return r;
     }
 
+    /// <summary>
+    /// Runs <c>adb -s serial [args]</c> and returns raw stdout bytes (for <c>exec-out</c>, whose
+    /// output is binary and must not go through text decoding). Throws on non-zero exit.
+    /// </summary>
+    public async Task<byte[]> RunDeviceBytesAsync(string serial, IReadOnlyList<string> args, CancellationToken ct, TimeSpan? timeout = null)
+    {
+        var psi = new ProcessStartInfo(AdbPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        psi.ArgumentList.Add("-s");
+        psi.ArgumentList.Add(serial);
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        using var proc = Process.Start(psi) ?? throw new AdbException($"cannot start {AdbPath}");
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var effective = timeout ?? TimeSpan.FromSeconds(60);
+        cts.CancelAfter(effective);
+        var stdout = new MemoryStream();
+        var copyTask = proc.StandardOutput.BaseStream.CopyToAsync(stdout, cts.Token);
+        var stderrTask = proc.StandardError.ReadToEndAsync(cts.Token);
+        try
+        {
+            await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            await copyTask.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            if (ct.IsCancellationRequested) throw;
+            throw new AdbException($"adb -s {serial} {string.Join(' ', args)} timed out after {effective.TotalSeconds:F0}s");
+        }
+        var stderr = await stderrTask.ConfigureAwait(false);
+        if (proc.ExitCode != 0)
+            throw new AdbException($"adb -s {serial} {string.Join(' ', args)} failed ({proc.ExitCode}): {stderr.Trim()}");
+        return stdout.ToArray();
+    }
+
     /// <summary>Runs <c>adb -s serial shell command</c> and returns stdout.</summary>
     public async Task<string> ShellAsync(string serial, string command, CancellationToken ct, TimeSpan? timeout = null)
     {
@@ -181,6 +223,35 @@ public sealed class AdbClient(string adbPath = "adb")
 
     public Task LogcatClearAsync(string serial, CancellationToken ct)
         => RunDeviceAsync(serial, ["logcat", "-c"], ct);
+
+    private static readonly Regex LogcatStamp = new(@"^(?<md>\d\d-\d\d) (?<time>\d\d:\d\d:\d\d\.\d\d\d)", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The instant after which a logcat line is new: one millisecond past the newest line the buffer
+    /// holds right now, in logcat's own <c>MM-DD hh:mm:ss.mmm</c> stamp. Null when the buffer is empty.
+    /// <para>
+    /// <c>logcat -c</c> is not trusted to clear: on Android 11 images the buffer stays readable
+    /// after it (measured 2026-09-05), and a launch then read the previous process' agent line as
+    /// if it were its own. The device clock is no boundary either - it is read at one-second
+    /// resolution, and two launches in a row fit in one second. The buffer's own stamps are exact.
+    /// </para>
+    /// </summary>
+    public async Task<string?> ReadLogcatBoundaryAsync(string serial, CancellationToken ct)
+    {
+        var r = await RunDeviceAsync(serial, ["logcat", "-v", "threadtime", "-d", "-t", "1"], ct, TimeSpan.FromSeconds(15)).ConfigureAwait(false);
+        foreach (var raw in r.StdOut.Split('\n'))
+        {
+            var m = LogcatStamp.Match(raw.Trim());
+            if (!m.Success) continue;
+            var stamp = DateTime.ParseExact(m.Groups["md"].Value + " " + m.Groups["time"].Value, "MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+            return stamp.AddMilliseconds(1).ToString("MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+        }
+        return null;
+    }
+
+    /// <summary>Arguments that make a logcat stream start at a boundary from <see cref="ReadLogcatBoundaryAsync"/>; none when there is no boundary.</summary>
+    public static IReadOnlyList<string>? LogcatSinceArgs(string? boundary)
+        => boundary is null ? null : ["-T", boundary];
 
     /// <summary>
     /// Starts <c>adb -s serial logcat -v threadtime</c> and streams lines to <paramref name="onLine"/>

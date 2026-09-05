@@ -112,6 +112,16 @@ Also list_app_projects, the counterpart of list_devices for choosing which app
 to launch, and the deduction behind it: launch_app reads the package name from
 the project rather than having it restated.
 
+Screen tools (2026-09-05), so the agent can bring the app to the point worth
+debugging by itself: check_device_control, capture_screenshot (returns an image
+block; works while the app is stopped), get_ui_hierarchy, tap_screen (by
+coordinates or by a selector that must match exactly one view), swipe_screen,
+press_key, type_text (ASCII), wake_screen. All through adb, no agent on the
+device. The device defaults to the session's. Input injection is the one part a
+vendor may gate (MIUI: "USB debugging (Security settings)"); debugging never
+depends on it, and the refusal names the switch. README section 5 is the
+per-vendor table.
+
 ## Stable commands
 
     dotnet build C:\GitHub\net-android-debugger\NetAndroidDebugger.slnx
@@ -143,6 +153,10 @@ the project rather than having it restated.
   offset measured once per launch (`AndroidLauncher.DeviceClockOffset`).
 - Details in ANDROID_ATTACH_NOTES.md / ARCHITECTURE.md; open questions in
   KNOWN_UNKNOWNS.md (U13 hit-count baseline is the notable one).
+- **`logcat -c` does not clear on Android 11** (emulator API 30, 2026-09-05):
+  the buffer stays readable and a launch used to attach to the previous
+  session's dead pid. The stream now starts at the buffer's own newest stamp
+  plus one millisecond (`-T`), which is exact where the device clock is not.
 - Multi-process apps (the reference application spawns `:crash_report_process` at init): every
   process reads the same property; same port → helper dies in a respawn loop.
   Port rotation (rewrite the property right after the main process has read

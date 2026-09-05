@@ -340,6 +340,70 @@ it is the only way to attach to MonoVM on Android.]**
   time out and the suite becomes flaky (runs 10-11); `-gpu angle_indirect`
   silently falls back to SwiftShader here. **[verified 2026-08-20]**
 
+- Second machine (2026-09-05, repo under `C:\Athens\GitHub`): adb is not on
+  PATH in Claude's shells; AVDs installed are `pixel_7_-_api_30` (used as
+  `emulator-5554`, `ANDROID_SDK_ROOT` needed by ensure-emulator.sh) and
+  `pixel_5_-_api_22_0`; there is no `pixel_7_-_api_33_0`. Its clock is 2 h off
+  the host. Gboard on that image crash-loops when a text field gets focus; it is
+  disabled there (see TEST_CATALOG, running the suite).
+- Physical test device (2026-09-05): Xiaomi Redmi Note 8 Pro, serial
+  `a-physical-device`, MIUI 12.5 (`ro.miui.ui.version.name=V125`), Android 11
+  (API 30), 1080x2340 @ 440 dpi. USB debugging (Security settings) and Install
+  via USB are both on. The first deploy still failed as
+  `INSTALL_FAILED_USER_RESTRICTED`: MIUI shows a confirmation dialog on the
+  phone for every adb install, for a few seconds, and an unanswered one counts
+  as "Install canceled by user". Approved on the second attempt; all screen
+  tests then passed on it (10/10, 2026-09-05). adb is not on PATH in Claude's
+  shells on this machine.
+
+## logcat -c does not clear on Android 11 (verified 2026-09-05, emulator pixel_7_-_api_30)
+
+`adb logcat -c` returns 0 and the buffer stays readable: `logcat -d` right after
+it still listed 260 lines, and a marker logged before the clear was the first
+line a fresh `logcat` stream delivered. The launcher used to rely on the clear
+to start from a clean buffer, so on this image every second launch read the
+previous session's `agent listening` line, attached to that dead pid, and failed
+its handshake eleven seconds later (20 of 162 tests in the first full run here;
+never seen on the API 33 image on the other machine). The device clock is no
+boundary either: `date` reads at one-second resolution and two launches in a
+row fit in one second. What is exact is logcat's own millisecond stamp: the
+launcher reads the newest line in the buffer (`logcat -d -t 1`) and streams
+with `-T '<that stamp + 1 ms>'`, so nothing already in the buffer is new
+(`AdbClient.ReadLogcatBoundaryAsync`). `-T` accepts `MM-DD hh:mm:ss.mmm`. The
+clear is still issued; it just is not trusted.
+
+## Driving the screen through adb (verified 2026-09-05, Redmi Note 8 Pro / MIUI 12.5)
+
+- `adb exec-out screencap -p` returns the PNG on stdout (112 KB for 1080x2340);
+  `adb shell screencap -p` would go through the pty and corrupt it. Works while
+  the foreground app is suspended by the debugger: SurfaceFlinger composes, the
+  app does not.
+- `uiautomator dump <file> && cat <file>` takes ~2 s. MIUI's uiautomator prints
+  a `FileNotFoundException` stack trace about `theme_compatibility.xml` on
+  stderr first; the XML is intact. The root is `<hierarchy rotation="N">` with
+  one `<node>` per window. It fails with `ERROR: could not get idle state.`
+  when the UI never goes idle, which is what a main thread stopped at a
+  breakpoint looks like; `null root node` means no window (screen off).
+- Input injection: `input tap|swipe|keyevent|text`. Each call starts a Java
+  process on the device (a few hundred ms). `input text` takes printable ASCII,
+  with `%s` for a space; anything else is typed as garbage. On MIUI every
+  `input` fails with `java.lang.SecurityException: Injecting to another
+  application requires INJECT_EVENTS permission` until Developer options >
+  "USB debugging (Security settings)" is on; `input keyevent 0`
+  (KEYCODE_UNKNOWN) goes through the same check and does nothing visible, which
+  makes it the probe.
+- Rotation: `dumpsys input` prints `SurfaceOrientation: N` up to Android 10 and
+  `Orientation: N` from 11 on. `wm size` prints `Physical size: WxH` and, when
+  someone ran `wm size WxH`, an `Override size:` line that is the real one.
+- Input to a suspended app is NOT queued and returned: `input` waits for the
+  focused window to consume the event, so with that app's main thread stopped at
+  a breakpoint the adb command never returns (measured: past 30 s on the API 30
+  emulator). The MCP input tools refuse up front while the session is stopped.
+- With the app suspended, `uiautomator dump` fails differently per build: MIUI
+  12.5 says `could not get idle state`, the API 30 emulator says `null root
+  node returned by UiTestAutomationBridge`. Both are mapped to the same
+  explanation.
+
 ## TestTarget (validation app, `TestTarget/`)
 
 - `net10.0-android`, `ApplicationId=net.androiddebugger.testtarget`, MonoVM,
