@@ -161,3 +161,15 @@ tables directly with equivalent queries.
 AndroidCollector overlaps the debugger's AndroidLauncher (device listing,
 deploy, adb orchestration, logcat). Duplicate first, extract a shared library
 when both stabilize - tracked in KNOWN_UNKNOWNS (U11).
+
+## The unified MCP server (2026-09-06)
+
+`src/NetAndroid.Mcp` (`docs/ARCHITECTURE.md`, decision 2) references this product's MCP project
+as a library and registers its tool classes as they are, by reflection over the `[McpServerTool]`
+methods, one instance of each class for the process. That puts three constraints on this
+frontend: the tool classes and `SessionHost` stay public and constructible from the service
+provider (constructor injection only); a tool whose name the other product also uses has to be
+added to the unified server's `SharedTools` instead of here, or the unified server refuses to
+start; and the device-global state the engine takes (the Mono debug properties, the app's
+override environment) is what the unified server's `DeviceArbiter` guards, so a new way of
+taking it needs a look there.

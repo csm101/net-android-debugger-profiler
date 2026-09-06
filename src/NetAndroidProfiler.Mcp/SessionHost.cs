@@ -23,6 +23,9 @@ public sealed class SessionHost : IAsyncDisposable
 
     public SessionRegistry.LiveSession Create(SessionSpec spec) => _registry.Create(spec);
 
+    /// <summary>The sessions this process created that are still alive, newest first.</summary>
+    public IReadOnlyList<SessionRegistry.LiveSession> LiveSessions => _registry.LiveSessions;
+
     public SessionRegistry.LiveSession? Live(string? sessionId) => _registry.Live(sessionId);
 
     public string ResolveId(string? sessionId)

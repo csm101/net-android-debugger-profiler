@@ -366,6 +366,10 @@ Conventions (mirroring the Delphi project's discipline):
       rules already in force and says what could not be read —
       `GlobalExceptionRules_BrokenFile_KeepsWhatWasInForce`
 ## I. MCP end-to-end (`McpEndToEndTests`, real server process over stdio via the SDK client)
+
+The server under test is this product's, or the one `NAD_MCP_SERVER_DLL` names: the unified server
+(`src/NetAndroid.Mcp`, root `docs/TEST_CATALOG.md` G) runs this suite too, with the two tests that
+pin this product's exact tool surface skipped.
 - [x] Tool list contains the core tools — `ToolList_ContainsCoreTools`
 - [x] Round-trip: launch_app → set_breakpoint → wait_until_stopped → get_locals →
       get_call_stack → evaluate_expression → get_compact_debug_snapshot →

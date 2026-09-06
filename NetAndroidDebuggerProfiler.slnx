@@ -9,9 +9,11 @@
     <Project Path="src/NetAndroidProfiler.Collector/NetAndroidProfiler.Collector.csproj" />
     <Project Path="src/NetAndroidProfiler.Weave/NetAndroidProfiler.Weave.csproj" />
     <Project Path="src/NetAndroidProfiler.Cli/NetAndroidProfiler.Cli.csproj" />
+    <Project Path="src/NetAndroid.Mcp/NetAndroid.Mcp.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/NetAndroid.Device.Tests/NetAndroid.Device.Tests.csproj" />
+    <Project Path="tests/NetAndroid.Mcp.Tests/NetAndroid.Mcp.Tests.csproj" />
     <Project Path="tests/NetAndroidDebugger.Tests/NetAndroidDebugger.Tests.csproj" />
     <Project Path="tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj" />
     <Project Path="tests/WeaveSample/WeaveSample.csproj" />

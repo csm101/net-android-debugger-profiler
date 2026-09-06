@@ -110,19 +110,46 @@ tests specify, while the profiler restores `debug.mono.profile`, `RestoreAsync`;
 `debug.mono.profile` before taking it over); `DeviceGlobals` and these documents. Its tests:
 `tests/NetAndroid.Device.Tests`, catalogued in `docs/TEST_CATALOG.md`.
 
-## Decision 2 (later): one unified MCP server
+## Decision 2 (done 2026-09-06): one unified MCP server, `src/NetAndroid.Mcp`
 
-Today each product registers its own MCP server (`net-android-debugger`,
-`net-android-profiler`). Both touch the same device-global state (`debug.mono.extra`,
-`debug.mono.profile`, the app's override environment file) and nothing coordinates them:
-running both on the same app at once is not supported, and each only *notices* the other's
-mark (decision 1 made the noticing shared - `DevicePropertyOverride.ForeignValueWarning` -
-not the arbitration). A single server over both
-Cores would own the device state, expose both tool sets to the agent, share device
-selection and app discovery, and register once. It is not started: it needs decision 1
-first, and until it ships the two registration names, publish folders and scripts stay as
-they are.
+Each product still registers its own MCP server (`net-android-debugger`, `net-android-profiler`)
+and both keep working unchanged. Next to them, `src/NetAndroid.Mcp` is one server over both
+Cores, registered as `net-android` by `register-mcp.cmd` (publish folder
+`%LOCALAPPDATA%\net-android`). It is a third thin frontend, not a third engine:
 
+- **The tools are the products' tools.** The project references the two product MCP projects
+  as libraries and registers their tool classes as they are (`ToolCatalog`, by reflection over
+  the `[McpServerTool]` methods, one instance of each class for the process). A tool added to a
+  product appears in the unified server without any change. A tool added to *both* products
+  has to be added to `SharedTools` instead, or the server refuses to start on the duplicate name;
+  today those are `list_devices`, `list_app_projects` and `get_app_output`. `SharedTools` answers
+  them once: the two listings through the profiler's tools (the debugger's output is a subset of
+  theirs), the app output from the debug session while one is active and from the device's
+  logcat (`deviceSerial`, `packageName`) otherwise.
+- **The device-global state has one owner.** `DeviceArbiter` is a call-tool filter in front of
+  the tools that start an engine on a device: `profile_run` and `profile_start` are refused while
+  a debug session holds the device (it holds `debug.mono.extra` there, so an app started for
+  profiling would wait for a debugger), `launch_app`, `launch_from_config` and `attach_to_app`
+  while a profiling session holds it (`debug.mono.profile` and the app's override environment: an
+  app launched for debugging would connect to the profiler as well). The refusal names the
+  session to stop. A call that names no device is refused whenever the other engine holds any,
+  since the tool would then pick one on its own. The decision is a pure function
+  (`DeviceArbiter.Refusal`) with its own tests; the live state comes from the two session hosts.
+  Decision 1 made the *noticing* of a foreign mark shared (`DevicePropertyOverride.ForeignValueWarning`,
+  still in force for sessions started outside this process); this is the arbitration.
+- **Both session hosts live in one process**, each product's own, as singletons; the engines do
+  not know about each other. `Mono.Cecil` resolves to 0.11.6 in this process (the profiler's
+  weaver) while `Mono.Debugger.Soft` was compiled against 0.10.1; the debugger's MCP end-to-end
+  suite run through the unified server (`NAD_MCP_SERVER_DLL`) is the check that this holds.
+
+Tests: `tests/NetAndroid.Mcp.Tests` (root `docs/TEST_CATALOG.md`, section G). Both products'
+MCP suites can be pointed at the unified server (`NAD_MCP_SERVER_DLL`, `NAP_MCP_SERVER_DLL`)
+for the device-level checks.
+
+Not done, on purpose: one device selection and one app discovery for both engines (each Core
+keeps its `AppProjectFinder` and its device choice; unifying them is a Core refactoring, not a
+frontend one), and retiring the two product registrations (the user's choice, when the unified
+server has proved itself in daily use; `register-mcp.cmd` says how).
 ## Conventions the products share
 
 - `NetAndroidDebuggerProfiler.slnx` builds everything; the per-product solutions are for

@@ -1,10 +1,40 @@
 # Task resume (repository level)
 
-No repository-level task is in progress. The last one, the merge of the two repositories
-into this monorepo and the extraction of the shared device library, finished on 2026-09-06;
-its report is below. Component work resumes from `docs/debugger/TASK_RESUME.md` and
-`docs/profiler/TASK_RESUME.md`. The next repository-level tasks, in the recommended order,
-are the follow-ups at the end of this file.
+## Last repository-level task, done: the unified MCP server (`docs/ARCHITECTURE.md`, decision 2; 2026-09-06 evening)
+
+No repository-level task is in progress. The next ones, in the recommended order, are the follow-ups
+at the end of this file (the agent skill first).
+
+One server, `net-android`, over both Cores. Design: a third Exe `src/NetAndroid.Mcp` references the two
+product MCP projects as libraries and registers their tool classes as they are (`ToolCatalog`, by
+reflection, one instance each), except the three tools both define - `list_devices`,
+`list_app_projects`, `get_app_output` - which `SharedTools` provides once (the profiler's richer
+listings; app output from the debug session while one is active, from the device's logcat otherwise).
+`DeviceArbiter` owns the device-global state: a call-tool filter refuses `profile_run`/`profile_start`
+while a debug session holds the device and `launch_app`/`launch_from_config`/`attach_to_app` while a
+profiling session holds it, naming the session to stop; the decision is a pure function with its own
+tests. Registration `register-mcp.cmd` -> `%LOCALAPPDATA%\net-android`; the two product servers and
+their scripts stay as they are. Tests: `tests/NetAndroid.Mcp.Tests` (no device: handshake, tool list
+= union with the shared three once, the two device-free shared tools, no extra shipped assembly,
+the arbiter); the debugger's and profiler's MCP end-to-end suites can be pointed at the unified
+server through an environment variable for the device-level check.
+
+Done (2026-09-06, late evening): builds (Debug and a Release publish to a scratch folder: 61 dlls,
+the union of the two product servers, `Mono.Cecil` 0.11.6); `tests/NetAndroid.Mcp.Tests` 14/14 on
+emulator-5554 (the device arbitration test included: launch_app through the unified server, then
+profile_run refused naming stop_debugging, then not refused); the profiler's MCP tests 3/3 through
+the unified server (`NAP_MCP_SERVER_DLL`) and through its own; the debugger's MCP end-to-end suite
+through the unified server (`NAD_MCP_SERVER_DLL`): 19/22 on the first run, the three failures being
+the two product-surface tests (now skipped under another server) and `list_app_projects` called with
+the debugger's parameter name (`solutionOrFolder`, now accepted as an alias of `path`); +
+the run against the debugger's own server are the last verification before the commit. The Cecil
+question is answered by that suite: launch, breakpoints, locals and evaluation work with 0.11.6
+loaded. Registration not performed on this machine (the user decides when to switch; the script
+`register-mcp.cmd` says how to drop the two product registrations).
+
+Component work resumes from `docs/debugger/TASK_RESUME.md` and `docs/profiler/TASK_RESUME.md`.
+The report of the previous repository-level task (the merge and the shared device library,
+finished 2026-09-06) is below.
 
 ## Report: building the monorepo and extracting NetAndroid.Device (2026-09-06)
 
@@ -106,7 +136,7 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
    the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time.
    The two transport stalls seen on API 33 have their guards in `EventPipeCollector` (evening of
    2026-09-06).
-2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
++
    owning the device-global state that `DeviceGlobals` names.
 3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).
 4. Smaller: unify the two TestTarget apps; give the debugger's device test classes a

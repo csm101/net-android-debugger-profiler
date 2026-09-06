@@ -16,9 +16,11 @@ Carlo & C.; the repository is private.
 | **net-android-debugger** | Breakpoints, stepping, stack, locals, evaluation and an ordered exception rule engine over the Mono Soft Debugger protocol, plus screen tools (screenshot, UI hierarchy, tap, swipe, keys) so an agent can bring the app to the point worth debugging. Frontends: MCP server (`net-android-debugger`), DAP adapter, VS Code extension. | `src/NetAndroidDebugger.Core`, `.Mcp`, `.Dap`, `.Shared`; `ThirdParty/debugger-libs` (submodule); `vscode/` | [docs/debugger/README.md](docs/debugger/README.md) |
 | **net-android-profiler** | CPU sampling, allocation and heap analysis, instrumenting through the runtime's Mono profiler provider or a runtime-independent IL weaver; results in a versioned SQLite database. Frontends: MCP server (`net-android-profiler`), `nap` (one-shot commands and the local control service), the DevExpress GUI `NapGui.exe`. | `src/NetAndroidProfiler.Core`, `.Mcp`, `.Cli`, `.Weave`, `.Collector`; `gui/`; `build/` | [docs/profiler/README.md](docs/profiler/README.md) |
 
-Why they share a repository, what they duplicate today and the two decisions being tracked
-(the shared device library `src/NetAndroid.Device`, later one unified MCP server) are in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Both can also be driven through **one MCP server**, `net-android` (`src/NetAndroid.Mcp`): every
+debugger and profiler tool in one process, the three tools both products define answered once,
+and the device-global Mono state arbitrated so that debugging and profiling never start on the
+same device at the same time. Why the two products share a repository, the shared device library
+`src/NetAndroid.Device` and the unified server are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Build
 
@@ -37,9 +39,12 @@ folders), and for the profiler the global tools `dotnet-dsrouter` and `dotnet-tr
 `ThirdParty/debugger-libs` is a submodule pinned to a fork: after a plain `git clone`, run
 `git submodule update --init` or the debugger does not build.
 
-Each product publishes and registers itself with Claude Code from its own script:
+Each product publishes and registers itself with Claude Code from its own script, and the unified
+server from `register-mcp.cmd` (a Claude Code with all three registered sees every tool twice; the
+script says which two registrations to remove once the unified server is in use):
 
 ```
+register-mcp.cmd               publishes to %LOCALAPPDATA%\net-android and registers net-android (both products, one server)
 register-mcp-debugger.cmd      publishes to %LOCALAPPDATA%\net-android-debugger and registers net-android-debugger
 register-mcp-profiler.cmd      publishes to %LOCALAPPDATA%\net-android-profiler and registers net-android-profiler
 vscode\install-vscode-extension.cmd   installs the debugger's VS Code extension (junction into the extensions folder)
@@ -53,6 +58,7 @@ dotnet test NetAndroidDebugger.slnx                                  # the whole
 dotnet test NetAndroidProfiler.slnx --filter "Category!=Device"     # the profiler's recorded-trace tests
 dotnet test NetAndroidProfiler.slnx                                  # plus the profiler's device tests
 dotnet test tests/NetAndroid.Device.Tests/NetAndroid.Device.Tests.csproj   # the shared device layer (docs/TEST_CATALOG.md)
+dotnet test tests/NetAndroid.Mcp.Tests/NetAndroid.Mcp.Tests.csproj         # the unified MCP server (docs/TEST_CATALOG.md)
 ```
 
 Both suites drive their real engine against a real app on the Android emulator or an

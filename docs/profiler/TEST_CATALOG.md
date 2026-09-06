@@ -123,6 +123,10 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Large tree (200k nodes, 5k methods): write and GUI queries stay interactive - `Large_call_tree_stays_queryable`
 
 ## F. MCP end-to-end (Fast/McpServerTests: the server is spawned as a process over stdio)
+
+The server under test is this product's, or the one `NAP_MCP_SERVER_DLL` names: the unified server
+(`src/NetAndroid.Mcp`, root `docs/TEST_CATALOG.md` G) runs this suite too, with the server-name
+assertion skipped.
 - [x] initialize + tools/list expose the P1 tool surface - `Initialize_and_tools_list_expose_the_P1_tool_surface`
 - [x] Read-only tools answer from a prepared sessions root (sessions, hotspots, report, tree, callers, threads) - `Read_only_tools_answer_from_the_prepared_session`
 - [x] Error paths return MCP errors and the server stays alive - `Error_paths_return_mcp_errors_instead_of_hanging`

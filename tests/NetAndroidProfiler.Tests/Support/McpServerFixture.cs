@@ -60,6 +60,7 @@ public sealed class McpServerFixture : IDisposable
             dir = dir.Parent;
         if (dir is null) throw new InvalidOperationException("repository root not found from " + AppContext.BaseDirectory);
         string configuration = AppContext.BaseDirectory.Contains($"{Path.DirectorySeparatorChar}Release{Path.DirectorySeparatorChar}") ? "Release" : "Debug";
+        if (Environment.GetEnvironmentVariable("NAP_MCP_SERVER_DLL") is { Length: > 0 } named) return named;
         string dll = Path.Combine(dir.FullName, "src", "NetAndroidProfiler.Mcp", "bin", configuration, "net10.0", "NetAndroidProfiler.Mcp.dll");
         if (!File.Exists(dll)) throw new FileNotFoundException("MCP server not built", dll);
         return dll;

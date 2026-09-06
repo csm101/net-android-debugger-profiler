@@ -58,7 +58,9 @@ public sealed class McpServerTests : IDisposable
     public void Initialize_and_tools_list_expose_the_P1_tool_surface()
     {
         var init = _server.Call("initialize", new { protocolVersion = "2025-06-18", capabilities = new { }, clientInfo = new { name = "test", version = "0" } });
-        Assert.Equal("net-android-profiler", init.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
+        // The unified server answers this suite too (NAP_MCP_SERVER_DLL names it); only the name is this product's own.
+        if (Environment.GetEnvironmentVariable("NAP_MCP_SERVER_DLL") is null)
+            Assert.Equal("net-android-profiler", init.GetProperty("result").GetProperty("serverInfo").GetProperty("name").GetString());
         _server.Notify("notifications/initialized");
 
         var tools = _server.Call("tools/list", new { }).GetProperty("result").GetProperty("tools")

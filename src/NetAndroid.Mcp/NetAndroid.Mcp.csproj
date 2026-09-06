@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NetAndroid.Mcp</RootNamespace>
+    <AssemblyName>NetAndroid.Mcp</AssemblyName>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The two product servers are referenced as libraries: their session hosts and tool classes are
+      the tools of this server, each registered once (ToolCatalog). Only the three tools both
+      products define come from SharedTools, and the DeviceArbiter is what neither has on its own.
+    -->
+    <ProjectReference Include="..\NetAndroidDebugger.Mcp\NetAndroidDebugger.Mcp.csproj" />
+    <ProjectReference Include="..\NetAndroidProfiler.Mcp\NetAndroidProfiler.Mcp.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
+</Project>

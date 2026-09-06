@@ -9,7 +9,9 @@ namespace NetAndroidDebugger.Tests;
 [Collection(DeviceCollection.Name)]
 public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper output)
 {
+    /// <summary>The server under test: this product's, or the one NAD_MCP_SERVER_DLL names (the unified server, when its suite runs these).</summary>
     private static string ServerDll =>
+        Environment.GetEnvironmentVariable("NAD_MCP_SERVER_DLL") is { Length: > 0 } dll ? dll :
         Path.Combine(TestEnvironment.RepoRoot, "src", "NetAndroidDebugger.Mcp", "bin", BuildConfiguration, "net10.0", "NetAndroidDebugger.Mcp.dll");
 
     private const string BuildConfiguration =
@@ -428,9 +430,10 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
     /// thoroughly covered while the tool itself is not: a wrong parameter name, or a rendering
     /// that throws, only shows up when the tool is called through the server.
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public async Task EveryTool_IsExercisedSomewhereInThisSuite()
     {
+        Skip.If(Environment.GetEnvironmentVariable("NAD_MCP_SERVER_DLL") is { Length: > 0 }, "this is the product server's own surface; another server is under test");
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
         await using var client = await ConnectAsync(cts.Token);
         var exposed = (await client.ListToolsAsync(cancellationToken: cts.Token)).Select(t => t.Name).ToHashSet();
@@ -606,9 +609,10 @@ public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper out
     /// it is actually called somewhere.
     /// </para>
     /// </summary>
-    [Fact]
+    [SkippableFact]
     public async Task ToolSurface_IsExactlyThis()
     {
+        Skip.If(Environment.GetEnvironmentVariable("NAD_MCP_SERVER_DLL") is { Length: > 0 }, "this is the product server's own surface; another server is under test");
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
         await using var client = await ConnectAsync(cts.Token);
 

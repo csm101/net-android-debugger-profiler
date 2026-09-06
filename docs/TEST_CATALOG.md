@@ -1,4 +1,7 @@
-# Test catalog: NetAndroid.Device
+# Test catalog: what the products share
+
+Two suites: `tests/NetAndroid.Device.Tests` for the device layer both products use (sections A-F)
+and `tests/NetAndroid.Mcp.Tests` for the unified MCP server (section G).
 
 What `tests/NetAndroid.Device.Tests` covers: the device layer both products share. The two
 products' own catalogs (`docs/debugger/TEST_CATALOG.md`, `docs/profiler/TEST_CATALOG.md`)
@@ -104,6 +107,44 @@ still run the same logic through the launcher.
       `Apply_RemembersWhatWasThere_AndRestorePutsItBack`
 - [x] Restore of an empty previous value clears the property, and does nothing when nothing
       was applied - `Restore_OfAnEmptyPrevious_ClearsTheProperty_AndDoesNothingWhenNeverApplied`
+
+## G. The unified MCP server (`tests/NetAndroid.Mcp.Tests`)
+
+`DeviceArbiterTests` exercise the decision as a pure function; `UnifiedServerTests` spawn the
+unified server and the two product servers as processes over stdio (no device);
+`DeviceArbitrationTests` (`Category=Device`) drive a real debug session through the unified
+server on the device `NAD_DEVICE_SERIAL` / `NAP_TEST_SERIAL` names (else the only one online)
+and need the debugger's TestTarget installed, as the debugger's suite leaves it.
+
+- [x] Nothing held, nothing refused - `NothingHeld_NothingRefused`
+- [x] profile_run on the debugger's device is refused, naming stop_debugging and the property
+      held - `ProfileRun_OnTheDebuggersDevice_IsRefused_NamingStopDebugging`
+- [x] profile_run on another device proceeds - `ProfileRun_OnAnotherDevice_Proceeds`
+- [x] profile_start without a device is refused while the debugger holds one -
+      `ProfileStart_WithoutADevice_IsRefused_WhileTheDebuggerHoldsOne`
+- [x] launch_app on a device being profiled is refused, naming the session and profile_stop -
+      `LaunchApp_OnADeviceBeingProfiled_IsRefused_NamingTheSession`
+- [x] attach_to_app without a device is refused while a profiling session runs -
+      `AttachToApp_WithoutADevice_IsRefused_WhileAProfilingSessionRuns`
+- [x] launch_app on another device proceeds while a profiling session runs -
+      `LaunchApp_OnAnotherDevice_Proceeds_WhileAProfilingSessionRuns`
+- [x] Tools that start nothing are never refused - `ToolsThatStartNothing_AreNeverRefused`
+- [x] The handshake names `net-android` and the instructions cover both flows -
+      `Handshake_NamesTheUnifiedServer`
+- [x] The tool list is the union of both product servers, the shared three once and nothing
+      twice - `ToolList_IsTheUnionOfBothProductServers_WithTheSharedThreeOnce`
+- [x] list_app_projects reads the profiler's TestTarget (package, symbolsDir) -
+      `ListAppProjects_ReadsTheProfilerTestTarget`
+- [x] get_app_output without a debug session asks for deviceSerial and packageName -
+      `GetAppOutput_WithoutADebugSession_AsksForDeviceAndPackage`
+- [x] The server ships no assembly the two product servers do not (their notices checks cover
+      it) - `Ships_NoAssembly_TheTwoProductServersDoNot`
+- [x] On a device: profile_run is refused while a debug session launched through the unified
+      server holds it, and no longer after stop_debugging -
+      `ProfileRun_WhileTheDebuggerHoldsTheDevice_IsRefused_AndNotAfterStopDebugging`
+
+The two product MCP suites also run against the unified server when `NAD_MCP_SERVER_DLL` /
+`NAP_MCP_SERVER_DLL` name it (the profiler's server-name assertion is skipped then).
 
 ## Gaps
 
