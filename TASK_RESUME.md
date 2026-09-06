@@ -46,21 +46,21 @@ Final state: 166 commits, 334 tracked files, `examples/` intact (49 files), subm
   untouched); the profiler's publish step run alone (`dotnet publish` into a scratch folder),
   because the script registers when the server is absent.
 - Profiler device suite (`Category=Device`, 32 tests, 7 skipped by design: six the reference application opt-ins
-  and the build-map one): phase 3, first run 18 passed / 7 failed on a 22-hour-old emulator
-  (four sessions hung after their stop until the 4-minute cancel, one attach test empty, one
-  companion-package pull refused, the MCP round trip timing out); after a cold restart
-  23 passed / 2 failed (`Sampling_attach_to_running_debug_app_without_restart` hanging after
-  its stop, `McpDeviceTests.Profile_start_and_profile_stop_round_trip` never reaching
-  Collecting). After steps 2, 3 and 4 the suite could not be completed: each attempt
-  (capped at 15-25 minutes) hung inside one EventPipe session that never ended, once on a
-  fresh boot, and the untouched source repository showed the same indefinite hang when its
-  two failing tests were run alone. Every session that completed in those runs passed; the
-  timeouts seen (`Sampling_restart_session_finds_busy_method`,
-  `One_session_symbolicates_methods_from_two_assemblies`, `Stop_ends_a_session_that_was_started_without_a_duration`,
-  `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`) all belong to the same
-  family: the runtime not ending the stream after the stop command. The profiler's notes
-  record the device suite green only on the API 33 image; this is the first follow-up below.
-- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
+  and the build-map one), on the API 30 emulator: phase 3, first run 18 passed / 7 failed on a
+  22-hour-old emulator; after a cold restart 23 passed / 2 failed
+  (`Sampling_attach_to_running_debug_app_without_restart` hanging after its stop,
+  `McpDeviceTests.Profile_start_and_profile_stop_round_trip` never reaching Collecting). After
+  steps 2, 3 and 4 every attempt hung inside one EventPipe session and was killed at a
+  15-25 minute cap; every session that completed passed. The cause of that cascade was found
+  at the end of the day, from the profiler's own error text: a TestTarget process left alive by
+  an interrupted session keeps `DOTNET_DiagnosticPorts=10.0.2.2:9000,suspend,connect` in its
+  override environment and reconnects to the router of every later session, so the new session
+  either waits for a runtime that never comes or times out on its stop; killing a run (which
+  I did several times) is exactly what leaves such a process behind, and the untouched source
+  repository hung the same way for the same reason. On the API 33 emulator (`api_33_0`, started
+  later on request) the app connects to the router but the session stays in `WaitingForApp`
+  past the test's 4-minute cancel, and the test host crashed once; that path is the profiler's
+  collection code, untouched by the move, and was not resolved today.- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
   `-p:NapWeave=true` install), anything on the Redmi.
 
 ### Skipped or changed on purpose
@@ -93,12 +93,11 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
 
 ### Follow-ups, recommended order
 
-1. The profiler's device suite on this machine: find why EventPipe sessions stop ending
-   after the stop command on the `pixel_7_-_api_30` image (attach sessions hang without
-   any timeout; restart sessions hit the 4-minute cancel), or run the suite on the API 33
-   image the notes were written against. Until then the profiler's device coverage is
-   "every completed session passed", not a green suite.
-2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
+1. The profiler's device suite: before any run, force-stop `com.mcasoftware.testtarget` on every
+   attached emulator and kill leftover `dotnet-dsrouter` processes (a stale app reconnecting to
+   port 9000 poisons every later session, on any emulator, since all reach the host as 10.0.2.2;
+   the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time
+   and, on API 33, find why `WaitForRuntimeAsync` never sees the connected runtime.2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
    owning the device-global state that `DeviceGlobals` names.
 3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).
 4. Smaller: unify the two TestTarget apps; give the debugger's device test classes a

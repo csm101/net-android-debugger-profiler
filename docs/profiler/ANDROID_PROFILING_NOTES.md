@@ -642,7 +642,16 @@ class's session marker]**
   (their default is still emulator-5556) and `NAD_DEVICE_SERIAL=emulator-5554` for the
   debugger's. The two device suites never run at the same time on one device: the debugger
   sets `debug.mono.extra` device-wide while it runs, and any Mono app starting meanwhile
-  would wait for a debugger. .NET SDK 10.0.400; adb is not on PATH (both products locate it).- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
+  would wait for a debugger. .NET SDK 10.0.400; adb is not on PATH (both products locate it).
+- 2026-09-06, later: an API 33 AVD (`api_33_0`) is back, started as emulator-5556 through
+  `AVD=api_33_0 SERIAL=emulator-5556 bash DevTools/scripts/ensure-emulator.sh`. Trap seen all day:
+  a TestTarget left alive by an interrupted session keeps `DOTNET_DiagnosticPorts=10.0.2.2:9000,
+  suspend,connect` in its override environment and reconnects to the router of every later
+  session, from whichever emulator it lives on (all reach the host as 10.0.2.2, and dsrouter
+  android-emu has no port option); the session then waits for a runtime that never comes or
+  hangs on its stop. Force-stop the package on every emulator and kill leftover dsrouters before
+  a run. On `api_33_0` the runtime connects but the session stays in WaitingForApp: unresolved.
+- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
   templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
   check it builds here before P1 integration).
 - dotnet-trace / dotnet-dsrouter / dotnet-gcdump 9.0.661903 (global tools).
