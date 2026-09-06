@@ -38,4 +38,8 @@
     <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

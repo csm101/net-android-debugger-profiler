@@ -44,4 +44,8 @@
     <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

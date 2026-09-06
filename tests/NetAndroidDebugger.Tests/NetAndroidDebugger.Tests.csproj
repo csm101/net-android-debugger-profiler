@@ -32,4 +32,8 @@
     <ProjectReference Include="..\..\src\NetAndroidDebugger.Dap\NetAndroidDebugger.Dap.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

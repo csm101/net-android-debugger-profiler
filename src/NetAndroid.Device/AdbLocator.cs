@@ -1,6 +1,6 @@
 using Microsoft.Win32;
 
-namespace NetAndroidDebugger.Core.Adb;
+namespace NetAndroid.Device;
 
 /// <summary>Where adb was found and what said so, for the log and for error messages.</summary>
 public sealed record AdbLocation(string Path, string Source)
@@ -44,7 +44,7 @@ public static class AdbLocator
             OperatingSystem.IsWindows());
     }
 
-    /// <summary>Resolves adb on this machine. Throws <see cref="LaunchException"/> naming every source tried when nothing is found.</summary>
+    /// <summary>Resolves adb on this machine. Throws <see cref="AdbNotFoundException"/> naming every source tried when nothing is found.</summary>
     public static AdbLocation Locate(string? explicitPath = null, string explicitSource = "the call")
         => Locate(explicitPath, explicitSource, Environment.Real);
 
@@ -81,7 +81,7 @@ public static class AdbLocator
         }
         tried.Add("PATH (no adb in it)");
 
-        throw new LaunchException(
+        throw new AdbNotFoundException(
             $"adb not found. Tried, in order: {string.Join("; ", tried)}. Install the Android SDK platform-tools, " +
             $"or point {PathVariable} at adb, or set ANDROID_HOME, or give adbPath in the launch configuration.");
 
@@ -92,7 +92,7 @@ public static class AdbLocator
             if (env.FileExists(full)) return new AdbLocation(full, source);
             foreach (var inside in new[] { System.IO.Path.Combine(full, exe), System.IO.Path.Combine(full, "platform-tools", exe) })
                 if (env.FileExists(inside)) return new AdbLocation(inside, source);
-            throw new LaunchException($"{source} names adb as '{path}', but nothing is there. A wrong value is never replaced by a guess: fix or remove it.");
+            throw new AdbNotFoundException($"{source} names adb as '{path}', but nothing is there. A wrong value is never replaced by a guess: fix or remove it.");
         }
 
         AdbLocation? InSdk(string sdkDirectory, string source)

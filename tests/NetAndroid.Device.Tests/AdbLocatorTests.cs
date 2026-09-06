@@ -1,7 +1,4 @@
-using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
-
-namespace NetAndroidDebugger.Tests;
+namespace NetAndroid.Device.Tests;
 
 /// <summary>
 /// Finding adb without assuming PATH. No device and no real machine: every source the locator
@@ -39,7 +36,7 @@ public sealed class AdbLocatorTests
     {
         // PATH would find it, and must not: a named source that is wrong is the user's to fix.
         var machine = Machine(env: new Dictionary<string, string> { ["PATH"] = @"C:\sdk\platform-tools" }, files: [Exe]);
-        var ex = Assert.Throws<LaunchException>(() => AdbLocator.Locate(@"D:\nowhere\adb.exe", "the call", machine));
+        var ex = Assert.Throws<AdbNotFoundException>(() => AdbLocator.Locate(@"D:\nowhere\adb.exe", "the call", machine));
         Assert.Contains("the call", ex.Message);
         Assert.Contains(@"D:\nowhere\adb.exe", ex.Message);
     }
@@ -56,7 +53,7 @@ public sealed class AdbLocatorTests
         var stale = Machine(
             env: new Dictionary<string, string> { [AdbLocator.PathVariable] = @"C:\gone\adb.exe", ["ANDROID_HOME"] = @"C:\sdk" },
             files: [Exe]);
-        var ex = Assert.Throws<LaunchException>(() => AdbLocator.Locate(null, "the call", stale));
+        var ex = Assert.Throws<AdbNotFoundException>(() => AdbLocator.Locate(null, "the call", stale));
         Assert.Contains(AdbLocator.PathVariable, ex.Message);
     }
 
@@ -91,11 +88,20 @@ public sealed class AdbLocatorTests
     public void NothingFound_ListsEverySourceTried()
     {
         var machine = Machine(env: new Dictionary<string, string> { ["ANDROID_HOME"] = @"C:\empty", ["PATH"] = @"C:\tools" });
-        var ex = Assert.Throws<LaunchException>(() => AdbLocator.Locate(null, "the call", machine));
+        var ex = Assert.Throws<AdbNotFoundException>(() => AdbLocator.Locate(null, "the call", machine));
         Assert.Contains(AdbLocator.PathVariable, ex.Message);
         Assert.Contains(@"C:\empty\platform-tools\adb.exe", ex.Message);
         Assert.Contains("ANDROID_SDK_ROOT (not set)", ex.Message);
         Assert.Contains("PATH", ex.Message);
+    }
+
+    /// <summary>Whatever a product catches for tool failures catches a missing adb too: the hierarchy is the contract.</summary>
+    [Fact]
+    public void AMissingAdb_IsAnAdbFailure_AndAToolFailure()
+    {
+        var ex = Assert.Throws<AdbNotFoundException>(() => AdbLocator.Locate(null, "the call", Machine()));
+        Assert.IsAssignableFrom<AdbException>(ex);
+        Assert.IsAssignableFrom<ToolException>(ex);
     }
 
     [Fact]

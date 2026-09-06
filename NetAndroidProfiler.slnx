@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/NetAndroid.Device/NetAndroid.Device.csproj" />
     <Project Path="src/NetAndroidProfiler.Core/NetAndroidProfiler.Core.csproj" />
     <Project Path="src/NetAndroidProfiler.Mcp/NetAndroidProfiler.Mcp.csproj" />
     <Project Path="src/NetAndroidProfiler.Collector/NetAndroidProfiler.Collector.csproj" />
@@ -7,6 +8,7 @@
     <Project Path="src/NetAndroidProfiler.Cli/NetAndroidProfiler.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/NetAndroid.Device.Tests/NetAndroid.Device.Tests.csproj" />
     <Project Path="tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj" />
     <Project Path="tests/WeaveSample/WeaveSample.csproj" />
   </Folder>

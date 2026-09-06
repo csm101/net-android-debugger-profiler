@@ -32,4 +32,8 @@
     <None Include="recorded\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

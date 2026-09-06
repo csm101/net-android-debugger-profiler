@@ -16,4 +16,10 @@
     <PackageReference Include="Mono.Cecil" Version="0.10.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The device layer both products share: adb, the device, the app's environment on it. -->
+    <ProjectReference Include="..\NetAndroid.Device\NetAndroid.Device.csproj" />
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

@@ -3,25 +3,16 @@ namespace NetAndroidProfiler.Core.Devices;
 /// <summary>Finds the external tools the collector depends on (adb, dotnet-dsrouter).</summary>
 public static class ToolLocator
 {
+    /// <summary>
+    /// adb, through the locator both products share (<see cref="AdbLocator"/>: an explicit
+    /// <c>NETANDROIDPROFILER_ADB</c>, then <c>NAD_ADB_PATH</c>, the SDK variables, the registry, the SDK's
+    /// default folders, PATH last). Null when nothing is found; a variable that names a wrong path is
+    /// an error the locator reports, never a value to skip.
+    /// </summary>
     public static string? FindAdb()
     {
-        string? fromEnv = Environment.GetEnvironmentVariable("NETANDROIDPROFILER_ADB");
-        if (!string.IsNullOrEmpty(fromEnv) && File.Exists(fromEnv)) return fromEnv;
-        string? onPath = FindOnPath(OperatingSystem.IsWindows() ? "adb.exe" : "adb");
-        if (onPath is not null) return onPath;
-        foreach (var root in new[]
-        {
-            Environment.GetEnvironmentVariable("ANDROID_HOME"),
-            Environment.GetEnvironmentVariable("ANDROID_SDK_ROOT"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Android", "android-sdk"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk"),
-        })
-        {
-            if (string.IsNullOrEmpty(root)) continue;
-            string p = Path.Combine(root, "platform-tools", OperatingSystem.IsWindows() ? "adb.exe" : "adb");
-            if (File.Exists(p)) return p;
-        }
-        return null;
+        try { return AdbLocator.Locate(Environment.GetEnvironmentVariable("NETANDROIDPROFILER_ADB"), "NETANDROIDPROFILER_ADB").Path; }
+        catch (AdbNotFoundException) { return null; }
     }
 
     /// <summary>
@@ -69,7 +60,7 @@ public static class ToolLocator
             "adb", FindAdb(), Required: true,
             "Talks to the device: install, launch, port forwarding, logcat.",
             InstallCommand: null,
-            "Install the Android SDK platform-tools and put adb on PATH, or set ANDROID_HOME."),
+            "Install the Android SDK platform-tools; adb is looked for through NAD_ADB_PATH, ANDROID_HOME or ANDROID_SDK_ROOT, the SDK the .NET Android workload registered, the SDK's default folders, then PATH."),
         new ToolStatus(
             "dotnet-dsrouter", FindDsRouter(), Required: true,
             "Routes the app's diagnostics port over adb; every profiling session goes through it.",

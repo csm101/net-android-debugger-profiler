@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The device layer both products share: running external tools, finding adb, the adb client,
+    the screen layer and the device-side state (properties, the app's override environment) with
+    backup and restore. BCL only, on purpose: no package reference may ever appear here, so the
+    library can never conflict with the packages the two Cores pin (Mono.Cecil 0.10.1 in the
+    debugger, 0.11.6 in the profiler). See docs/ARCHITECTURE.md, "Decision 1".
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NetAndroid.Device</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

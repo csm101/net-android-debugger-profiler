@@ -11,9 +11,6 @@ public sealed record AdbResult(int ExitCode, string StdOut, string StdErr)
     public bool Succeeded => ExitCode == 0;
 }
 
-/// <summary>Thrown when an adb command fails.</summary>
-public sealed class AdbException(string message) : Exception(message);
-
 /// <summary>
 /// Thin wrapper over the adb executable. Every device-bound call takes an explicit
 /// serial: the engine never relies on the adb default device (other emulators or
@@ -30,7 +27,10 @@ public sealed class AdbClient
     /// <exception cref="LaunchException">adb cannot be found, or the given path has nothing at it.</exception>
     public AdbClient(string? adbPath = null, string adbPathSource = "the call")
     {
-        Location = AdbLocator.Locate(adbPath, adbPathSource);
+        // The shared locator reports a missing adb as an AdbNotFoundException; to this engine and its
+        // frontends that is a launch failure, and the message already says every place that was tried.
+        try { Location = AdbLocator.Locate(adbPath, adbPathSource); }
+        catch (AdbNotFoundException ex) { throw new LaunchException(ex.Message, ex); }
     }
 
     /// <summary>Where this client's adb is and which source named it.</summary>

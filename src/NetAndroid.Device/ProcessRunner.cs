@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 
-namespace NetAndroidProfiler.Core.Devices;
+namespace NetAndroid.Device;
 
 /// <summary>Result of a finished external process.</summary>
 public sealed record ProcessResult(int ExitCode, string StdOut, string StdErr)
@@ -10,13 +10,16 @@ public sealed record ProcessResult(int ExitCode, string StdOut, string StdErr)
 }
 
 /// <summary>Thrown when an external tool fails.</summary>
-public sealed class ToolException : Exception
+public class ToolException : Exception
 {
     public ToolException(string message) : base(message) { }
     public ToolException(string message, Exception inner) : base(message, inner) { }
 }
 
-/// <summary>Runs external tools (adb, dsrouter) and captures their output.</summary>
+/// <summary>
+/// Runs external tools (adb, dsrouter, dotnet) and captures their output. The single way both
+/// products start a process: every child gets its stdin redirected, see <see cref="RunAsync"/>.
+/// </summary>
 public static class ProcessRunner
 {
     public static async Task<ProcessResult> RunAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct, TimeSpan? timeout = null, byte[]? stdin = null)

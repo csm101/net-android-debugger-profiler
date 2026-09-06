@@ -19,7 +19,7 @@ public sealed class ThirdPartyNoticesTests
 
     private static string NoticesPath => Path.Combine(TestEnvironment.RepoRoot, "THIRD-PARTY-NOTICES.txt");
 
-    /// <summary>Every assembly the frontends ship, ours excluded, must be named in the notices.</summary>
+    /// <summary>Every assembly the frontends ship, ours excluded (this product's and the shared device library), must be named in the notices.</summary>
     [Fact]
     public void EveryShippedAssembly_IsNamedInTheNotices()
     {
@@ -31,7 +31,8 @@ public sealed class ThirdPartyNoticesTests
             .SelectMany(d => Directory.GetFiles(d, "*.dll"))
             .Select(Path.GetFileName)
             .OfType<string>()
-            .Where(name => !name.StartsWith("NetAndroidDebugger.", StringComparison.Ordinal))
+            .Where(name => !name.StartsWith("NetAndroidDebugger.", StringComparison.Ordinal)
+                        && !name.StartsWith("NetAndroid.Device", StringComparison.Ordinal))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();

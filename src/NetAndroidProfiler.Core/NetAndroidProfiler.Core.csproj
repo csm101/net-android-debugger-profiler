@@ -29,4 +29,10 @@
     <ProjectReference Include="..\NetAndroidProfiler.Collector\NetAndroidProfiler.Collector.csproj" Private="true" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The device layer both products share: adb, the device, the app's environment on it. -->
+    <ProjectReference Include="..\NetAndroid.Device\NetAndroid.Device.csproj" />
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
+
 </Project>

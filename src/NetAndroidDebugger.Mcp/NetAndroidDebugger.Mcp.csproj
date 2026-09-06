@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <!-- One reader, both frontends: the file format is a frontend concern, Core stays JSON-free. -->
@@ -18,5 +18,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Using Include="NetAndroid.Device" />
+  </ItemGroup>
 
 </Project>
