@@ -1,15 +1,14 @@
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Device;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;
 
 namespace NetAndroidDebugger.Tests;
 
 /// <summary>
-/// Driving the device's screen through adb, against TestTarget on the selected device: seeing it
-/// (screenshot, hierarchy) and acting on it (tap, type) - and the loop that matters, a tap that
-/// lands on a breakpoint. Input injection is the one part a vendor may gate; the first test says
-/// so in words when it is.
+/// The screen and the debugger together, against TestTarget on the selected device: a tap that lands
+/// on a breakpoint, and a hierarchy that cannot be read while the app is suspended. Driving the
+/// screen on its own (screenshot, hierarchy, tap, type, the vendor's input gate) is covered by
+/// NetAndroid.Device.Tests, where DeviceControl now lives.
 /// </summary>
 [Collection(DeviceCollection.Name)]
 public sealed class DeviceControlTests(DeviceFixture device, ITestOutputHelper output)
@@ -61,51 +60,6 @@ public sealed class DeviceControlTests(DeviceFixture device, ITestOutputHelper o
     }
 
     [Fact]
-    public async Task InputInjection_IsAllowed_OnThisDevice()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        var (allowed, detail) = await Control.CheckInputInjectionAsync(cts.Token);
-        // On a MIUI device this fails until "USB debugging (Security settings)" is on; the detail
-        // says exactly that. Screenshots and the hierarchy do not need it, and neither does debugging.
-        Assert.True(allowed, detail);
-    }
-
-    [Fact]
-    public async Task Screenshot_IsAPng_TheSizeOfTheDisplay()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        var control = Control;
-        await control.WakeScreenAsync(cts.Token);
-        var display = await control.GetDisplayInfoAsync(cts.Token);
-        var shot = await control.CaptureScreenshotAsync(cts.Token);
-
-        Assert.True(shot.Png.Length > 1000, $"{shot.Png.Length} bytes");
-        // A rotated display swaps the two; either way the screenshot covers the whole display.
-        var sameOrientation = shot.Width == display.Width && shot.Height == display.Height;
-        var rotated = shot.Width == display.Height && shot.Height == display.Width;
-        Assert.True(sameOrientation || rotated, $"screenshot {shot.Width}x{shot.Height} vs display {display.Width}x{display.Height}");
-        Assert.True(display.Density > 0);
-    }
-
-    [Fact]
-    public async Task UiHierarchy_ListsTestTargetsControls_ByResourceId()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var session = await LaunchAsync(cts.Token);
-        var tree = await WaitForTestTargetOnScreenAsync(cts.Token);
-
-        var button = Assert.Single(UiHierarchy.Find(tree.Root, new UiSelector(ResourceId: "increment_button")));
-        Assert.True(button.Clickable);
-        Assert.Equal("Button", button.ShortClassName);
-        Assert.Equal(TestEnvironment.TestTargetPackage, button.Package);
-        Assert.True(button.Bounds.Width > 0 && button.Bounds.Height > 0, button.Bounds.ToString());
-
-        var label = Assert.Single(UiHierarchy.Find(tree.Root, new UiSelector(ResourceId: "counter_label")));
-        Assert.StartsWith("Counter: ", label.Text);
-        Assert.Single(UiHierarchy.Find(tree.Root, new UiSelector(ResourceId: "input_field")));
-    }
-
-    [Fact]
     public async Task Tap_OnTheButton_HitsTheClickHandlersBreakpoint()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -141,35 +95,5 @@ public sealed class DeviceControlTests(DeviceFixture device, ITestOutputHelper o
         Assert.Contains("suspended", ex.Message);
         var shot = await Control.CaptureScreenshotAsync(cts.Token);
         Assert.True(shot.Width > 0);
-    }
-
-    [Fact]
-    public async Task TypeText_IntoTheFocusedField_ShowsUpInTheHierarchy()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        await using var session = await LaunchAsync(cts.Token);
-        var tree = await WaitForTestTargetOnScreenAsync(cts.Token);
-        var field = Assert.Single(UiHierarchy.Find(tree.Root, new UiSelector(ResourceId: "input_field")));
-
-        var control = Control;
-        await control.TapAsync(field.Bounds.CenterX, field.Bounds.CenterY, cts.Token);
-        await control.TypeTextAsync("hello world's", cts.Token);
-        await Task.Delay(500, cts.Token);
-
-        // The field got focus, so an IME came up; on this emulator image that can be a crash dialog.
-        var after = await control.DumpUiAsync(cts.Token);
-        await DismissCrashDialogAsync(after, cts.Token);
-        after = await WaitForTestTargetOnScreenAsync(cts.Token);
-        var typed = Assert.Single(UiHierarchy.Find(after.Root, new UiSelector(ResourceId: "input_field")));
-        Assert.Equal("hello world's", typed.Text);
-        await control.PressKeyAsync("BACK", cts.Token); // hides the keyboard, leaves the activity
-    }
-
-    [Fact]
-    public async Task TypeText_RefusesNonAscii_InsteadOfTypingGarbage()
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        var ex = await Assert.ThrowsAsync<DeviceControlException>(() => Control.TypeTextAsync("caffè", cts.Token));
-        Assert.Contains("ASCII", ex.Message);
     }
 }

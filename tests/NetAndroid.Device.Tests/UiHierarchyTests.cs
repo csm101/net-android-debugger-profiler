@@ -1,6 +1,5 @@
-using NetAndroidDebugger.Core.Device;
 
-namespace NetAndroidDebugger.Tests;
+namespace NetAndroid.Device.Tests;
 
 /// <summary>
 /// Reading a uiautomator dump and the small pure helpers of <see cref="DeviceControl"/>. No device:

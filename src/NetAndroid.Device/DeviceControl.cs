@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace NetAndroidDebugger.Core.Device;
+namespace NetAndroid.Device;
 
 /// <summary>Thrown when a device-control command fails or its output cannot be understood.</summary>
 public class DeviceControlException(string message, Exception? inner = null) : Exception(message, inner);

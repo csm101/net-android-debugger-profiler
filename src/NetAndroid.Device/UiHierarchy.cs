@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
-namespace NetAndroidDebugger.Core.Device;
+namespace NetAndroid.Device;
 
 /// <summary>Screen rectangle of a UI node, in physical pixels (the same space as screenshots and taps).</summary>
 public sealed record UiBounds(int Left, int Top, int Right, int Bottom)

@@ -5,7 +5,6 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Device;
 
 namespace NetAndroidDebugger.Mcp;
 
