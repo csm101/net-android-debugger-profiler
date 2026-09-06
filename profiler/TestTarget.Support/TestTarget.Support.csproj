@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A second assembly for the app to call into. Real apps are made of several, and a
+      profiler that only ever resolves one has not been tested: sampling names methods per
+      module, symbolication looks pdbs up per module, and the weaver is told which
+      assemblies to rewrite.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

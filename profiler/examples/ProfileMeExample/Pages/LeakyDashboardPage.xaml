@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pages:ScenarioPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:pages="clr-namespace:ProfileMeExample.Pages"
+                    x:Class="ProfileMeExample.Pages.LeakyDashboardPage">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="Opens a dashboard widget that subscribes to the app's notifications and never unsubscribes. Open and close it a few times: memory grows for good, and a notification reaches every widget ever created."
+               LineBreakMode="WordWrap" />
+        <Button x:Name="CycleButton" Text="Open and close the dashboard" Clicked="OnCycleClicked" />
+        <Button x:Name="PublishButton" Text="Publish a notification" Clicked="OnPublishClicked" />
+        <Button x:Name="CollectButton" Text="Force a garbage collection" Clicked="OnCollectClicked" />
+        <Label x:Name="OutputLabel" LineBreakMode="WordWrap" />
+        <Button Text="How to profile this" Clicked="OnGuideClicked" />
+    </VerticalStackLayout>
+
+</pages:ScenarioPage>

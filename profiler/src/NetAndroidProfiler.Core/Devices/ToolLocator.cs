@@ -1,0 +1,175 @@
+namespace NetAndroidProfiler.Core.Devices;
+
+/// <summary>Finds the external tools the collector depends on (adb, dotnet-dsrouter).</summary>
+public static class ToolLocator
+{
+    public static string? FindAdb()
+    {
+        string? fromEnv = Environment.GetEnvironmentVariable("NETANDROIDPROFILER_ADB");
+        if (!string.IsNullOrEmpty(fromEnv) && File.Exists(fromEnv)) return fromEnv;
+        string? onPath = FindOnPath(OperatingSystem.IsWindows() ? "adb.exe" : "adb");
+        if (onPath is not null) return onPath;
+        foreach (var root in new[]
+        {
+            Environment.GetEnvironmentVariable("ANDROID_HOME"),
+            Environment.GetEnvironmentVariable("ANDROID_SDK_ROOT"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Android", "android-sdk"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Android", "Sdk"),
+        })
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            string p = Path.Combine(root, "platform-tools", OperatingSystem.IsWindows() ? "adb.exe" : "adb");
+            if (File.Exists(p)) return p;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// dotnet-dsrouter, from the copy shipped in the package if there is one, otherwise
+    /// from the global tool or PATH.
+    /// </summary>
+    public static string? FindDsRouter() => FindDotnetTool("dotnet-dsrouter");
+
+    /// <summary>
+    /// The msbuild targets that weave an app while it is built, for apps that keep their
+    /// assemblies inside the APK and cannot be rewritten on the device. Shipped in the
+    /// package's build/ folder, and found in the repository the same way.
+    /// </summary>
+    public static string? FindWeavingTargets(string? appBase = null)
+    {
+        const string name = "NetAndroidProfiler.Weaving.targets";
+        var dir = new DirectoryInfo(appBase ?? AppContext.BaseDirectory);
+        // bin/ next to build/ in the package, and a few levels up in a source tree.
+        for (int i = 0; dir is not null && i < 8; i++, dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "build", name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        return null;
+    }
+
+    /// <summary>The .NET SDK driver, needed to build and install an app project.</summary>
+    public static string? FindDotnet()
+    {
+        string exe = OperatingSystem.IsWindows() ? "dotnet.exe" : "dotnet";
+        string? root = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+        if (!string.IsNullOrEmpty(root) && File.Exists(Path.Combine(root, exe))) return Path.Combine(root, exe);
+        return FindOnPath(exe);
+    }
+
+    /// <summary>
+    /// The external tools the profiler drives, each with what it is for and how to get it.
+    /// A frontend shows this instead of failing halfway through a session with a message
+    /// about a missing executable - dsrouter in particular is a one-line install that
+    /// nobody remembers until the first session dies.
+    /// </summary>
+    public static IReadOnlyList<ToolStatus> Prerequisites() =>
+    [
+        new ToolStatus(
+            "adb", FindAdb(), Required: true,
+            "Talks to the device: install, launch, port forwarding, logcat.",
+            InstallCommand: null,
+            "Install the Android SDK platform-tools and put adb on PATH, or set ANDROID_HOME."),
+        new ToolStatus(
+            "dotnet-dsrouter", FindDsRouter(), Required: true,
+            "Routes the app's diagnostics port over adb; every profiling session goes through it.",
+            InstallCommand: "dotnet tool install -g dotnet-dsrouter",
+            "Install it as a global .NET tool: dotnet tool install -g dotnet-dsrouter"),
+        new ToolStatus(
+            "dotnet", FindDotnet(), Required: false,
+            "Builds and installs an app project from the GUI; not needed to profile an app that is already installed.",
+            InstallCommand: null,
+            "Install the .NET SDK, or put dotnet on PATH."),
+    ];
+
+    /// <summary>
+    /// A .NET tool the profiler drives as a process. Looked up, in order: the explicit
+    /// override, the copy inside the package, the user's global tools, PATH.
+    ///
+    /// The package copy comes first on purpose: an installation that carries its own
+    /// dsrouter must not start behaving differently because the machine happens to have
+    /// another version installed globally.
+    /// </summary>
+    /// <param name="name">Tool name without extension, as in "dotnet-dsrouter".</param>
+    /// <param name="appBase">Where the application lives; defaults to this process's base directory.</param>
+    public static string? FindDotnetTool(string name, string? appBase = null)
+    {
+        string exe = OperatingSystem.IsWindows() ? name + ".exe" : name;
+        string? fromEnv = Environment.GetEnvironmentVariable("NETANDROIDPROFILER_" + name.Replace('-', '_').ToUpperInvariant());
+        if (!string.IsNullOrEmpty(fromEnv) && File.Exists(fromEnv)) return fromEnv;
+
+        // The package keeps its tools next to bin/, so the parent is searched as well.
+        string root = appBase ?? AppContext.BaseDirectory;
+        foreach (var candidate in new[]
+        {
+            Path.Combine(root, "tools", exe),
+            Path.Combine(root, exe),
+            Path.Combine(root, "..", "tools", exe),
+        })
+            if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+
+        string tools = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "tools", exe);
+        if (File.Exists(tools)) return tools;
+        return FindOnPath(exe);
+    }
+
+    /// <summary>
+    /// Installs a missing prerequisite that has an install command, streaming the output.
+    /// Only tools this class knows about can be installed: the command is not something a
+    /// caller supplies.
+    /// </summary>
+    public static async Task<int> InstallAsync(string toolName, Action<string> log, CancellationToken ct)
+    {
+        var tool = Prerequisites().FirstOrDefault(t => t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ToolException($"'{toolName}' is not one of the tools this profiler installs.");
+        if (tool.InstallCommand is null)
+            throw new ToolException($"{tool.Name} cannot be installed automatically. {tool.Fix}");
+
+        string dotnet = FindDotnet()
+            ?? throw new ToolException("dotnet was not found on this machine: install the .NET SDK, or put dotnet on PATH.");
+        string[] install = ["tool", "install", "-g", tool.Name];
+        log($"{dotnet} {string.Join(' ', install)}");
+        int code = await ProcessRunner.RunStreamingAsync(dotnet, install, log, ct).ConfigureAwait(false);
+        if (code != 0)
+        {
+            // Already installed is the common "failure" here, and the useful answer to it
+            // is to bring it up to date rather than to report an error.
+            log("Install did not succeed; trying an update in case it is already installed.");
+            string[] update = ["tool", "update", "-g", tool.Name];
+            log($"{dotnet} {string.Join(' ', update)}");
+            code = await ProcessRunner.RunStreamingAsync(dotnet, update, log, ct).ConfigureAwait(false);
+        }
+
+        string? found = FindDotnetTool(tool.Name);
+        log(found is not null ? $"{tool.Name} is now at {found}" : $"{tool.Name} is still not where the profiler looks for it.");
+        return found is not null ? 0 : code == 0 ? 1 : code;
+    }
+
+    private static string? FindOnPath(string exe)
+    {
+        foreach (var dir in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            try
+            {
+                string p = Path.Combine(dir.Trim('"'), exe);
+                if (File.Exists(p)) return p;
+            }
+            catch { /* malformed PATH entry */ }
+        }
+        return null;
+    }
+}
+
+/// <summary>An external tool the profiler needs, where it was found, and what to do when it was not.</summary>
+/// <param name="Name">Tool name, as it is installed (adb, dotnet-dsrouter, dotnet).</param>
+/// <param name="Path">Full path, or null when the tool is missing.</param>
+/// <param name="Required">Whether profiling is impossible without it.</param>
+/// <param name="Purpose">What the profiler uses it for.</param>
+/// <param name="InstallCommand">The command that installs it, when there is one a frontend can run.</param>
+/// <param name="Fix">What the user should do when it is missing.</param>
+public sealed record ToolStatus(
+    string Name, string? Path, bool Required, string Purpose, string? InstallCommand, string Fix)
+{
+    /// <summary>Whether the tool was found.</summary>
+    public bool Found => Path is not null;
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pages:ScenarioPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:pages="clr-namespace:ProfileMeExample.Pages"
+                    x:Class="ProfileMeExample.Pages.ChattyPricingPage">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="Totals an order of 2,000 lines against a price list. Every method involved is fast; the total still takes seconds, because of how many times each one is called."
+               LineBreakMode="WordWrap" />
+        <Button x:Name="TotalButton" Text="Total the order" Clicked="OnTotalClicked" />
+        <Label x:Name="OutputLabel" LineBreakMode="WordWrap" />
+        <Button Text="How to profile this" Clicked="OnGuideClicked" />
+    </VerticalStackLayout>
+
+</pages:ScenarioPage>

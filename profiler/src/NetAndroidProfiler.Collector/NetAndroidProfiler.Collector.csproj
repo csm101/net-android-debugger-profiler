@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Loaded inside the profiled Android app (pushed to the fast-deployment
+      override directory next to the woven assemblies). netstandard2.0 with
+      zero dependencies so it runs on any Mono/net runtime the app uses.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>NetAndroidProfiler.Collector</RootNamespace>
+    <AssemblyName>NetAndroidProfiler.Collector</AssemblyName>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The call tree is an implementation detail of the collector, and its arithmetic
+         is worth testing directly rather than through a device. -->
+    <InternalsVisibleTo Include="NetAndroidProfiler.Tests" />
+  </ItemGroup>
+
+</Project>

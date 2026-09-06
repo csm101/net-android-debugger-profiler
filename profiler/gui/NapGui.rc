@@ -1,0 +1,25 @@
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x4
+FILETYPE 0x1
+{
+ BLOCK "StringFileInfo"
+ {
+  BLOCK "040904E4"
+  {
+   VALUE "CompanyName", "MCA Software s.a.s. di Sirna Carlo & C.\0"
+   VALUE "FileDescription", ".NET for Android profiler\0"
+   VALUE "FileVersion", "0.1.0.0\0"
+   VALUE "InternalName", "NapGui\0"
+   VALUE "LegalCopyright", "Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C.\0"
+   VALUE "OriginalFilename", "NapGui.exe\0"
+   VALUE "ProductName", ".NET for Android profiler\0"
+   VALUE "ProductVersion", "0.1.0.0\0"
+  }
+ }
+ BLOCK "VarFileInfo"
+ {
+  VALUE "Translation", 0x0409 0x04E4
+ }
+}

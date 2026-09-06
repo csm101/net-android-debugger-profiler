@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The "business logic" of ProfileMeExample, kept in a library the way real apps keep
+    theirs. Every class here has a performance defect on purpose; the comments say which.
+    Nothing in here knows about MAUI.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ProfileMeExample.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

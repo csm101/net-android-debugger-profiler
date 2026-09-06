@@ -1,0 +1,16 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+TestResults/
+*.binlog
+.idea/
+*.nettrace
+*.gcdump
+*.speedscope.json
+!tests/**/recorded/*.nettrace
+!tests/**/recorded/*.gcdump
+*.etlx
+build/tools/
+dist/

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ProfileMeExample.Pages.TutorialPage"
+             Title="How to profile this">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Padding="20" RowSpacing="12">
+        <Label x:Name="TitleLabel" Grid.Row="0" Style="{StaticResource Headline}" />
+        <Label x:Name="FeatureLabel" Grid.Row="1" FontAttributes="Italic" />
+        <ScrollView Grid.Row="2">
+            <Label x:Name="GuideLabel" LineBreakMode="WordWrap" />
+        </ScrollView>
+        <VerticalStackLayout Grid.Row="3" Spacing="8">
+            <Button x:Name="ManualButton" Text="Open the manual page" Clicked="OnOpenManualClicked" IsVisible="False" />
+            <Button Text="Close" Clicked="OnCloseClicked" />
+        </VerticalStackLayout>
+    </Grid>
+
+</ContentPage>

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <RootNamespace>NetAndroidProfiler.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MIT: trace parsing (nettrace, TraceLog stacks, rundown) -->
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="3.1.23" />
+    <!-- MIT: EventPipe sessions over the diagnostics IPC (through dsrouter) -->
+    <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.661903" />
+    <!-- MIT: SQLite result store (the GUI contract) -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+    <!-- MIT: IL weaving (instrumenting plan B, runtime-independent) -->
+    <PackageReference Include="Mono.Cecil" Version="0.11.6" />
+  </ItemGroup>
+
+  <!--
+    Not an API dependency: referenced only so the netstandard2.0 collector
+    assembly is copied to Core's output, from where the weaver deploys it into
+    the target app. Its types are never used from Core.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Collector\NetAndroidProfiler.Collector.csproj" Private="true" ReferenceOutputAssembly="false" OutputItemType="Content" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

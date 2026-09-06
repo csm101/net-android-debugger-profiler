@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      nap: the non-MCP entry point to Core. `nap serve` is the local control service the
+      Delphi GUI drives (KNOWN_UNKNOWNS U7); the one-shot commands are for scripts and CI.
+      Deliberately built on HttpListener and System.Text.Json: no web framework, nothing
+      to redistribute beyond what Core already needs.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>NetAndroidProfiler.Cli</RootNamespace>
+    <AssemblyName>nap</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Native AOT, opt-in per project: `dotnet publish <this project> -p:NapAot=true`.
+    PublishAot must not be a global property - it flows into every ProjectReference and
+    NetAndroidProfiler.Collector targets Android, which cannot be AOT-compiled
+    (NETSDK1207). Setting it inside the project keeps it here.
+    Needs the Visual C++ build tools on the machine; see docs/PACKAGING.md.
+  -->
+  <PropertyGroup Condition="'$(NapAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    TraceEvent reads .nettrace through FastSerialization, which builds objects from type
+    names in the stream - reflection the trimmer cannot see. Trimmed, the first trace
+    conversion dies on "Unable to create an object of type ... ILToNativeMap". Rooting the
+    two assemblies keeps their constructors; it costs size, which is the trade this
+    experiment is measuring.
+  -->
+  <ItemGroup Condition="'$(NapAot)' == 'true'">
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.FastSerialization" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
+  </ItemGroup>
+
+</Project>

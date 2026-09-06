@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>NetAndroidProfiler.Mcp</RootNamespace>
+    <AssemblyName>NetAndroidProfiler.Mcp</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Native AOT, opt-in per project: `dotnet publish <this project> -p:NapAot=true`.
+    PublishAot must not be a global property - it flows into every ProjectReference and
+    NetAndroidProfiler.Collector targets Android, which cannot be AOT-compiled
+    (NETSDK1207). Setting it inside the project keeps it here.
+    Needs the Visual C++ build tools on the machine; see docs/PACKAGING.md.
+  -->
+  <PropertyGroup Condition="'$(NapAot)' == 'true'">
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- TraceEvent reads traces through reflection the trimmer cannot see: see nap's copy of
+       this comment and docs/PACKAGING.md. -->
+  <ItemGroup Condition="'$(NapAot)' == 'true'">
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.Tracing.TraceEvent" />
+    <TrimmerRootAssembly Include="Microsoft.Diagnostics.FastSerialization" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\NetAndroidProfiler.Core\NetAndroidProfiler.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+  </ItemGroup>
+
+</Project>

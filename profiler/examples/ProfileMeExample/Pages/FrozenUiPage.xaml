@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pages:ScenarioPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:pages="clr-namespace:ProfileMeExample.Pages"
+                    x:Class="ProfileMeExample.Pages.FrozenUiPage">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="Fetches the account balance from a legacy gateway that waits for the server on the calling thread. The screen freezes for the whole round trip; the counter below stops ticking while it does."
+               LineBreakMode="WordWrap" />
+        <Label x:Name="TickerLabel" Text="UI ticks: 0" />
+        <Button x:Name="FetchButton" Text="Fetch balance" Clicked="OnFetchClicked" />
+        <Label x:Name="OutputLabel" LineBreakMode="WordWrap" />
+        <Button Text="How to profile this" Clicked="OnGuideClicked" />
+    </VerticalStackLayout>
+
+</pages:ScenarioPage>
