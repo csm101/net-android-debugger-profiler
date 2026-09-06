@@ -1,0 +1,29 @@
+{
+  // How TestTarget is debugged, kept with the project rather than restated per session.
+  // The DAP frontend reads this file when you press F5; the MCP tool launch_from_config reads
+  // the same file and the same fields, so both frontends launch the app the same way.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "net-android",
+      "request": "launch",
+      "name": "TestTarget",
+      "packageName": "net.androiddebugger.testtarget",
+      "exceptionRules": [
+        {
+          // TestTarget throws this one on purpose to exercise the debugger: worth a line, not a stop.
+          "messageContains": "expected failure",
+          "action": "log"
+        }
+      ]
+    },
+    {
+      "type": "net-android",
+      "request": "launch",
+      "name": "TestTarget (build and install first)",
+      "packageName": "net.androiddebugger.testtarget",
+      "projectPath": "${workspaceFolder}/TestTarget/Debugger/TestTarget.csproj",
+      "deploy": true
+    }
+  ]
+}

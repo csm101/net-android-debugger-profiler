@@ -1,0 +1,26 @@
+<Project>
+
+  <!--
+    Settings shared by every project of the monorepo. The two products keep their own
+    versions: the profiler block below is scoped to the NetAndroidProfiler.* projects, so
+    the debugger's assemblies are never stamped with NapVersion.
+  -->
+  <PropertyGroup>
+    <Company>MCA Software s.a.s. di Sirna Carlo &amp; C.</Company>
+    <Copyright>Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo &amp; C. All rights reserved.</Copyright>
+  </PropertyGroup>
+
+  <!--
+    One version for everything the profiler ships: the MCP server, nap, nap-weave and the
+    result database's tool stamp all read it from here. ProfilerSession.ToolVersion takes
+    it from the assembly rather than repeating it, so a release is a single edit.
+
+    NapVersion is also what build/package.ps1 names the package after.
+  -->
+  <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('NetAndroidProfiler'))">
+    <NapVersion>0.2.0</NapVersion>
+    <Version>$(NapVersion)</Version>
+    <Product>net-android-profiler</Product>
+  </PropertyGroup>
+
+</Project>

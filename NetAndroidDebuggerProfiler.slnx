@@ -1,0 +1,30 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/NetAndroidDebugger.Core/NetAndroidDebugger.Core.csproj" />
+    <Project Path="src/NetAndroidDebugger.Mcp/NetAndroidDebugger.Mcp.csproj" />
+    <Project Path="src/NetAndroidDebugger.Dap/NetAndroidDebugger.Dap.csproj" />
+    <Project Path="src/NetAndroidProfiler.Core/NetAndroidProfiler.Core.csproj" />
+    <Project Path="src/NetAndroidProfiler.Mcp/NetAndroidProfiler.Mcp.csproj" />
+    <Project Path="src/NetAndroidProfiler.Collector/NetAndroidProfiler.Collector.csproj" />
+    <Project Path="src/NetAndroidProfiler.Weave/NetAndroidProfiler.Weave.csproj" />
+    <Project Path="src/NetAndroidProfiler.Cli/NetAndroidProfiler.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NetAndroidDebugger.Tests/NetAndroidDebugger.Tests.csproj" />
+    <Project Path="tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj" />
+    <Project Path="tests/WeaveSample/WeaveSample.csproj" />
+  </Folder>
+  <Folder Name="/DevTools/">
+    <Project Path="DevTools/SdbProbe/SdbProbe.csproj" />
+    <Project Path="DevTools/DapSmoke/DapSmoke.csproj" />
+  </Folder>
+  <Folder Name="/ThirdParty/">
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugger.Soft/Mono.Debugger.Soft.csproj" />
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugging/Mono.Debugging.csproj" />
+    <Project Path="ThirdParty/debugger-libs/Mono.Debugging.Soft/Mono.Debugging.Soft.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/ProfileMeExample/ProfileMeExample.csproj" />
+    <Project Path="examples/ProfileMeExample.Domain/ProfileMeExample.Domain.csproj" />
+  </Folder>
+</Solution>

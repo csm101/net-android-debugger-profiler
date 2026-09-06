@@ -1,0 +1,24 @@
+* text=auto
+
+# Shell scripts stay LF. A CRLF script breaks under any bash that is not Git for
+# Windows' own - the shebang line is the first casualty - and CRLF leaks into the
+# last token of every assignment.
+*.sh text eol=lf
+
+# Batch and PowerShell are read by Windows shells, which want CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Delphi sources and project files are CRLF on every machine: the IDE and dcc64
+# expect it, and a mixed working tree makes their diffs unreadable.
+*.pas text eol=crlf
+*.dpr text eol=crlf
+*.dfm text eol=crlf
+*.dproj text eol=crlf
+*.inc text eol=crlf
+
+*.png binary
+*.apk binary
+*.nettrace binary
+*.gcdump binary
