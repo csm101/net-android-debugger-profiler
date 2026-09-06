@@ -367,6 +367,9 @@ public sealed class ProfilerSession : IAsyncDisposable
             }
             else
             {
+                if (DevicePropertyOverride.ForeignValueWarning(DeviceGlobals.DebugMonoProfile,
+                        await _env.ProfileProperty.ReadAsync(ct).ConfigureAwait(false), 0, deadlineRequired: false) is { } inUse)
+                    Log(inUse);
                 await _env.SetDeviceProfilePropertyAsync(ports, ct).ConfigureAwait(false);
                 Log($"debug.mono.profile set: {ports}" + (prereq.HasAssemblyStore ? " (app embeds its assemblies: no per-app environment file)" : ""));
                 if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine == InstrumentingEngine.RuntimeProvider)
@@ -403,7 +406,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     private async Task EnsureAttachableAsync(DeviceInfo device, AppPrerequisites prereq, CancellationToken ct)
     {
         if (prereq.BakedEnvironmentHints.Any(h => h.Contains("DOTNET_DiagnosticPorts", StringComparison.Ordinal))) return;
-        string prop = await _adb.GetPropAsync(device.Serial, "debug.mono.profile", ct).ConfigureAwait(false);
+        string prop = await _adb.GetPropAsync(device.Serial, DeviceGlobals.DebugMonoProfile, ct).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(prop)) return;
         if (prereq.IsDebuggable && !prereq.HasAssemblyStore)
         {

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace NetAndroidProfiler.Core.Collection;
+namespace NetAndroid.Device;
 
 /// <summary>
 /// Reader/writer for the .NET for Android "environment override file"

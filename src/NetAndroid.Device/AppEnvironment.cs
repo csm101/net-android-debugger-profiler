@@ -1,11 +1,11 @@
-using NetAndroidProfiler.Core.Devices;
-
-namespace NetAndroidProfiler.Core.Collection;
+namespace NetAndroid.Device;
 
 /// <summary>
-/// Per-app runtime configuration on the device: the environment override file
-/// of debuggable (Debug-runtime) apps, and the device-global
-/// <c>debug.mono.profile</c> property as the fallback for release apps.
+/// Per-app runtime configuration on the device, with backup and restore: the environment
+/// override file of debuggable (Debug-runtime) apps
+/// (<see cref="DeviceGlobals.OverrideEnvironmentPath"/>), and the device-global
+/// <c>debug.mono.profile</c> property as the fallback for apps that have no such file
+/// (a <see cref="DevicePropertyOverride"/> underneath).
 /// </summary>
 public sealed class AppEnvironment
 {
@@ -13,17 +13,21 @@ public sealed class AppEnvironment
     private readonly string _serial;
     private readonly string _package;
     private readonly string _abi;
+    private readonly DevicePropertyOverride _profileProperty;
     private byte[]? _backup;
     private bool _backupExisted;
     private bool _applied;
-    private string? _propBackup;
 
     public AppEnvironment(AdbClient adb, string serial, string package, string abi)
     {
         _adb = adb; _serial = serial; _package = package; _abi = abi;
+        _profileProperty = new DevicePropertyOverride(adb, serial, DeviceGlobals.DebugMonoProfile);
     }
 
-    private string OverridePath => $"files/.__override__/{_abi}/environment";
+    private string OverridePath => DeviceGlobals.OverrideEnvironmentPath(_abi);
+
+    /// <summary>The device-global property this environment falls back on, for callers that want to read or report it.</summary>
+    public DevicePropertyOverride ProfileProperty => _profileProperty;
 
     /// <summary>Current override variables (empty when the file does not exist).</summary>
     public async Task<IReadOnlyList<KeyValuePair<string, string>>> ReadOverrideAsync(CancellationToken ct)
@@ -36,7 +40,7 @@ public sealed class AppEnvironment
     private async Task<long?> OverrideSizeAsync(CancellationToken ct)
     {
         var r = await _adb.RunAsync(_serial, ["shell", $"run-as {_package} stat -c %s {OverridePath}"], ct).ConfigureAwait(false);
-        return r.Success && long.TryParse(r.StdOut.Trim(), out long size) ? size : null;
+        return r.Succeeded && long.TryParse(r.StdOut.Trim(), out long size) ? size : null;
     }
 
     /// <summary>
@@ -117,20 +121,13 @@ public sealed class AppEnvironment
             }
         }
         _backup = null; _backupExisted = false; _applied = false;
-        if (_propBackup is not null)
-        {
-            await _adb.SetPropAsync(_serial, "debug.mono.profile", _propBackup, ct).ConfigureAwait(false);
-            _propBackup = null;
-        }
+        await _profileProperty.RestoreAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>Set the device-global <c>debug.mono.profile</c> (DOTNET_DiagnosticPorts for every .NET app on the device), remembering the old value.</summary>
-    public async Task SetDeviceProfilePropertyAsync(string value, CancellationToken ct)
-    {
-        _propBackup ??= await _adb.GetPropAsync(_serial, "debug.mono.profile", ct).ConfigureAwait(false);
-        await _adb.SetPropAsync(_serial, "debug.mono.profile", value, ct).ConfigureAwait(false);
-    }
+    public Task SetDeviceProfilePropertyAsync(string value, CancellationToken ct)
+        => _profileProperty.ApplyAsync(value, ct);
 
     /// <summary>Remember to restore even if we never changed the property.</summary>
-    public bool HasPendingChanges => _backup is not null || _backupExisted || _propBackup is not null;
+    public bool HasPendingChanges => _backup is not null || _backupExisted || _profileProperty.IsApplied;
 }

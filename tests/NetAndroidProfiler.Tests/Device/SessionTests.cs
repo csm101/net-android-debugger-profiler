@@ -734,7 +734,7 @@ public class SessionTests
         var adb = new AdbClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
         var dev = (await adb.ListDevicesAsync(cts.Token)).Single(d => d.Serial == Serial);
-        var env = new NetAndroidProfiler.Core.Collection.AppEnvironment(adb, Serial, Package, dev.Abi);
+        var env = new AppEnvironment(adb, Serial, Package, dev.Abi);
         var before = await env.ReadOverrideAsync(cts.Token);
 
         await using (var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting, Duration: TimeSpan.FromSeconds(4), Callspec: "T:TestTarget.Workloads.WorkloadRunner")))

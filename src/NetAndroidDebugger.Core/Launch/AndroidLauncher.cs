@@ -16,7 +16,7 @@ public sealed record AgentReady(int Pid, int Port, string? ProcessName);
 /// </summary>
 public sealed class AndroidLauncher : IAsyncDisposable
 {
-    private const string DebugProperty = "debug.mono.extra";
+    private const string DebugProperty = DeviceGlobals.DebugMonoExtra;
 
     // threadtime: "08-20 09:10:39.891  6954  6954 W monodroid-debug: Trying to initialize ..."
     private static readonly Regex LogcatLine = new(
@@ -40,7 +40,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     private Task? _logcatTask;
     private long _deadline;
     private int _nextPort;
-    private bool _propertyOwned;
+    private readonly DevicePropertyOverride _property;
     private volatile bool _shuttingDown;
     private int? _packageUid;
     private readonly SemaphoreSlim _propertyGate = new(1, 1);
@@ -65,6 +65,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
         _options = options;
         _log = log;
         _nextPort = options.BaseSdbPort;
+        _property = new DevicePropertyOverride(adb, options.DeviceSerial, DebugProperty);
     }
 
     /// <summary>Raised (from the logcat reader thread) for every process of the package whose agent is listening. The property has already been rotated.</summary>
@@ -143,7 +144,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
 
         // Announce what is being taken over before taking it: see ForeignDebugPropertyWarning.
         if (ForeignDebugPropertyWarning(
-                await _adb.GetPropAsync(serial, DebugProperty, ct).ConfigureAwait(false), deviceNow) is { } inUse)
+                await _property.ReadAsync(ct).ConfigureAwait(false), deviceNow) is { } inUse)
             _log(inUse);
 
         await WritePropertyAsync(_nextPort, ct).ConfigureAwait(false);
@@ -194,14 +195,9 @@ public sealed class AndroidLauncher : IAsyncDisposable
         await StopRenewalAsync().ConfigureAwait(false);
         await StopLogcatAsync().ConfigureAwait(false);
 
-        try
-        {
-            if (_propertyOwned)
-            {
-                await _adb.SetPropAsync(serial, DebugProperty, "", ct).ConfigureAwait(false);
-                _propertyOwned = false;
-            }
-        }
+        // Cleared, not restored: a value left on the device would make every Mono app started afterwards wait
+        // for a debugger on our port, and what was there before this launch is never worth keeping.
+        try { await _property.ClearAsync(ct).ConfigureAwait(false); }
         catch (Exception ex) { _log($"shutdown: clearing {DebugProperty} failed: {ex.Message}"); }
 
         try { await _adb.ForceStopAsync(serial, _app.PackageName, ct).ConfigureAwait(false); }
@@ -269,22 +265,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
     /// <param name="value">The property as read from the device.</param>
     /// <param name="deviceEpochSeconds">The device clock, in the unit the property's own deadline uses.</param>
     public static string? ForeignDebugPropertyWarning(string? value, long deviceEpochSeconds)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-
-        var deadlineText = PropertyDeadline.Match(value);
-        if (!deadlineText.Success || !long.TryParse(deadlineText.Groups[1].Value, out var deadline)) return null;
-        if (deadline <= deviceEpochSeconds) return null;
-
-        var port = PropertyPort.Match(value) is { Success: true } m ? m.Groups[1].Value : "an unknown port";
-        return $"{DebugProperty} was already set and stays valid for another {deadline - deviceEpochSeconds}s, "
-             + $"pointing at port {port}: another debugger is attaching on this device, or a session of ours did not "
-             + "shut down cleanly. The property is device-global, so this launch takes it over - if a debug session "
-             + "started elsewhere stops working, that is why.";
-    }
-
-    private static readonly Regex PropertyDeadline = new(@"timeout=(\d+)", RegexOptions.Compiled);
-    private static readonly Regex PropertyPort = new(@"debug=[^,]*?:(\d+)", RegexOptions.Compiled);
+        => DevicePropertyOverride.ForeignValueWarning(DebugProperty, value, deviceEpochSeconds);
     private async Task WritePropertyAsync(int port, CancellationToken ct)
     {
         // Rotation (logcat thread), launch and the renewal loop all write this property; keep the
@@ -293,8 +274,7 @@ public sealed class AndroidLauncher : IAsyncDisposable
         try
         {
             var value = $"debug=127.0.0.1:{port},timeout={_deadline},loglevel={_options.AgentLogLevel},server=y";
-            await _adb.SetPropAsync(_options.DeviceSerial, DebugProperty, value, ct).ConfigureAwait(false);
-            _propertyOwned = true;
+            await _property.ApplyAsync(value, ct).ConfigureAwait(false);
             _log($"{DebugProperty} = {value}");
         }
         finally { _propertyGate.Release(); }
