@@ -1,5 +1,10 @@
 # Task resume
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its debugger component: sources under `src/NetAndroidDebugger.*`, this document
+under `docs/debugger/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidDebugger.Core/CLAUDE.md`.
 ## Current task (2026-09-05, later): adb found without PATH
 
 `Core/Adb/AdbLocator.cs` resolves adb (explicit `adbPath` > `NAD_ADB_PATH` >
@@ -78,10 +83,10 @@ ANDROID_ATTACH_NOTES device-control facts), then the full suite via test-runner.
 
 Nothing in flight.
 
-Last change: `install-vscode-extension.cmd` in the repository root. Installing the
+Last change: `install-vscode-extension.cmd` (now `vscode\install-vscode-extension.cmd`). Installing the
 VS Code extension was a PowerShell symbolic-link incantation buried in a README,
 which is not something anyone remembers. The script junctions
-`DevTools/vscode/net-android-debugger` into `%USERPROFILE%\.vscode\extensions`
+`vscode/net-android-debugger` into `%USERPROFILE%\.vscode\extensions`
 (`NAD_VSCODE_EXTENSIONS` retargets it), warns when the adapter has not been
 published yet, and is idempotent.
 
@@ -171,7 +176,7 @@ Every item below came out of driving the real app or re-reading the new code.
 
 - Only ever touch `emulator-5554`; `emulator-5556` is the user's other AVD
   (`devicepersviluppoprofiler`).
-- `AVD=pixel_7_-_api_33_0 bash DevTools/scripts/ensure-emulator.sh` before
+- `AVD=pixel_7_-_api_30 SERIAL=emulator-5554 bash DevTools/scripts/ensure-emulator.sh` before
   unattended runs (two AVDs are installed here, so the script will not guess):
   headless (a
   windowed emulator cannot start while the desktop is locked), hardware GPU (a

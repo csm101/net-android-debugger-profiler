@@ -38,8 +38,13 @@ watchdog could still fire and send a real bug report), and the on-demand
 `the app's own android:process` process - reopen a narrower entry if either matters.
 
 ## U8 - CoreCLR on Android
-Future .NET versions may switch Android to CoreCLR (SDB disappears). Not a
-near-term concern for net9; track when the reference application retargets.
+Mono is gone in `net11.0-android`: apps built for it run on CoreCLR, and the Mono Soft
+Debugger protocol this engine speaks (with `ThirdParty/debugger-libs`) does not exist
+there. The engine stays valid for `net10.0-android` apps until November 2028, when .NET 10
+leaves support, and for the reference application (`net9.0-android35.0`) until it retargets. A CoreCLR engine
+needs a different wire protocol and a different debug-property mechanism (`src/native/clr/`
+in dotnet/android). The repository-level view and the order of decisions are in
+`docs/KNOWN_UNKNOWNS.md` R2. Not a near-term concern for the reference application.
 
 ## U9 - Physical palmari over WiFi adb
 Attach flow against real handhelds over adb connect host:port, possibly

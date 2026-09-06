@@ -1,5 +1,10 @@
 # Task resume
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its profiler component: sources under `src/NetAndroidProfiler.*`, this document
+under `docs/profiler/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidProfiler.Core/CLAUDE.md`.
 ## Current task
 **The example app (2026-09-05).** `examples/ProfileMeExample.sln` - MAUI Android app plus
 `ProfileMeExample.Domain` library, seven screens, one deliberate problem each, a Guide per
@@ -101,7 +106,7 @@ The repository carries the code, the docs and the tests. It does not carry:
   override the defaults (emulator-5556, com.mcasoftware.testtarget).
 - **the package** (dist/ is ignored): rebuild it with build\package.ps1.
 - **the Native AOT prerequisites**: the Visual C++ build tools and Windows SDK, plus
-  vswhere on PATH when publishing. docs/PACKAGING.md has the exact components and the
+  vswhere on PATH when publishing. docs/profiler/PACKAGING.md has the exact components and the
   installer traps.
 - **the Delphi side's inputs**: RAD Studio with DevExpress and SynEdit, found through the
   IDE's own search path by gui\make-cfg.ps1.
@@ -266,9 +271,12 @@ attached: U10 can start as soon as that is done.
         (its first block - prerequisites, the projects under TestTarget, the callspec
         candidates - needs no device and runs anywhere the repository is)
 
-The companion build the prerequisite test wants:
-    dotnet build TestTarget/TestTarget.csproj -c Debug -p:EnableDiagnostics=false
-        -p:ApplicationId=com.mcasoftware.testtarget.nodiag -t:Install -p:AdbTarget="-s emulator-5556"
+The companion build the prerequisite test wants (clean obj/ and bin/ of TestTarget/Profiler before
+switching ApplicationId in either direction: the SDK's incremental state keeps the previous manifest,
+the install step then reports XA0132 "package was not installed", and an APK installed by hand from
+that state lands on the incremental FS, where the inspector's `adb pull` is refused - seen 2026-09-06):
+    dotnet build TestTarget/Profiler/TestTarget.csproj -c Debug -p:EnableDiagnostics=false
+        -p:ApplicationId=com.mcasoftware.testtarget.nodiag -t:Install -p:AdbTarget="-s emulator-5554"
 
 ## Traps found here
 - Evidence collected before a fix stays in the docs and looks authoritative:

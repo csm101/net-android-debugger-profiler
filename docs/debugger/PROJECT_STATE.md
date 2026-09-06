@@ -2,6 +2,12 @@
 
 High-level permanent state. Transient task state lives in TASK_RESUME.md.
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its debugger component: sources under `src/NetAndroidDebugger.*`, this document
+under `docs/debugger/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidDebugger.Core/CLAUDE.md`.
+
 ## What this is
 
 MCP (first) and DAP (later, optional) debugger for .NET for Android apps,
@@ -28,8 +34,8 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
   stdio transport, attribute-based tools); hand-rolled JSON-RPC not needed.
 - Attach is always "restart with agent" and the engine owns it (property,
   forwards, `am start`); msbuild only deploys. Multi-process via port rotation.
-- Tooling TFM: net10.0. Repo layout: src/ (Core, Mcp), tests/, ThirdParty/
-  (vendored upstream), DevTools/ (argv-driven probes), TestTarget/ (minimal
+- Tooling TFM: net10.0. Repo layout (monorepo since 2026-09-06): src/NetAndroidDebugger.* (Core, Mcp, Dap, Shared), tests/, ThirdParty/
+  (vendored upstream), DevTools/ (argv-driven probes, shared with the profiler), TestTarget/Debugger/ (minimal
   net-android app, created in M0).
 
 - Licensing (2026-08-20): proprietary closed source, copyright MCA Software
@@ -40,7 +46,7 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
   from memory. Seven components: mono/debugger-libs, Mono.Cecil, Roslyn, the
   Microsoft.Extensions/.NET libraries, SymbolStore+FileFormats, Json.NET (all
   MIT) and the MCP C# SDK (**Apache-2.0**, not MIT as assumed - allowed by the
-  policy, and it ships no NOTICE file to propagate). `register-mcp.cmd` copies
+  policy, and it ships no NOTICE file to propagate). `register-mcp-debugger.cmd` copies
   the file next to the binaries, and a test fails if a shipped assembly is not
   named in it.
 
@@ -61,7 +67,7 @@ integration.
 - M1 - Engine + MCP: DONE 2026-08-21. DebugSession facade over N per-process
   SoftDebuggerSessions, AndroidLauncher with port rotation, breakpoints,
   stepping, stack, locals, evaluate, expansion; MCP stdio server on the official
-  ModelContextProtocol SDK 2.2.0; `register-mcp.cmd` publishes and registers it.
+  ModelContextProtocol SDK 2.2.0; `register-mcp-debugger.cmd` publishes and registers it.
 - M2 - Inspection depth: DONE 2026-08-21. Evaluate, object/array/dictionary
   expansion, IEnumerable elements, exception filters, threads, structured logcat
   capture with filters, compact snapshot, evaluation options (timeouts,
@@ -75,11 +81,11 @@ integration.
   Remaining: a physical device over `adb connect` (U9).
 - M4 - DAP frontend and packaging: DONE 2026-08-21. `NetAndroidDebugger.Dap`, a
   stdio adapter over the same DebugSession with a hand-rolled wire protocol;
-  `register-mcp.cmd` publishes both frontends; `DevTools/vscode/DAP_CLIENTS.md`
-  documents the client contract; `DevTools/vscode/net-android-debugger` is a
+  `register-mcp-debugger.cmd` publishes both frontends; `vscode/DAP_CLIENTS.md`
+  documents the client contract; `vscode/net-android-debugger` is a
   VS Code extension contributing the `net-android` debug type (offline checks
   only - never yet run inside a real VS Code), installed by
-  `install-vscode-extension.cmd` as a junction into the user's extensions
+  `vscode\install-vscode-extension.cmd` as a junction into the user's extensions
   folder. `DevTools/DapSmoke` drives the adapter against any installed app.
 
 Open, both needing hardware: attach over `adb connect` and a mid-run debugger
@@ -124,8 +130,8 @@ per-vendor table.
 
 ## Stable commands
 
-    dotnet build C:\GitHub\net-android-debugger\NetAndroidDebugger.slnx
-    dotnet test  C:\GitHub\net-android-debugger\NetAndroidDebugger.slnx
+    dotnet build NetAndroidDebugger.slnx          (from the repository root, C:\Athens\GitHub\net-android-debugger-profiler)
+    dotnet test  NetAndroidDebugger.slnx          (NAD_DEVICE_SERIAL=emulator-5554 with more than one device attached)
 
 ## Important discoveries
 

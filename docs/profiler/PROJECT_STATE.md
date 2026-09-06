@@ -2,6 +2,12 @@
 
 High-level permanent state. Transient task state lives in TASK_RESUME.md.
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its profiler component: sources under `src/NetAndroidProfiler.*`, this document
+under `docs/profiler/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidProfiler.Core/CLAUDE.md`.
+
 ## What this is
 
 Profiler for .NET for Android apps (MonoVM): CPU sampling, memory/allocation
@@ -9,7 +15,7 @@ analysis, instrumenting (runtime provider now, IL weaving later). Frontends:
 MCP server first, then a rich Delphi + DevExpress VCL GUI (AQTime as the
 reference bar). Free replacement for the VS Enterprise Android profiler.
 
-Sibling of C:\GitHub\net-android-debugger - same architecture family
+Sibling of src/NetAndroidDebugger.* in this repository - same architecture family
 (frontend-neutral core, thin frontends, living docs, TDD with integration
 tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-android35.0).
 
@@ -47,7 +53,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
     engine injects MONO_DIAGNOSTICS / DiagnosticPorts per session through
     the runtime's override environment file (run-as), no rebuild, no
     permanent cost. Release builds need the baked env file for
-    instrumenting (docs/APP_SETUP.md).
+    instrumenting (docs/profiler/APP_SETUP.md).
   - SQLite: separate tables per profiling kind (sampling vs instrumenting
     vs memory), never mixed units in one table.
   - Source-line annotation reuses the pdb approach of the reference application's
@@ -77,7 +83,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   Instrumenting (Restart, callspec, allocations), HeapSnapshot (Attach or
   Restart with warm-up).
 - Mcp: stdio server over ProfilerSession, tool set below (frozen for P1).
-  register-mcp.cmd publishes and registers it in Claude Code.
+  register-mcp-profiler.cmd publishes and registers it in Claude Code.
 - Weaver instrumenting (P3 plan B) works end-to-end on device **and on the
   real target**: Cecil weaves the app assemblies in the fast-deployment
   directory, the collector writes .napw files, WeaveAnalyzer -> timing_*
@@ -88,7 +94,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   (the deployer moves it aside during the session).
 - Tests: 23 fast (recorded traces + pdb) + 1 TODO-RED (U13) + 6 device
   (Category=Device).
-- Spike assets: TestTarget/, DevTools/NetTraceProbe, tests/.../recorded/.
+- Spike assets: TestTarget/Profiler/, DevTools/NetTraceProbe, tests/.../recorded/.
 - Not yet: Release-build weaving, physical devices, Delphi GUI.
 - Allocation names on the provider path are exact except for types whose vtable
   predates the session (measured ~9% of allocation events); no runtime path
@@ -123,7 +129,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   verified on the reference application (net9) and TestTarget (net10).
 - P4 - Delphi GUI (gui/): DevExpress VCL, call tree (cxTreeList), hot lists
   (cxGrid), allocations (PivotGrid), timeline (chart); reads SQLite, drives
-  Core via the local control service. Designed in docs/GUI_DESIGN.md against the
+  Core via the local control service. Designed in docs/profiler/GUI_DESIGN.md against the
   official AQTime documentation (Report / Details / Call Tree / Call Graph /
   Editor / Summary / Monitor panels, and its Get Results / Clear Results /
   Enable-Disable Profiling actions, which became the pause/resume/snapshot/clear
@@ -134,7 +140,7 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   output, assemblies, callspec candidates read from the app's assemblies), and can
   build and install the app with the properties a session needs. Nothing about a
   session has to be typed twice, and nothing about it needs a command prompt.
-- P5 - Packaging (docs/PACKAGING.md): `build\package.ps1` publishes the MCP
+- P5 - Packaging (docs/profiler/PACKAGING.md): `build\package.ps1` publishes the MCP
   server, `nap` and `nap-weave` into one bin\, ships dotnet-dsrouter in tools\
   (preferred over a globally installed one), carries the weaving targets and the
   GUI when it has been built, and zips it with install.cmd, the README and the
@@ -168,8 +174,8 @@ engine=provider|weaver and weaveAssemblies for P3 weaving. Memory sessions take 
 
 ## Stable commands
 
-    dotnet build C:\GitHub\net-android-profiler\NetAndroidProfiler.slnx
-    dotnet test  C:\GitHub\net-android-profiler\NetAndroidProfiler.slnx
+    dotnet build NetAndroidProfiler.slnx      (from the repository root, C:\Athens\GitHub\net-android-debugger-profiler)
+    dotnet test  NetAndroidProfiler.slnx      (NAP_TEST_SERIAL=emulator-5554 on this machine)
     powershell -File build\package.ps1        the redistributable zip, into dist\
     dist\...\bin\nap.exe doctor          which adb and dsrouter a machine uses
 

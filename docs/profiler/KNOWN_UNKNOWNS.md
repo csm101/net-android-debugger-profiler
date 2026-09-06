@@ -65,10 +65,10 @@ instrumentation - woven IL stays woven and JIT-time instrumentation persists for
 the life of the process - so the overhead stays while collection is paused. AQTime
 has the same property on Win32.
 
-The GUI side of this contract is designed in docs/GUI_DESIGN.md.
+The GUI side of this contract is designed in docs/profiler/GUI_DESIGN.md.
 
 Implemented 2026-08-21 (`nap serve`, src/NetAndroidProfiler.Cli, documented in
-docs/CONTROL_SERVICE.md): health, devices, app check, session list, start, status,
+docs/profiler/CONTROL_SERVICE.md): health, devices, app check, session list, start, status,
 stop and shutdown, verified end to end - a sampling session started over HTTP
 produced 1338 samples and a session.db where the GUI will read it. The four live
 verbs answer 501 with what is missing. Core grew `SessionRegistry` and
@@ -107,14 +107,19 @@ survives (EventPipe), MonoProfiler provider disappears (weaver is plan B),
 the override-environment injection and debug.mono.* properties change
 (src/native/clr/ in dotnet/android). Try a CoreCLR TestTarget build in P2/P3
 to see what still works.
-
+Update 2026-09-06: `net11.0-android` drops Mono entirely, so the provider engine and the
+`debug.mono.*` mechanics end with .NET 10 apps (supported until November 2028); sampling over
+EventPipe and the IL weaver are what survives. Repository-level view: `docs/KNOWN_UNKNOWNS.md` R2.
 ## U10 - Physical devices and palmari
 adb reverse flow on real handhelds; WiFi adb and SSH-tunneled adb for remote
 palmari; port collisions with the debugger project's ports.
 
-## U11 - Shared AndroidCollector with net-android-debugger
-When both projects' orchestration stabilizes: extract shared library (repo,
-packaging, versioning between the two repos).
+## U11 - Shared device layer with net-android-debugger
+Both projects now live in one repository (`net-android-debugger-profiler`), which settles
+the "repo, packaging, versioning between the two repos" half of the question. The extraction
+itself - `src/NetAndroid.Device`: one adb client, one locator, one process runner, one
+device-property override with backup and restore - is decision 1 of `docs/ARCHITECTURE.md`
+and phase 6 of the root `TASK_RESUME.md`; this entry closes with a pointer when it lands.
 
 ## U12b - Two emulators profiled at once
 dsrouter android-emu has no port option; the generic `server-server`
@@ -160,7 +165,7 @@ stacks (does MonoVM emit them with stacks?). Decide in P2.
 Resolved for Debug builds (override environment file, see
 ANDROID_PROFILING_NOTES "Injecting environment variables without
 rebuilding"). Release runtimes have no env hook: instrumenting a Release
-APK requires the baked environment file (docs/APP_SETUP.md). Still open:
+APK requires the baked environment file (docs/profiler/APP_SETUP.md). Still open:
 measure the always-on cost of `--diagnostic-mono-profiler=alloc` on a real
 app, to decide whether `alloc` can be baked into a Release `Profiling`
 configuration permanently.

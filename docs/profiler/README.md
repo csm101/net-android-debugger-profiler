@@ -1,5 +1,10 @@
 # net-android-profiler
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its profiler component: sources under `src/NetAndroidProfiler.*`, this document
+under `docs/profiler/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidProfiler.Core/CLAUDE.md`.
 A profiler for **.NET for Android** applications (C# on MonoVM): CPU sampling,
 memory/allocation analysis, and instrumenting (deterministic enter/leave)
 profiling - driven either by AI agents through **MCP** (Model Context

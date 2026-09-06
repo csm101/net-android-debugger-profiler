@@ -1,5 +1,10 @@
 # net-android-debugger
 
+This project now lives in the `net-android-debugger-profiler` monorepo
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+private) as its debugger component: sources under `src/NetAndroidDebugger.*`, this document
+under `docs/debugger/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
+rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidDebugger.Core/CLAUDE.md`.
 A debugger for **.NET for Android** applications (C# on MonoVM), designed to be
 driven by AI agents through **MCP** (Model Context Protocol), and by editors
 through **DAP** (Debug Adapter Protocol).
@@ -24,8 +29,8 @@ are once per machine.
 ### 1. Clone and build
 
 ```powershell
-git clone --recurse-submodules https://github.com/csm101/net-android-debugger.git
-cd net-android-debugger
+git clone --recurse-submodules git@github.com:mca-software/net-android-debugger-profiler.git
+cd net-android-debugger-profiler
 dotnet build NetAndroidDebugger.slnx
 ```
 

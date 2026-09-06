@@ -408,7 +408,7 @@ clear is still issued; it just is not trusted.
   node returned by UiTestAutomationBridge`. Both are mapped to the same
   explanation.
 
-## TestTarget (validation app, `TestTarget/`)
+## TestTarget (validation app, `TestTarget/Debugger/`)
 
 - `net10.0-android`, `ApplicationId=net.androiddebugger.testtarget`, MonoVM,
   fast deployment (assemblies land in
@@ -419,7 +419,7 @@ clear is still issued; it just is not trusted.
   instead of hardcoding. **[verified]**
 - Breakpoint fodder: `MainActivity.Tick()` (1 s timer on a thread-pool thread,
   locals `now`, `message`) and `OnIncrementClicked` (UI thread, button).
-- Deploy: `dotnet build TestTarget/TestTarget.csproj -t:Install -p:Configuration=Debug`
+- Deploy: `dotnet build TestTarget/Debugger/TestTarget.csproj -t:Install -p:Configuration=Debug`
   (first build ≈ 1–2 min). **[verified via `-t:Run`]**
 
 ## Real target: the reference application

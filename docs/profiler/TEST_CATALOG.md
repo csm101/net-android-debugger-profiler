@@ -23,7 +23,7 @@ Conventions (mirroring the debugger project's discipline):
 
 ---
 
-## A. Collection orchestration (Device/SessionTests, Category=Device, TestTarget Debug build on emulator-5556)
+## A. Collection orchestration (Device/SessionTests, Category=Device, TestTarget/Profiler Debug build on the device NAP_TEST_SERIAL names, emulator-5554 on this machine)
 - [x] Sampling restart session -> parseable trace, Busy in hotspots - `Sampling_restart_session_finds_busy_method`
 - [x] Instrumenting restart session (suspend, env injection, callspec honoured) -
   `Instrumenting_restart_session_times_methods` (trackAllocations off: see below)

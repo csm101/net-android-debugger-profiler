@@ -45,7 +45,7 @@ primary sources; everything else is **[unverified]** until exercised.
   baked at build time: `@(AndroidEnvironment)` item (lines `VAR=value`), or
   appending to `@(_GeneratedAndroidEnvironment)` with a target
   `BeforeTargets="_GenerateEnvironmentFiles"` (spike hook in
-  TestTarget.csproj, property `MonoDiagnostics`). The engine must inject it
+  TestTarget/Profiler/TestTarget.csproj, property `MonoDiagnostics`). The engine must inject it
   without editing the user's csproj (CustomAfterMicrosoftCommonTargets
   import or an env file + item). **[verified]**
 
@@ -637,7 +637,12 @@ class's session marker]**
   does not exist here (NAP_TEST_SERIAL). A Redmi Note 8 Pro (API 30, arm64-v8a) is
   attached over USB - the first physical device for U10. adb needs its full path
   from a fresh PowerShell (`C:\Program Files (x86)\Android\android-sdk\platform-tools`).
-- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
+- 2026-09-06, monorepo: one emulator serves both products' suites in turn, emulator-5554 =
+  `pixel_7_-_api_30` (API 30); set `NAP_TEST_SERIAL=emulator-5554` for the device tests
+  (their default is still emulator-5556) and `NAD_DEVICE_SERIAL=emulator-5554` for the
+  debugger's. The two device suites never run at the same time on one device: the debugger
+  sets `debug.mono.extra` device-wide while it runs, and any Mono app starting meanwhile
+  would wait for a debugger. .NET SDK 10.0.400; adb is not on PATH (both products locate it).- .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
   templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
   check it builds here before P1 integration).
 - dotnet-trace / dotnet-dsrouter / dotnet-gcdump 9.0.661903 (global tools).

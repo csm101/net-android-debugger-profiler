@@ -98,7 +98,7 @@ and the session reports a warning. The part collected before the limit is a
 normal, fully symbolicated profile. Pass `maxTraceMb=0` to remove the limit.
 
 Without Claude: `nap serve` exposes the same engine over HTTP on loopback for
-other frontends (the Delphi GUI), see docs/CONTROL_SERVICE.md.
+other frontends (the Delphi GUI), see docs/profiler/CONTROL_SERVICE.md.
 
 ## 3. Memory
 

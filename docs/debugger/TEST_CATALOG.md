@@ -330,10 +330,10 @@ Conventions (mirroring the Delphi project's discipline):
       and the adapter keeps serving — it used to crash the process —
       `MalformedInput_IsIgnored_AndTheAdapterKeepsServing`
 - [~] Driven by a real editor: the VS Code extension in
-      `DevTools/vscode/net-android-debugger` contributes the `net-android` debug
+      `vscode/net-android-debugger` contributes the `net-android` debug
       type, and `node test-extension.js` checks its own logic (adapter path
       resolution, the missing-adapter message, configuration validation) against
-      a stand-in for the `vscode` module. `install-vscode-extension.cmd` installs
+      a stand-in for the `vscode` module. `vscode\install-vscode-extension.cmd` installs
       it, and section R guards what that script names. Nobody has yet run the
       extension inside a real VS Code against a real device — that part is still
       uncovered.
@@ -643,7 +643,7 @@ refusal says which switch to flip and nothing else is lost.
       to either; add a list when a feature needs one
 
 ## R. Install scripts (`InstallScriptTests`, no device)
-`register-mcp.cmd` and `install-vscode-extension.cmd` are the only path a new
+`register-mcp-debugger.cmd` and `vscode\install-vscode-extension.cmd` are the only path a new
 machine has to a working setup, and they name folders and file names as strings.
 Nothing else in the build reads them, so a rename elsewhere in the repo breaks
 them silently and surfaces only on the machine being set up.
@@ -651,7 +651,7 @@ them silently and surfaces only on the machine being set up.
       `package.json`) — `TheInstaller_PointsAtTheExtensionThatExists`
 - [x] Both scripts agree on where the adapter is published, and on its file
       name: the installer warns about a missing adapter by probing the folder
-      `register-mcp.cmd` publishes to —
+      `register-mcp-debugger.cmd` publishes to —
       `BothScripts_AgreeOnWhereTheAdapterIsPublished`
 - [x] The extension contributes the debug type the documented `launch.json`
       entries use; a mismatch shows up only as VS Code refusing to start a
