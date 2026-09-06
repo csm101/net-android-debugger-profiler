@@ -52,6 +52,7 @@ build-gui.cmd                  builds the profiler GUI, gui\NapGui.exe (RAD Stud
 dotnet test NetAndroidDebugger.slnx                                  # the whole debugger suite (needs a device)
 dotnet test NetAndroidProfiler.slnx --filter "Category!=Device"     # the profiler's recorded-trace tests
 dotnet test NetAndroidProfiler.slnx                                  # plus the profiler's device tests
+dotnet test tests/NetAndroid.Device.Tests/NetAndroid.Device.Tests.csproj   # the shared device layer (docs/TEST_CATALOG.md)
 ```
 
 Both suites drive their real engine against a real app on the Android emulator or an
@@ -77,7 +78,7 @@ examples go beside it under `examples/`.
 ```
 src/NetAndroidDebugger.Core, .Mcp, .Dap, .Shared     debugger engine and frontends
 src/NetAndroidProfiler.Core, .Mcp, .Cli, .Weave, .Collector   profiler engine and frontends
-src/NetAndroid.Device                                 shared device library (being extracted; see docs/ARCHITECTURE.md)
+src/NetAndroid.Device                                 the device layer both products share (adb, locator, screen, device-side state)
 ThirdParty/debugger-libs                              mono/debugger-libs, git submodule (MIT)
 tests/NetAndroidDebugger.Tests, tests/NetAndroidProfiler.Tests, tests/WeaveSample
 TestTarget/Debugger, TestTarget/Profiler (+ TestTarget.Support)   the two test apps

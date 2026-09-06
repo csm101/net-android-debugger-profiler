@@ -27,6 +27,11 @@ agent inside the app's MonoVM, reached via `adb forward`. See
   must be documented in `docs/debugger/ARCHITECTURE.md` ("ThirdParty vendoring
   status"). `ThirdParty/Mono.Debugging.overrides` pins their target framework and
   must stay one folder above the submodule.
+- Device access - adb, the device's state and screen, `debug.mono.extra` - goes only
+  through `src/NetAndroid.Device` (`AdbClient`, `AdbLocator`, `DeviceControl`,
+  `DevicePropertyOverride`): no `Process.Start` of adb, no second client, no direct
+  `setprop` in this Core or its frontends. A missing adb reaches the frontends as
+  `LaunchException`, converted by `DebugSession`.
 - **Licensing (blocking):** never reuse code, binaries, or protocol adapters
   from the proprietary C# Dev Kit / .NET MAUI VS Code extension. MIT sources
   (`mono/debugger-libs`, `microsoft/vscode-mono-debug`, `dotnet/android`) are

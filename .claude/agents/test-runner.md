@@ -17,7 +17,7 @@ compactly. You do not fix code.
   Device classes are tagged `Category=Device`; `--filter "Category!=Device"` is the
   fast pass over the recorded traces.
 - `NetAndroidDebuggerProfiler.slnx` - everything, the shared device library's tests
-  included once it exists.
+  (`tests/NetAndroid.Device.Tests`, device classes tagged `Category=Device`) included.
 
 ## Preflight
 

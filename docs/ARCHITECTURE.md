@@ -40,10 +40,10 @@ and `docs/profiler/ARCHITECTURE.md`.
 | Editor assets | `vscode/` | The debugger's VS Code extension and DAP client notes |
 | Solutions | `NetAndroidDebuggerProfiler.slnx`, `NetAndroidDebugger.slnx`, `NetAndroidProfiler.slnx` | Everything; the debugger alone; the profiler alone (example included) |
 
-## What the two Cores duplicate today
+## What the two Cores duplicated (until 2026-09-06)
 
-The device layer was written twice, once per product, and the two copies overlap on the
-same adb mechanics while each has pieces the other lacks:
+The device layer was written twice, once per product, and the two copies overlapped on the
+same adb mechanics while each had pieces the other lacked. This is what decision 1 unified:
 
 - **adb client.** `src/NetAndroidDebugger.Core/Adb/AdbClient.cs` and
   `src/NetAndroidProfiler.Core/Devices/AdbClient.cs` both run adb, shell commands, list
@@ -69,7 +69,7 @@ same adb mechanics while each has pieces the other lacks:
 - **infrastructure:** two TestTarget apps, two sets of probes, one emulator script
   (the debugger's), two sets of empirical notes.
 
-## Decision 1 (in progress): `src/NetAndroid.Device`
+## Decision 1 (done 2026-09-06): `src/NetAndroid.Device`
 
 One `net10.0` class library, **no package references** (BCL only, so it can never conflict
 with the two Cores' packages: they pin different `Mono.Cecil` versions, 0.10.1 and 0.11.6),
@@ -96,12 +96,19 @@ EventPipe collection and `AppInspector`'s profiling prerequisites in the profile
 `AppInspector` calling the shared client for the adb work. A piece moves only if both Cores
 would call it or if it is pure adb/device mechanics with no debugger or profiler knowledge.
 
-Rule once the library exists: **device access only through `NetAndroid.Device`** for both
-Cores. No `Process.Start("adb")`, no second adb client, no direct `setprop` outside it.
+Rule: **device access only through `NetAndroid.Device`** for both Cores. No
+`Process.Start("adb")`, no second adb client, no direct `setprop` outside it. The two
+products' `CLAUDE.md` files carry the same rule.
 
-Method: strangler style, the smallest green step first, one commit per step, both suites
-green after each step. The steps and their state are tracked in the root `TASK_RESUME.md`;
-the profiler's `KNOWN_UNKNOWNS.md` U11 closes with a pointer here when the library lands.
+Landed on 2026-09-06 in five strangler steps, one commit each, both products' suites run
+after each: the process runner and the locator; the unified client (`AdbResult` keeps
+`Succeeded` and a `Success` alias, `AdbException` derives from `ToolException`, the locator
+throws `AdbNotFoundException`, which the debugger's session turns back into its
+`LaunchException`); the screen layer; `DevicePropertyOverride` with the app environment
+(the debugger's launcher clears `debug.mono.extra` at shutdown as before, `ClearAsync`, which its
+tests specify, while the profiler restores `debug.mono.profile`, `RestoreAsync`; the profiler logs a mark left on
+`debug.mono.profile` before taking it over); `DeviceGlobals` and these documents. Its tests:
+`tests/NetAndroid.Device.Tests`, catalogued in `docs/TEST_CATALOG.md`.
 
 ## Decision 2 (later): one unified MCP server
 
@@ -109,7 +116,8 @@ Today each product registers its own MCP server (`net-android-debugger`,
 `net-android-profiler`). Both touch the same device-global state (`debug.mono.extra`,
 `debug.mono.profile`, the app's override environment file) and nothing coordinates them:
 running both on the same app at once is not supported, and each only *notices* the other's
-mark (decision 1 makes the noticing shared, not the arbitration). A single server over both
+mark (decision 1 made the noticing shared - `DevicePropertyOverride.ForeignValueWarning` -
+not the arbitration). A single server over both
 Cores would own the device state, expose both tool sets to the agent, share device
 selection and app discovery, and register once. It is not started: it needs decision 1
 first, and until it ships the two registration names, publish folders and scripts stay as

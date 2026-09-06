@@ -1,66 +1,126 @@
 # Task resume (repository level)
 
-Current task: build this monorepo from the two original repositories
-(`csm101/net-android-debugger`, `csm101/net-android-profiler`) and extract the shared
-device library. Phases: 0 preconditions, 1 import with history, 2 restructure, 3 verify,
-4 documents, 5 publish (private, `mca-software/net-android-debugger-profiler`),
-6 `src/NetAndroid.Device` in five strangler steps.
+No repository-level task is in progress. The last one, the merge of the two repositories
+into this monorepo and the extraction of the shared device library, finished on 2026-09-06;
+its report is below. Component work resumes from `docs/debugger/TASK_RESUME.md` and
+`docs/profiler/TASK_RESUME.md`. The next repository-level tasks, in the recommended order,
+are the follow-ups at the end of this file.
 
-Component in focus: both (repository-level restructuring); phase 6 touches both Cores.
+## Report: building the monorepo and extracting NetAndroid.Device (2026-09-06)
 
-## State
+### Commits per phase
 
-- Phase 0 done: both sources clean on `main`; baseline builds green (debugger 2 warnings,
-  profiler 11, example 0; 0 errors everywhere).
-- Phase 1 done: histories rewritten under `debugger/` and `profiler/` with `git filter-branch`
-  (new SHAs, same messages/authors/dates), joined by one merge commit (`772681c`): 160 commits,
-  328 files, `git log --follow` reaches each source's first commit.
-- Phase 2 done, commit `5f2beb2`: target layout, merged root files, path fixes; 321 tracked files.
-- Phase 3 done (no fix commit needed): the three solutions build with the sources' exact
-  warning sets; example app builds; profiler fast suite 111/111; debugger full suite on
-  `emulator-5554` 169/170, the one failure (`TypeText_IntoTheFocusedField...`) is the api_30
-  image's Gboard crash loop documented in the debugger's TEST_CATALOG and passes alone;
-  profiler device suite on the same emulator after a cold restart 23 passed, 7 skipped
-  (six the reference application opt-ins, the build-map one), 2 failed
-  (`Sampling_attach_to_running_debug_app_without_restart`, `McpDeviceTests.Profile_start_and_profile_stop_round_trip`):
-  both hang after the session's stop command until the timeout, on binaries built before
-  any phase 6 change; the same two tests are being run from the untouched source repository
-  to confirm they pre-exist on this image. GUI and its test programs build; both register
-  scripts' publish steps verified into the scratchpad (registration untouched).
-- Phase 4 documents written: root README, docs/ARCHITECTURE.md, docs/KNOWN_UNKNOWNS.md,
-  per-component notes ("now lives here", corrected commands, CoreCLR and shared-layer entries).
-- Phase 5 done: `mca-software/net-android-debugger-profiler`, private, `main` pushed (the documents
-  commit was rewritten once before anyone pulled, to drop three deletions the step 1 script had staged).
-- Phase 6 step 1 committed and pushed (`28b205b`): library, ProcessRunner, AdbLocator, tests.
-- Phase 6 step 2 in the working tree (unified `AdbClient`, `DeviceInfo`, both Cores switched, old
-  clients deleted, adb-level tests moved): builds; library 11/11, debugger 163/163 on the emulator,
-  profiler device suite being re-run on a cold-restarted emulator after a hung heap-snapshot session
-  (the same hang the untouched source showed). Commit when it matches the known baseline
-  (23 passed, 7 skipped, the two stop-path hangs).
-- Steps 3, 4, 5: scripts and sources drafted in `C:\Athens\__ClaudeTools\monorepo-phase6\`
-  (`phase6-step3.ps1`, `phase6-step4.ps1`, `phase6-step5.ps1`, folders `step2..step5`,
-  `device-suites.ps1` runs the three suites, `github-texts.md` holds the texts for the public day).
+| Phase | Commit | What |
+|---|---|---|
+| 1 import | `772681c` | Merge of the two rewritten histories: 62 debugger commits + 97 profiler commits + 1 merge commit (160). Each source history was rewritten under `debugger/` and `profiler/` with `git filter-branch` in scratch clones (new SHAs; messages, authors and dates kept), then joined with `--allow-unrelated-histories`. `git log --follow` on a moved file reaches each product's first commit. |
+| 2 restructure | `5f2beb2` | Target layout, merged root files, path fixes; 321 tracked files, every one of the 328 source files accounted for (12 merged duplicates, 5 new root files). |
+| 3 verify | no commit needed | Builds, suites, GUI, register scripts (below). |
+| 4 documents | `1f33a95` | Root README, `docs/ARCHITECTURE.md`, `docs/KNOWN_UNKNOWNS.md`, the per-component documents. Rewritten once before anyone had pulled it, to drop three deletions the step 1 script had staged. |
+| 5 publish | (push) | `gh repo create mca-software/net-android-debugger-profiler --private --source . --push`; owner `mca-software`, visibility PRIVATE, no description, no topics. |
+| 6.1 | `28b205b` | `NetAndroid.Device` with `ProcessRunner` and `AdbLocator`; `AdbException` becomes a `ToolException`; `AdbLocatorTests` move. |
+| 6.2 | `12d7945` | One `AdbClient`, one `DeviceInfo`, one `AdbResult`/`AdbException`; both Cores switched; adb-level logcat test and client tests in the library. |
+| 6.3 | `260a3e8` | `DeviceControl` and `UiHierarchy` move; `UiHierarchyTests` whole, `DeviceControlTests` split (adb-only half in the library, the two session-bound tests stay). |
+| 6.4 | `c98b0ed` | `DevicePropertyOverride` (apply with backup; restore for the profiler, clear for the debugger; shared foreign-value warning), `AppEnvironment` + `EnvironmentOverrideFile` moved and generalized, `DeviceGlobals`. |
+| 6.5 | this commit | Constants documented, `docs/ARCHITECTURE.md` decision 1 closed with the rule, component `CLAUDE.md` rules, profiler U11 closed, `docs/TEST_CATALOG.md` for the library, the two product catalogs pointing at it. |
 
-## Next step if interrupted right now
+Final state: 166 commits, 334 tracked files, `examples/` intact (49 files), submodule
+`ThirdParty/debugger-libs` at `837f524`.
 
-Read `X:\Temp\...\scratchpad\profiler-step2-rerun.log` or re-run
-`dotnet test tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj --no-build --filter "Category=Device"`
-with `NAP_TEST_SERIAL=emulator-5554`; commit step 2 ("Give both products one adb client"), push;
-then `pwsh -File C:\Athens\__ClaudeTools\monorepo-phase6\phase6-step3.ps1`, build, unit tests, the three
-suites (`device-suites.ps1 -Tag step3`), commit, push; the same for step 4 and step 5; then the
-final report here.
-## Traps learned so far
+### What was verified, and how
+
+- Builds: `NetAndroidDebuggerProfiler.slnx`, `NetAndroidDebugger.slnx`, `NetAndroidProfiler.slnx`
+  (the example app included) build with 0 errors after every phase and step; after phase 2 the
+  warning sets were compared with clean builds of the two source repositories and were identical.
+- Machine: .NET SDK 10.0.400, emulator `emulator-5554` = AVD `pixel_7_-_api_30` (API 30),
+  Redmi Note 8 Pro attached but not used. `NAD_DEVICE_SERIAL` and `NAP_TEST_SERIAL` set to the emulator.
+- Debugger suite (`tests/NetAndroidDebugger.Tests`, full, on the emulator): phase 3 169/170
+  (the one failure, `TypeText_IntoTheFocusedField_ShowsUpInTheHierarchy`, is the api_30 Gboard
+  crash loop the catalog documents; it passed alone); after step 2 163/163; after step 3
+  146/146; after step 4 146/146 (an intermediate restore semantics failed two tests, fixed by
+  `ClearAsync`, see the step 4 commit). The counts drop by exactly the tests that moved.
+- Library suite (`tests/NetAndroid.Device.Tests`, on the emulator): 11/11 after step 2,
+  28/28 after step 3, 36/36 after step 4.
+- Profiler device-free suite: 111/111 at every step. GUI (`build-gui.cmd`) and its two test
+  programs built. Register scripts: the debugger's run with `NAD_INSTALL_DIR` pointing at a
+  scratch folder (both frontends and the notices published, the existing registration
+  untouched); the profiler's publish step run alone (`dotnet publish` into a scratch folder),
+  because the script registers when the server is absent.
+- Profiler device suite (`Category=Device`, 32 tests, 7 skipped by design: six the reference application opt-ins
+  and the build-map one): phase 3, first run 18 passed / 7 failed on a 22-hour-old emulator
+  (four sessions hung after their stop until the 4-minute cancel, one attach test empty, one
+  companion-package pull refused, the MCP round trip timing out); after a cold restart
+  23 passed / 2 failed (`Sampling_attach_to_running_debug_app_without_restart` hanging after
+  its stop, `McpDeviceTests.Profile_start_and_profile_stop_round_trip` never reaching
+  Collecting). After steps 2, 3 and 4 the suite could not be completed: each attempt
+  (capped at 15-25 minutes) hung inside one EventPipe session that never ended, once on a
+  fresh boot, and the untouched source repository showed the same indefinite hang when its
+  two failing tests were run alone. Every session that completed in those runs passed; the
+  timeouts seen (`Sampling_restart_session_finds_busy_method`,
+  `One_session_symbolicates_methods_from_two_assemblies`, `Stop_ends_a_session_that_was_started_without_a_duration`,
+  `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`) all belong to the same
+  family: the runtime not ending the stream after the stop command. The profiler's notes
+  record the device suite green only on the API 33 image; this is the first follow-up below.
+- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
+  `-p:NapWeave=true` install), anything on the Redmi.
+
+### Skipped or changed on purpose
+
+- No `global.json` (neither repo had one; pinning 10.0.400 would break at the next SDK).
+- `ThirdParty/debugger-libs` stays a git submodule (fork `csm101/debugger-libs`), as the
+  debugger's documents already described its vendoring.
+- Phase 2 code touches (listed in its commit): linked `Shared` sources renamed, the profiler
+  TestTarget's targets import, test harness paths, the install-script tests, two tests that
+  assumed one Android app per tree, the VS Code extension texts.
+- Step 4: the debugger keeps clearing `debug.mono.extra` at shutdown (its tests' specification);
+  only the profiler restores its property.
+
+### For the day the repository goes public (apply by hand; nothing was written into the old repositories)
+
+Description:
+`Debugger and profiler for .NET for Android (MonoVM) apps, MAUI included: MCP servers for Claude Code and other agents, a Debug Adapter Protocol adapter for VS Code, EventPipe and IL-weaving profiling with a Delphi GUI.`
+
+Topics: `dotnet, android, dotnet-android, maui, xamarin-android, debugger, profiler, mcp, mcp-server, model-context-protocol, debug-adapter-protocol, eventpipe, mono`
+
+README for `csm101/net-android-debugger`:
+> This repository has moved: the debugger now lives in [mca-software/net-android-debugger-profiler](https://github.com/mca-software/net-android-debugger-profiler), together with the profiler and the device layer they share.
+> Sources are under `src/NetAndroidDebugger.*`, the documents under `docs/debugger/`; the full history came along.
+
+README for `csm101/net-android-profiler`:
+> This repository has moved: the profiler now lives in [mca-software/net-android-debugger-profiler](https://github.com/mca-software/net-android-debugger-profiler), together with the debugger and the device layer they share.
+> Sources are under `src/NetAndroidProfiler.*`, the documents under `docs/profiler/`, the ProfileMeExample tutorial app under `examples/`; the full history came along.
+
+Both old repositories are private today (checked with `gh repo view`), so nothing about them changes until then.
+
+### Follow-ups, recommended order
+
+1. The profiler's device suite on this machine: find why EventPipe sessions stop ending
+   after the stop command on the `pixel_7_-_api_30` image (attach sessions hang without
+   any timeout; restart sessions hit the 4-minute cancel), or run the suite on the API 33
+   image the notes were written against. Until then the profiler's device coverage is
+   "every completed session passed", not a green suite.
+2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
+   owning the device-global state that `DeviceGlobals` names.
+3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).
+4. Smaller: unify the two TestTarget apps; give the debugger's device test classes a
+   `Category=Device` trait like the profiler's, so one filter serves both suites; run the
+   debugger suite from a folder whose `.vscode/launch.json` points at `TestTarget/Debugger`
+   through VS Code once.
+
+## Traps learned (kept for whoever works here next)
 
 - `sed -i` in this Git Bash strips CR: edit CRLF files through PowerShell
   (`[IO.File]::ReadAllText` / `WriteAllText`), never with sed.
 - `cmd /c name.cmd` does not search the current directory here: call scripts by path.
 - The two device suites must not overlap on one device: the debugger sets `debug.mono.extra`
   device-wide while it runs.
-- `register-mcp-profiler.cmd` registers when the server is absent: its publish step was
-  verified alone (`dotnet publish` into the scratchpad), never the script as a whole.
+- `register-mcp-profiler.cmd` registers when the server is absent: verify its publish step
+  alone (`dotnet publish` into a scratch folder).
 - Building `TestTarget/Profiler` under two application ids needs obj/bin cleaned in between:
   the SDK's incremental state keeps the previous manifest (XA0132 at install), and an APK
   installed by hand from that state lands on the incremental FS, where `adb pull` is refused.
-- A 22-hour-old emulator hung four provider sessions; a cold restart
+- A long-lived emulator hangs provider sessions; a cold restart
   (`AVD=pixel_7_-_api_30 SERIAL=emulator-5554 bash DevTools/scripts/ensure-emulator.sh`,
-  adb and ANDROID_SDK_ROOT on the script's PATH) cleared those.
+  adb and `ANDROID_SDK_ROOT` on the script's PATH) clears the state, and an orphan
+  `dotnet-dsrouter` from a killed session keeps the next test run's output pipe open.
+- The scripts that produced phase 6, with the drafts they copied, are kept in
+  `C:\Athens\__ClaudeTools\monorepo-phase6\` (user-deletable).

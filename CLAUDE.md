@@ -9,7 +9,7 @@ kept together so that their device layer can be shared.
 |---|---|---|
 | **net-android-debugger** | `src/NetAndroidDebugger.Core` (engine), `.Mcp` (MCP server), `.Dap` (Debug Adapter Protocol adapter), `.Shared` (sources linked into both frontends), `ThirdParty/debugger-libs` (submodule), `tests/NetAndroidDebugger.Tests`, `TestTarget/Debugger`, `vscode/` | A debugger over the Mono Soft Debugger protocol, driven by agents through MCP and by editors through DAP |
 | **net-android-profiler** | `src/NetAndroidProfiler.Core` (engine), `.Mcp`, `.Cli` (`nap`: control service and one-shot commands), `.Weave` (`nap-weave`), `.Collector`, `tests/NetAndroidProfiler.Tests`, `tests/WeaveSample`, `TestTarget/Profiler` with `TestTarget/TestTarget.Support`, `gui/` (Delphi + DevExpress GUI), `build/` (packaging, weaving targets), `examples/` (ProfileMeExample, the GUI tutorial app) | A CPU sampling, memory and instrumenting profiler over EventPipe and IL weaving, with MCP, CLI and GUI frontends |
-| shared | `DevTools/` (probes of both, `scripts/` shared), `docs/` (root documents, `docs/debugger/`, `docs/profiler/`), the solutions `NetAndroidDebuggerProfiler.slnx` (everything), `NetAndroidDebugger.slnx`, `NetAndroidProfiler.slnx` | The `src/NetAndroid.Device` library and, later, one unified MCP server: tracked in `docs/ARCHITECTURE.md` |
+| shared | `src/NetAndroid.Device` (the device layer both Cores use) with `tests/NetAndroid.Device.Tests`, `DevTools/` (probes of both, `scripts/` shared), `docs/` (root documents, `docs/debugger/`, `docs/profiler/`), the solutions `NetAndroidDebuggerProfiler.slnx` (everything), `NetAndroidDebugger.slnx`, `NetAndroidProfiler.slnx` | The shared device library (done) and, later, one unified MCP server: `docs/ARCHITECTURE.md` |
 
 Each product keeps a `CLAUDE.md` next to its Core with what is specific to it:
 `src/NetAndroidDebugger.Core/CLAUDE.md` and `src/NetAndroidProfiler.Core/CLAUDE.md`.
@@ -69,9 +69,10 @@ If a temporary shortcut is unavoidable:
   types, no GUI types, no JSON serialization or JSON-RPC in a Core. Frontends translate.
 - The MCP servers, the DAP adapter, the CLI and the GUI are thin frontends over their
   Core's session facade. Any logic useful to more than one frontend belongs in Core.
-- Device access (adb, device state, screen, the app's environment on the device) is
-  being extracted into `src/NetAndroid.Device`, shared by both Cores: `docs/ARCHITECTURE.md`
-  says what is in it and states the rule that applies once it exists.
+- Device access (adb, device state, screen, the app's environment on the device) goes
+  only through `src/NetAndroid.Device`, shared by both Cores: no second adb client, no
+  `Process.Start` of adb, no direct `setprop` anywhere else. `docs/ARCHITECTURE.md` says
+  what is in it; `docs/TEST_CATALOG.md` what its tests cover.
 - **Licensing (blocking):** never reuse code, binaries or protocol adapters from
   proprietary tooling (the C# Dev Kit / .NET MAUI VS Code extension, the Visual Studio
   profiler). MIT sources are fine and are the reference implementations to read; each

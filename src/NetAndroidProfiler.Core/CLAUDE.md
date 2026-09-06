@@ -29,6 +29,11 @@ collection.
   over the Core session facade. The Delphi GUI consumes SQLite directly plus the
   local control service `nap serve`; any logic useful to more than one frontend
   belongs in Core.
+- Device access - adb, the device's state, the app's override environment file,
+  `debug.mono.profile` - goes only through `src/NetAndroid.Device` (`AdbClient`,
+  `AdbLocator`, `AppEnvironment`, `DevicePropertyOverride`); `ToolLocator` keeps only
+  dsrouter, dotnet and the weaving targets. No `Process.Start` of adb, no second client,
+  no direct `setprop` in this Core or its frontends.
 - Trace parsing goes through the **TraceEvent** library
   (Microsoft.Diagnostics.Tracing.TraceEvent, MIT, NuGet - maintained; unlike
   the debugger there is nothing to vendor).

@@ -20,6 +20,8 @@ Conventions (mirroring the debugger project's discipline):
   single-instance resources, and two classes running at once profile each
   other's app.
 - Update this catalog in the same change set as the test or fix.
+- The device layer's own tests (adb client, locator, screen, property override) live in
+  `tests/NetAndroid.Device.Tests` since 2026-09-06 and are catalogued in `docs/TEST_CATALOG.md`.
 
 ---
 

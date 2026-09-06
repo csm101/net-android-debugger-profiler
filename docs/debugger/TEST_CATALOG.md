@@ -111,7 +111,7 @@ Conventions (mirroring the Delphi project's discipline):
 - [x] A logcat stream started at the buffer's own boundary does not replay a
       line logged before it, even where `logcat -c` leaves the buffer readable
       (Android 11) — `StreamLogcat_StartedSinceNow_DoesNotReplayLinesLoggedBefore_EvenWhenClearIsIneffective`
-      (`LogcatTests`)
+      (`LogcatTests` - moved to `tests/NetAndroid.Device.Tests` on 2026-09-06, `docs/TEST_CATALOG.md` C)
 - [x] Three launches in a row each attach to their own new process, never to
       the previous session's dead pid (the alternating handshake failure of
       2026-09-05) — `Launch_RightAfterAPreviousSession_AttachesToTheNewProcess_NotTheDeadOne`
@@ -507,7 +507,7 @@ Conventions (mirroring the Delphi project's discipline):
       copy from an earlier session — `ARequestedSerialThatIsNotAttached_ListsWhatIs`
 - [x] A named device is used as given — `ANamedDevice_IsUsedAsGiven`
 
-## N2. Finding adb (`AdbLocatorTests`, no device except the last one)
+## N2. Finding adb (`AdbLocatorTests` - moved to `tests/NetAndroid.Device.Tests` on 2026-09-06, `docs/TEST_CATALOG.md` A)
 
 adb is not on PATH on a machine set up by Visual Studio, and the engine used to
 assume it was. Every source is injected, so what is tested is the order and the
@@ -532,7 +532,7 @@ rule that a named source which is wrong stops the search.
   whose PATH has no adb; the log reads `adb: ...\adb.exe (from the .NET Android
   workload's registry key)`.
 
-## O. Sharing the device with another debugger (`DebugPropertyTests`, no device)
+## O. Sharing the device with another debugger (`DebugPropertyTests`, no device; the logic is `NetAndroid.Device.DevicePropertyOverride` since 2026-09-06, `docs/TEST_CATALOG.md` F)
 `debug.mono.extra` is device-global, so two debuggers overwrite each other in
 silence and the loser's app hangs for the agent timeout on a port nobody listens
 on — a symptom nowhere near its cause.
@@ -581,7 +581,7 @@ the event thread or matches rules against data that is not there.
 Verified end to end on the reference application with `DevTools/ExceptionTypeProbe`, not in this
 suite: it needs a real app whose exceptions come out of an assembly without
 symbols, which TestTarget cannot provide. See KNOWN_UNKNOWNS U15.
-## S. Driving the screen (`UiHierarchyTests` no device, `DeviceControlTests` device, one MCP end-to-end)
+## S. Driving the screen (`UiHierarchyTests` and the adb-only half of `DeviceControlTests` moved to `tests/NetAndroid.Device.Tests` on 2026-09-06, `docs/TEST_CATALOG.md` D and E; the two session-bound tests stay in this project's `DeviceControlTests`; one MCP end-to-end)
 
 The screen tools exist so an agent reaches the point worth debugging by itself.
 What they promise: seeing the screen (screenshot, hierarchy) never needs more

@@ -55,9 +55,9 @@ Profiling modes:
 | Module | Responsibility |
 |---|---|
 | Core/Sessions/ProfilerSession | Facade: `SessionSpec` -> Preparing (device + APK prerequisites, dsrouter, app config) -> WaitingForApp -> Collecting -> Analyzing -> Ready/Failed; session directory with session.json, trace.nettrace, session.db, session.log; collection stops at `SessionSpec.MaxTraceBytes` (default 512 MB) with a warning; live control on weaver sessions (`SnapshotAsync` / `PauseAsync` / `ResumeAsync` / `ClearAsync`); `Results` = ResultStore |
-| Core/Devices/AdbClient, ProcessRunner, ToolLocator | serial-explicit adb (shell, exec-out, push/pull, run-as, setprop, launch, pidof, reverse, logcat); tool discovery |
+| NetAndroid.Device (AdbClient, ProcessRunner, AdbLocator - shared library since 2026-09-06), Core/Devices/ToolLocator | serial-explicit adb (shell, exec-out, push/pull, run-as, setprop, launch, pidof, reverse, logcat); tool discovery |
 | Core/Apps/AppInspector | pulls the installed APK(s), reports `AppPrerequisites` (diagnostics component, AOT libs, debuggable, baked MONO_DIAGNOSTICS) and `Check(mode)` -> blocking problems / warnings with guidance |
-| Core/Collection/AppEnvironment, EnvironmentOverrideFile | per-app DOTNET_DiagnosticPorts / MONO_DIAGNOSTICS injection through the Debug runtime's override environment file (backup + restore); `debug.mono.profile` fallback for release apps |
+| NetAndroid.Device (AppEnvironment, EnvironmentOverrideFile, DevicePropertyOverride - shared library) | per-app DOTNET_DiagnosticPorts / MONO_DIAGNOSTICS injection through the Debug runtime's override environment file (backup + restore); `debug.mono.profile` fallback for release apps |
 | Core/Collection/DsRouterProcess, EventPipeCollector | dotnet-dsrouter lifecycle; EventPipe sessions via DiagnosticsClient (sampling / instrumenting to file, live heap snapshot) with start retry and resume |
 | Core/Analysis/SamplingAnalyzer, WaitFrameClassifier | TraceLog stacks -> method stats (incl/excl, *_cpu), aggregated call tree, caller/callee edges |
 | Core/Analysis/MonoProfilerAnalyzer | manual decoder of the MonoProfiler provider -> timings, timing tree, allocations by type / by innermost instrumented frame |

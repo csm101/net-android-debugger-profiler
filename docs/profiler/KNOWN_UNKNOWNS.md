@@ -114,12 +114,11 @@ EventPipe and the IL weaver are what survives. Repository-level view: `docs/KNOW
 adb reverse flow on real handhelds; WiFi adb and SSH-tunneled adb for remote
 palmari; port collisions with the debugger project's ports.
 
-## U11 - Shared device layer with net-android-debugger
-Both projects now live in one repository (`net-android-debugger-profiler`), which settles
-the "repo, packaging, versioning between the two repos" half of the question. The extraction
-itself - `src/NetAndroid.Device`: one adb client, one locator, one process runner, one
-device-property override with backup and restore - is decision 1 of `docs/ARCHITECTURE.md`
-and phase 6 of the root `TASK_RESUME.md`; this entry closes with a pointer when it lands.
+## U11 - CLOSED: shared device layer with net-android-debugger
+Done 2026-09-06: `src/NetAndroid.Device` holds the process runner, the adb locator, one adb
+client, the screen layer, the app environment override and `DevicePropertyOverride`; both
+Cores go through it and nothing else touches adb. What it contains and the rule that
+follows: `docs/ARCHITECTURE.md`, decision 1. Its tests: `docs/TEST_CATALOG.md`.
 
 ## U12b - Two emulators profiled at once
 dsrouter android-emu has no port option; the generic `server-server`
