@@ -23,7 +23,7 @@ are the follow-ups at the end of this file.
 | 6.4 | `c98b0ed` | `DevicePropertyOverride` (apply with backup; restore for the profiler, clear for the debugger; shared foreign-value warning), `AppEnvironment` + `EnvironmentOverrideFile` moved and generalized, `DeviceGlobals`. |
 | 6.5 | this commit | Constants documented, `docs/ARCHITECTURE.md` decision 1 closed with the rule, component `CLAUDE.md` rules, profiler U11 closed, `docs/TEST_CATALOG.md` for the library, the two product catalogs pointing at it. |
 
-Final state: 166 commits, 334 tracked files, `examples/` intact (49 files), submodule
+Final state: 168 commits, 334 tracked files, `examples/` intact (49 files), submodule
 `ThirdParty/debugger-libs` at `837f524`.
 
 ### What was verified, and how
@@ -60,7 +60,8 @@ Final state: 166 commits, 334 tracked files, `examples/` intact (49 files), subm
   repository hung the same way for the same reason. On the API 33 emulator (`api_33_0`, started
   later on request) the app connects to the router but the session stays in `WaitingForApp`
   past the test's 4-minute cancel, and the test host crashed once; that path is the profiler's
-  collection code, untouched by the move, and was not resolved today.- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
+  collection code, untouched by the move, and was not resolved today.
+- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
   `-p:NapWeave=true` install), anything on the Redmi.
 
 ### Skipped or changed on purpose
@@ -97,7 +98,8 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
    attached emulator and kill leftover `dotnet-dsrouter` processes (a stale app reconnecting to
    port 9000 poisons every later session, on any emulator, since all reach the host as 10.0.2.2;
    the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time
-   and, on API 33, find why `WaitForRuntimeAsync` never sees the connected runtime.2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
+   and, on API 33, find why `WaitForRuntimeAsync` never sees the connected runtime.
+2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
    owning the device-global state that `DeviceGlobals` names.
 3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).
 4. Smaller: unify the two TestTarget apps; give the debugger's device test classes a
