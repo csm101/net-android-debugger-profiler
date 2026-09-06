@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using System.Text;
 using Mono.Debugging.Client;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Core.Launch;
 
 namespace NetAndroidDebugger.Core;
@@ -120,7 +119,14 @@ public sealed class DebugSession : IAsyncDisposable
 
     /// <summary>Devices adb reports. <paramref name="adbPath"/> null means the adb <see cref="AdbLocator"/> finds.</summary>
     public Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync(CancellationToken ct, string? adbPath = null)
-        => new AdbClient(adbPath).ListDevicesAsync(ct);
+        => OpenAdb(adbPath, "the call").ListDevicesAsync(ct);
+
+    /// <summary>The shared client, with a missing adb reported the way every other launch failure is.</summary>
+    private static AdbClient OpenAdb(string? adbPath, string adbPathSource)
+    {
+        try { return new AdbClient(adbPath, adbPathSource); }
+        catch (AdbNotFoundException ex) { throw new LaunchException(ex.Message, ex); }
+    }
 
     /// <summary>
     /// The device to work with when the caller named none, or the named one checked against what is
@@ -179,7 +185,7 @@ public sealed class DebugSession : IAsyncDisposable
             _launchOptions = options;
         }
 
-        _adb = new AdbClient(options.AdbPath, "the launch options");
+        _adb = OpenAdb(options.AdbPath, "the launch options");
         _log($"adb: {_adb.Location}");
         var launcher = new AndroidLauncher(_adb, app, options, _log);
         _launcher = launcher;

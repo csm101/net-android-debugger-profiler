@@ -1,5 +1,4 @@
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Core.Launch;
 
 namespace NetAndroidDebugger.Tests.Harness;

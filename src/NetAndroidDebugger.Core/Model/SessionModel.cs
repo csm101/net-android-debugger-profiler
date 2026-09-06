@@ -24,9 +24,6 @@ public enum StopReason
     UnhandledException,
 }
 
-/// <summary>An adb device as listed by <c>adb devices -l</c>.</summary>
-public sealed record DeviceInfo(string Serial, string State, string? Model, bool IsEmulator);
-
 /// <summary>The application to debug. Nothing here is specific to a test app.</summary>
 /// <param name="PackageName">Android package (ApplicationId).</param>
 /// <param name="ActivityName">Launcher activity (<c>pkg/fully.qualified.Name</c>); resolved via adb when null.</param>

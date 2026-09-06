@@ -1,5 +1,4 @@
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Core.Device;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;

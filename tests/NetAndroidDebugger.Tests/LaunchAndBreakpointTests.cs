@@ -1,5 +1,4 @@
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;
 
@@ -277,7 +276,7 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
         Assert.NotNull(await session.WaitForStopAsync(0, StopTimeout, cts.Token));
         Assert.NotNull(await session.ContinueAndWaitAsync(StopTimeout, cts.Token));
 
-        var deviceNow = await new Core.Adb.AdbClient().GetDeviceLocalTimeAsync(device.Serial, cts.Token);
+        var deviceNow = await new AdbClient().GetDeviceLocalTimeAsync(device.Serial, cts.Token);
         var app = session.GetAppOutput(1000);
         Assert.NotEmpty(app);
         // The session has just started, so nothing it captured can be far from the device's clock.
@@ -297,7 +296,7 @@ public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHe
         await session.TerminateAsync(cts.Token);
         Assert.Equal(SessionState.Exited, session.State);
 
-        var adb = new Core.Adb.AdbClient();
+        var adb = new AdbClient();
         var procs = await adb.ListPackageProcessesAsync(device.Serial, TestEnvironment.TestTargetPackage, cts.Token);
         Assert.Empty(procs);
         Assert.Equal("", await adb.GetPropAsync(device.Serial, "debug.mono.extra", cts.Token));

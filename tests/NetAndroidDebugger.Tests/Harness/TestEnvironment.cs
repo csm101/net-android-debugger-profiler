@@ -1,6 +1,5 @@
 using System.Text.RegularExpressions;
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 
 namespace NetAndroidDebugger.Tests.Harness;
 

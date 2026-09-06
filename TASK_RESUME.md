@@ -29,18 +29,26 @@ Component in focus: both (repository-level restructuring); phase 6 touches both 
   scripts' publish steps verified into the scratchpad (registration untouched).
 - Phase 4 documents written: root README, docs/ARCHITECTURE.md, docs/KNOWN_UNKNOWNS.md,
   per-component notes ("now lives here", corrected commands, CoreCLR and shared-layer entries).
-- Phase 6 step 1 wired in the working tree (library, ProcessRunner, AdbLocator, tests;
-  both Cores referencing it): debugger side builds and passes its device-free classes;
-  profiler side to build and test, then commit.
+- Phase 5 done: `mca-software/net-android-debugger-profiler`, private, `main` pushed (the documents
+  commit was rewritten once before anyone pulled, to drop three deletions the step 1 script had staged).
+- Phase 6 step 1 committed and pushed (`28b205b`): library, ProcessRunner, AdbLocator, tests.
+- Phase 6 step 2 in the working tree (unified `AdbClient`, `DeviceInfo`, both Cores switched, old
+  clients deleted, adb-level tests moved): builds; library 11/11, debugger 163/163 on the emulator,
+  profiler device suite being re-run on a cold-restarted emulator after a hung heap-snapshot session
+  (the same hang the untouched source showed). Commit when it matches the known baseline
+  (23 passed, 7 skipped, the two stop-path hangs).
+- Steps 3, 4, 5: scripts and sources drafted in `C:\Athens\__ClaudeTools\monorepo-phase6\`
+  (`phase6-step3.ps1`, `phase6-step4.ps1`, `phase6-step5.ps1`, folders `step2..step5`,
+  `device-suites.ps1` runs the three suites, `github-texts.md` holds the texts for the public day).
 
 ## Next step if interrupted right now
 
-Commit phase 4 (`README.md`, `TASK_RESUME.md`, `docs/`), then phase 5
-(`gh repo create mca-software/net-android-debugger-profiler --private --source . --push`,
-verify owner and visibility), then build `NetAndroidProfiler.slnx`, run its fast tests and
-commit step 1 ("Share the process runner and the adb locator through NetAndroid.Device"),
-push; then steps 2-5 from the scratchpad drafts (`step2/`, `step4/`, `step5/`).
-
+Read `X:\Temp\...\scratchpad\profiler-step2-rerun.log` or re-run
+`dotnet test tests/NetAndroidProfiler.Tests/NetAndroidProfiler.Tests.csproj --no-build --filter "Category=Device"`
+with `NAP_TEST_SERIAL=emulator-5554`; commit step 2 ("Give both products one adb client"), push;
+then `pwsh -File C:\Athens\__ClaudeTools\monorepo-phase6\phase6-step3.ps1`, build, unit tests, the three
+suites (`device-suites.ps1 -Tag step3`), commit, push; the same for step 4 and step 5; then the
+final report here.
 ## Traps learned so far
 
 - `sed -i` in this Git Bash strips CR: edit CRLF files through PowerShell

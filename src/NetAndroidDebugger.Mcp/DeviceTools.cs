@@ -5,7 +5,6 @@ using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Core.Device;
 
 namespace NetAndroidDebugger.Mcp;
@@ -211,7 +210,7 @@ public sealed class DeviceTools(SessionHost host, ILogger<DeviceTools> logger)
             var serial = await new DebugSession().ResolveDeviceSerialAsync(requested, ct, requestedFrom: source);
             return new DeviceControl(new AdbClient(), serial, line => logger.LogInformation("{Line}", line));
         }
-        catch (LaunchException ex) { throw new McpException(ex.Message); }
+        catch (Exception ex) when (ex is LaunchException or AdbNotFoundException) { throw new McpException(ex.Message); }
     }
 
     private async Task<UiNode> ResolveSingleAsync(DeviceControl control, UiSelector selector, CancellationToken ct)

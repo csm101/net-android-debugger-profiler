@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace NetAndroid.Device;
@@ -8,6 +9,9 @@ public sealed record ProcessResult(int ExitCode, string StdOut, string StdErr)
 {
     public bool Success => ExitCode == 0;
 }
+
+/// <summary>Result of a finished external process whose stdout is binary.</summary>
+public sealed record ProcessBytesResult(int ExitCode, byte[] StdOut, string StdErr);
 
 /// <summary>Thrown when an external tool fails.</summary>
 public class ToolException : Exception
@@ -138,6 +142,102 @@ public static class ProcessRunner
         if (!r.Success)
             throw new ToolException($"'{Path.GetFileName(fileName)} {string.Join(' ', args)}' failed ({r.ExitCode}): {Trim(r.StdErr)} {Trim(r.StdOut)}".Trim());
         return r;
+    }
+
+    /// <summary>
+    /// Runs a tool whose stdout is bytes, not text (<c>adb exec-out</c>): stdout is copied to the
+    /// end before the exit is awaited, so nothing is left in the pipe. Same stdin rule as
+    /// <see cref="RunAsync"/>.
+    /// </summary>
+    public static async Task<ProcessBytesResult> RunBytesAsync(string fileName, IReadOnlyList<string> args, CancellationToken ct, TimeSpan? timeout = null)
+    {
+        var psi = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,          // see RunAsync: a child must never inherit our stdin
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardErrorEncoding = Encoding.UTF8,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        using var p = new Process { StartInfo = psi };
+        try { p.Start(); }
+        catch (Exception e) { throw new ToolException($"Cannot start '{fileName}': {e.Message}", e); }
+        p.StandardInput.Close();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (timeout is not null) cts.CancelAfter(timeout.Value);
+        var stdout = new MemoryStream();
+        var copy = p.StandardOutput.BaseStream.CopyToAsync(stdout, 1 << 16, cts.Token);
+        var stderr = p.StandardError.ReadToEndAsync(cts.Token);
+        try
+        {
+            await copy.ConfigureAwait(false);
+            await p.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try { p.Kill(entireProcessTree: true); } catch { /* already gone */ }
+            if (ct.IsCancellationRequested) throw;
+            throw new ToolException($"'{fileName} {string.Join(' ', args)}' timed out after {timeout}");
+        }
+        return new ProcessBytesResult(p.ExitCode, stdout.ToArray(), await stderr.ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Runs a tool that never ends on its own (<c>adb logcat</c>) and hands every stdout line to
+    /// <paramref name="onLine"/> as it arrives. Returns when the process exits or when
+    /// <paramref name="ct"/> is cancelled, which kills it; cancellation is the normal way to stop
+    /// and is not reported as an error.
+    /// </summary>
+    public static async Task StreamLinesAsync(string fileName, IReadOnlyList<string> args, Action<string> onLine, CancellationToken ct)
+    {
+        await foreach (var line in ReadLinesAsync(fileName, args, ct).ConfigureAwait(false))
+            onLine(line);
+    }
+
+    /// <summary>
+    /// The stdout lines of a tool that never ends on its own, as they arrive; the enumeration ends
+    /// when the process exits or the token is cancelled, which kills it.
+    /// </summary>
+    public static async IAsyncEnumerable<string> ReadLinesAsync(string fileName, IReadOnlyList<string> args, [EnumeratorCancellation] CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(fileName)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,          // see RunAsync: a child must never inherit our stdin
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+        };
+        foreach (var a in args) psi.ArgumentList.Add(a);
+
+        Process p;
+        try { p = Process.Start(psi) ?? throw new ToolException($"Cannot start '{fileName}'"); }
+        catch (Exception e) when (e is not ToolException) { throw new ToolException($"Cannot start '{fileName}': {e.Message}", e); }
+        using (p)
+        {
+            p.StandardInput.Close();
+            using var reg = ct.Register(() => { try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch { /* best effort */ } });
+            try
+            {
+                while (!ct.IsCancellationRequested)
+                {
+                    string? line;
+                    try { line = await p.StandardOutput.ReadLineAsync(ct).ConfigureAwait(false); }
+                    catch (OperationCanceledException) { yield break; }
+                    if (line is null) yield break;
+                    yield return line;
+                }
+            }
+            finally
+            {
+                try { if (!p.HasExited) p.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            }
+        }
     }
 
     private static string Trim(string s) => s.Length > 600 ? s[..600] + "..." : s.Trim();

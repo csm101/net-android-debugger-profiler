@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
-using NetAndroidDebugger.Core.Adb;
 
 namespace NetAndroidDebugger.Core.Launch;
 

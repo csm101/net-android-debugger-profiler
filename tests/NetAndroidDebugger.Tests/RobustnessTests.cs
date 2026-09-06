@@ -1,5 +1,4 @@
 using NetAndroidDebugger.Core;
-using NetAndroidDebugger.Core.Adb;
 using NetAndroidDebugger.Tests.Harness;
 using Xunit.Abstractions;
 
@@ -767,7 +766,7 @@ public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper outp
         Assert.Null(await session.WaitForStopAsync(0, TimeSpan.FromSeconds(20), cts.Token));
 
         // ...until a different one is raised, which the general rule breaks on.
-        var adb = new Core.Adb.AdbClient();
+        var adb = new AdbClient();
         var pkg = TestEnvironment.TestTargetPackage;
         await adb.ShellAsync(device.Serial, $"run-as {pkg} touch files/crash-on-tick", cts.Token);
         try
