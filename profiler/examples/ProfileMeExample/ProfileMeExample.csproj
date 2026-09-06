@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    ProfileMeExample: a .NET MAUI Android app whose every screen carries a performance
+    problem on purpose, one per feature of net-android-profiler. The README's
+    "Example app" chapter maps screens to problems and to the profiler views that
+    expose them; the app itself explains each one behind its "How to profile this" button.
+
+    Build and install it the way any app to be profiled is built (see docs/APP_SETUP.md):
+
+        dotnet build examples/ProfileMeExample/ProfileMeExample.csproj -c Debug -t:Install
+                     -p:EnableDiagnostics=true -p:AdbTarget="-s emulator-5556"
+
+    or let the GUI do it: open examples/ProfileMeExample.sln in the Setup dialog.
+    The business logic lives in ProfileMeExample.Domain, like in a real app, so the
+    instrumenting demos are also a demo of weaving a referenced library
+    (weaveAssemblies / NapAssemblies = ProfileMeExample.Domain).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ProfileMeExample</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <MauiXamlInflator>SourceGen</MauiXamlInflator>
+
+    <ApplicationTitle>ProfileMe</ApplicationTitle>
+    <ApplicationId>com.mcasoftware.profilemeexample</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#1F3A5F" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1F3A5F" BaseSize="128,128" />
+    <MauiFont Include="Resources\Fonts\*" />
+    <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ProfileMeExample.Domain\ProfileMeExample.Domain.csproj" />
+  </ItemGroup>
+
+  <!-- Build-time IL weaving, for the instrumenting demos on a build that embeds its
+       assemblies (opt-in: -p:NapWeave=true -p:NapCallspec=N:ProfileMeExample.Domain
+       -p:NapAssemblies=ProfileMeExample.Domain). A fast-deployment Debug build does not
+       need it: the profiler weaves the deployed copies on the device. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\..\build\NetAndroidProfiler.Weaving.targets" />
+
+</Project>

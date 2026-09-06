@@ -143,6 +143,18 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   `nap doctor` reports which adb and dsrouter a machine uses. Native AOT and
   obfuscation were measured and deferred, with the reasons recorded.
 
+## Example app (2026-09-05)
+
+`examples/ProfileMeExample.sln`: a .NET MAUI Android app (net10.0-android, package
+`com.mcasoftware.profilemeexample`) with one deliberate performance problem per
+screen, each chosen to exercise one profiler feature - CPU hotspots, blocked
+against CPU time, call counts, allocations by site, heap growth, async bodies,
+iterator bodies. The logic lives in `ProfileMeExample.Domain`, a class library, so
+the instrumenting screens are also the demo of weaving a referenced assembly. Each
+screen has a Guide (plain text now, a manual URL slot for later); the README's
+"Example app" chapter is the long form. Builds and runs; the profiler's readings
+of each screen are still to be verified on a device (TASK_RESUME).
+
 ## MCP tool surface (P1, implemented)
 
 list_devices, check_app, profile_run (one shot; mode sampling | instrumenting

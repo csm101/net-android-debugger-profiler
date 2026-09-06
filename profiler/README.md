@@ -48,6 +48,46 @@ See [docs/APP_SETUP.md](docs/APP_SETUP.md): what each profiling mode
 requires from the app build (EnableDiagnostics, MONO_DIAGNOSTICS environment
 file for instrumenting, pdbs) and how to keep it out of normal Debug builds.
 
+## Example app: ProfileMeExample
+
+`examples/ProfileMeExample.sln` is a .NET MAUI Android app built to be profiled:
+every screen carries one performance problem on purpose, chosen so that a
+different feature of the profiler is the one that exposes it. The business
+logic lives in a class library (`ProfileMeExample.Domain`), as it does in real
+apps, so the instrumenting screens also show how to profile a referenced
+assembly rather than only the app's own. Each screen has a **Guide** (toolbar
+item and button) that says what to look for in the profiler; the same guidance,
+in long form, is below. The texts live in
+`examples/ProfileMeExample/Scenarios/ScenarioCatalog.cs`, with a slot for a
+manual URL per screen for when the manual site exists.
+
+Build and install it like any app to be profiled - from the GUI (open the
+solution in the Setup dialog and press Build) or from a prompt:
+
+```powershell
+dotnet build examples\ProfileMeExample\ProfileMeExample.csproj -c Debug -t:Install `
+             -p:EnableDiagnostics=true -p:AdbTarget="-s emulator-5556"
+```
+
+Package: `com.mcasoftware.profilemeexample`. Symbols for source annotation:
+`examples\ProfileMeExample\bin\Debug\net10.0-android`. Instrumenting callspec:
+`N:ProfileMeExample.Domain`, weaving `ProfileMeExample.Domain`.
+
+| Screen | The problem | What exposes it | What to look for |
+|---|---|---|---|
+| **Slow search** | A fuzzy search re-tokenizes, lower-cases and edit-distances every word of every product on every query. | CPU sampling: `profile_hotspots`, `profile_callers`, `profile_annotate_source` | `NaiveCatalogSearch.EditDistance` and `Score` at the top by exclusive CPU, `Search` above them by inclusive time. One caller of `EditDistance`, once per word per product. Remember that exclusive samples include very short callees (`ToLowerInvariant`, `Split`). |
+| **Frozen button** | A legacy gateway waits for the server on the UI thread (`GetAwaiter().GetResult()` on a Task). | CPU sampling, plain against `*_cpu` columns; `profile_threads` | `LegacyGateway.FetchBalance` has many inclusive samples and almost no CPU samples: the thread was blocked, not computing, and it is the main thread. `Parse` is the contrast: real CPU, and the only one. |
+| **Chatty pricing** | Price and tax rate are looked up once per unit instead of once per line: tens of thousands of calls to methods that are each fast. | Instrumenting: `profile_timings`, `profile_tree`, `profile_callers`; Snapshot / Archive / Clear | Sampling names `PriceList.GetUnitPrice` but cannot say why. The Calls column can: one lookup per unit. The call tree shows `Build -> GetUnitPrice` with the count on the edge. Archive one run, clear, run again, compare. |
+| **Allocation storm** | A CSV report built with `+=` on a string, numbers boxed into a `List<object>` per row. Nothing leaks; the GC never rests. | Allocations: `alloc_report`, `alloc_report bySite=true` | `System.String` far ahead by bytes, then boxed `Int32` and `Decimal`, `List<Object>`, LINQ enumerators. By site: strings attributed to `SalesReportBuilder.BuildCsv`, boxes and lists to `FormatRow`. The provider engine reports sizes, the weaver reports counts. |
+| **Leaky dashboard** | A widget subscribes to a static event in its constructor and never unsubscribes. Closing the screen drops the UI's reference; the event keeps the widget and its 256 KB cache alive. | Memory: `profile_run mode=heap snapshots=2`, `heap_diff`, `launch=attach` | Open and close the dashboard five times between the two snapshots: `DashboardWidget` grows by five instances, `Byte[]` by five arrays of 256 KB. The screen shows it from the inside: Publish reports how many widgets received the notification. |
+| **Async waterfall** | Seven forecast requests awaited one after the other; the device is idle the whole time. | Instrumenting of async methods: `<method> (async body)` entries | Sampling first: nothing is hot, no thread is busy - the time is spent awaiting. Then instrumenting: `GetWeekAsync (async body)` resumes eight times and its self time is a fraction of the wall clock the screen shows; `FetchDayAsync (async body)` has seven calls. The gap between self time and wall clock is the waiting. |
+| **Re-enumerated query** | A lazy `yield return` query enumerated three times by `Any`, `Count` and `Sum`. | Instrumenting of iterators: `<method> (iterator body)` call counts | `StockQuery.LowStock (iterator body)` is called about three times the number of low-stock lines (one call per item, plus one per pass to end it) and `NeedsReorder` about three times the number of stock lines. An iterator count that is a multiple of the data it should walk once means repeated enumeration. |
+
+Each screen prints its own wall clock after a run, so the profiler's figures can
+be checked against what the user of the app experienced. The fixes are not part
+of the app: the point is the diagnosis, and every Guide ends with the one-line fix
+once the picture is there.
+
 ## Using the GUI
 
 `gui\NapGui.exe` (build it with `gui\build-gui.cmd`) owns everything else: it starts
@@ -97,7 +137,7 @@ tests/WeaveSample                 assembly used as weaving input in tests
 DevTools/                         argv-driven diagnostic probes
 THIRD-PARTY-NOTICES.txt           licenses of the components a release ships
 TestTarget/                       Android app used by the test suite
-gui/                              Delphi + DevExpress GUI (future)
+examples/ProfileMeExample.sln     MAUI Android app with one deliberate problem per screen, one per profiler feature
 ```
 
 ## Build

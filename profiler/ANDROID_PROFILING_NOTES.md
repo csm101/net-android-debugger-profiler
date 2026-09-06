@@ -603,6 +603,14 @@ now accepts only `Starting IPC server`, reports the router's own error, refuses
 to start when the port is already taken, and kills the process on every failure
 path including cancellation (a leaked router blocked every later session).
 
+The port is also taken by things that have nothing to do with profiling. Seen on
+2026-09-05: Docker Desktop publishing a MinIO container on `127.0.0.1:9000-9001`
+(`docker ps` shows the mapping; `Get-NetTCPConnection -LocalPort 9000` names
+`com.docker.backend`). The engine refuses to start with the "port 9000 is already in
+use" message; until dsrouter can be told another port (U12b) the only remedy is to
+stop whatever listens there. 9001 matters too: it is the device-side port of the
+`adb reverse` flow for physical devices.
+
 A device serves one profiling session at a time. The diagnostics port
 (`DOTNET_DiagnosticPorts`, host side 9000 through dsrouter) is reachable by every
 .NET app on the device, a session force-stops and relaunches the app it profiles,
@@ -621,6 +629,14 @@ class's session marker]**
   pixel_7_-_api_33_0 (debugger project), emulator-5556 =
   DevicePerSviluppoProfiler (this project); both API 33 x86_64. Map serial ->
   AVD with `adb -s <serial> emu avd name`.
+- 2026-09-05, fresh checkout on the current machine: the AVDs are
+  `pixel_7_-_api_30` (running headless as emulator-5554, shared with the debugger
+  project's tests, which keep bringing their own TestTarget to the foreground)
+  and `pixel_5_-_api_22_0` (too old for a net10.0-android app); there is **no
+  DevicePerSviluppoProfiler**, so the device tests' default serial emulator-5556
+  does not exist here (NAP_TEST_SERIAL). A Redmi Note 8 Pro (API 30, arm64-v8a) is
+  attached over USB - the first physical device for U10. adb needs its full path
+  from a fresh PowerShell (`C:\Program Files (x86)\Android\android-sdk\platform-tools`).
 - .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
   templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
   check it builds here before P1 integration).

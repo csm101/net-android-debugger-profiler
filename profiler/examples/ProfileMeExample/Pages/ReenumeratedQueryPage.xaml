@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pages:ScenarioPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:pages="clr-namespace:ProfileMeExample.Pages"
+                    x:Class="ProfileMeExample.Pages.ReenumeratedQueryPage">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="Builds a reorder report from a lazy query over tens of thousands of stock lines. The report asks the query three questions, and the query answers each one from scratch."
+               LineBreakMode="WordWrap" />
+        <Button x:Name="BuildButton" Text="Build the report" Clicked="OnBuildClicked" />
+        <Label x:Name="OutputLabel" LineBreakMode="WordWrap" />
+        <Button Text="How to profile this" Clicked="OnGuideClicked" />
+    </VerticalStackLayout>
+
+</pages:ScenarioPage>

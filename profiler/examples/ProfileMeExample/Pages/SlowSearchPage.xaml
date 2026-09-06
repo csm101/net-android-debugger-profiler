@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<pages:ScenarioPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+                    xmlns:pages="clr-namespace:ProfileMeExample.Pages"
+                    x:Class="ProfileMeExample.Pages.SlowSearchPage">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="A fuzzy search over a catalog of a few thousand products. Type a word or two (misspellings welcome) and search: the answer takes seconds, and the CPU is the reason."
+               LineBreakMode="WordWrap" />
+        <Entry x:Name="QueryEntry" Placeholder="e.g. wireles speker" Text="wireles speker" />
+        <Button x:Name="SearchButton" Text="Search" Clicked="OnSearchClicked" />
+        <Label x:Name="OutputLabel" LineBreakMode="WordWrap" />
+        <Button Text="How to profile this" Clicked="OnGuideClicked" />
+    </VerticalStackLayout>
+
+</pages:ScenarioPage>

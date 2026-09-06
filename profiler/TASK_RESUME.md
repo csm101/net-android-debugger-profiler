@@ -1,9 +1,32 @@
 # Task resume
 
 ## Current task
-Nothing is half-done. The last piece landed was **the GUI taking over what used to need a
-command prompt**: it now starts from the sources and prepares the machine and the app
-itself.
+**The example app (2026-09-05).** `examples/ProfileMeExample.sln` - MAUI Android app plus
+`ProfileMeExample.Domain` library, seven screens, one deliberate problem each, a Guide per
+screen (`Scenarios/ScenarioCatalog.cs`), README chapter "Example app: ProfileMeExample".
+Code done, builds clean (0 warnings), installs and runs on emulator-5554; the Slow search
+screen answered in 829 ms with 8,000 products, so the catalog is 30,000 now: 2,852 ms on the
+x86_64 emulator (Debug, JIT). The other screens' sizes are first guesses, untimed.
+
+- **Blocked on this machine: port 9000.** Docker Desktop's `sal-minio` container publishes
+  127.0.0.1:9000-9001, so dsrouter cannot start and no session can run (the engine's own
+  message says so). Stopping that container frees the profiler. Noted in
+  ANDROID_PROFILING_NOTES "One session at a time per device".
+- **Not yet verified:** that each screen produces the readings its Guide and the README
+  table promise. To do, screen by screen, once the port is free: sampling on Slow search
+  and Frozen button; instrumenting (`--callspec N:ProfileMeExample.Domain --assemblies
+  ProfileMeExample.Domain`) on Chatty pricing, Async waterfall, Re-enumerated query;
+  instrumenting with allocations on Allocation storm; heap with two snapshots on Leaky
+  dashboard. Adjust the sizes (`CatalogSize`, `LineCount`, `SaleCount`, `StockLines` in the
+  pages) so each run lasts a few seconds on the emulator, and correct any Guide text the
+  data contradicts. Driving the UI from a prompt: `adb shell input tap`; the Search button
+  of Slow search sits at 540,638 on a 1080x2400 emulator.
+- emulator-5554 is shared with the debugger project's test runs, which keep bringing
+  their own app to the foreground; `am start -n com.mcasoftware.profilemeexample/
+  crc643c07963a192dd5bf.MainActivity` brings ours back.
+
+Before that: **the GUI taking over what used to need a command prompt**: it starts from
+the sources and prepares the machine and the app itself.
 
 - **The sources drive the setup.** `AppProjectFinder` (Core/Projects) reads a solution, a
   project or a folder and answers the Android applications in it - an application declares
@@ -227,7 +250,9 @@ gui/src/{uSetupDialog.pas, uJobDialog.pas, uControlClient.pas, uMainForm.pas};
 tests/NetAndroidProfiler.Tests/Fast/{AppProjectFinderTests.cs, AppBuilderTests.cs, ControlServiceTests.cs}.
 
 ## Next action if interrupted right now
-Nothing is half-done. Pick from the list above; U10 first if a device appears.
+Free port 9000 (stop the `sal-minio` container), then verify the example app's screens
+against the profiler as listed under "Current task". A Redmi Note 8 Pro (arm64, API 30) is
+attached: U10 can start as soon as that is done.
 
 ## How to run what exists
     dotnet build NetAndroidProfiler.slnx
