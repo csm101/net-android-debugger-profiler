@@ -57,10 +57,16 @@ Final state: 168 commits, 334 tracked files, `examples/` intact (49 files), subm
   override environment and reconnects to the router of every later session, so the new session
   either waits for a runtime that never comes or times out on its stop; killing a run (which
   I did several times) is exactly what leaves such a process behind, and the untouched source
-  repository hung the same way for the same reason. On the API 33 emulator (`api_33_0`, started
-  later on request) the app connects to the router but the session stays in `WaitingForApp`
-  past the test's 4-minute cancel, and the test host crashed once; that path is the profiler's
-  collection code, untouched by the move, and was not resolved today.
+  repository hung the same way for the same reason. On the API 33 emulator (`api_33_0`, started later on request), with port 9000 free (a Docker
+  service of the user's had held it during the day) and no stale app: 2 passed / 4 failed / 7
+  skipped, then the test host crashed in the heap snapshot test. The instrumenting session reached
+  Ready; one sampling session never saw the runtime for two minutes although its TCP connection to
+  the router was established (the environment request only returned once the app was force-stopped);
+  the next sampling session connected at once, collected, then its stop never ended the event
+  stream until the 4-minute cancel (the same symptom as the API 30 failure in phase 3); the weaver
+  session never saw the collector's marker file. All of it is the profiler's collection code,
+  untouched by the move, and is open work on that component (session logs under
+  `X:\Temp\net-android-profiler-tests\sessions`, 2026-09-06 18:52 to 19:02).
 - Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
   `-p:NapWeave=true` install), anything on the Redmi.
 
@@ -98,7 +104,8 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
    attached emulator and kill leftover `dotnet-dsrouter` processes (a stale app reconnecting to
    port 9000 poisons every later session, on any emulator, since all reach the host as 10.0.2.2;
    the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time
-   and, on API 33, find why `WaitForRuntimeAsync` never sees the connected runtime.
+   and take the API 33 symptoms above one by one: the stop that never ends the event stream first,
+   since it also failed on API 30.
 2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
    owning the device-global state that `DeviceGlobals` names.
 3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).
@@ -119,6 +126,11 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
 - Building `TestTarget/Profiler` under two application ids needs obj/bin cleaned in between:
   the SDK's incremental state keeps the previous manifest (XA0132 at install), and an APK
   installed by hand from that state lands on the incremental FS, where `adb pull` is refused.
+- A profiler session killed mid-way leaves its override environment on the device (the backup
+  lives only in the session's memory), and an incremental `-t:Install` does not rewrite it:
+  `adb uninstall` then install puts the SDK default back. A leftover Docker service on 9000
+  makes dsrouter fail with "Port 9000 is already in use" or lets the app connect to the wrong
+  listener.
 - A long-lived emulator hangs provider sessions; a cold restart
   (`AVD=pixel_7_-_api_30 SERIAL=emulator-5554 bash DevTools/scripts/ensure-emulator.sh`,
   adb and `ANDROID_SDK_ROOT` on the script's PATH) clears the state, and an orphan

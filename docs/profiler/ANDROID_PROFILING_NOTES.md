@@ -650,7 +650,11 @@ class's session marker]**
   session, from whichever emulator it lives on (all reach the host as 10.0.2.2, and dsrouter
   android-emu has no port option); the session then waits for a runtime that never comes or
   hangs on its stop. Force-stop the package on every emulator and kill leftover dsrouters before
-  a run. On `api_33_0` the runtime connects but the session stays in WaitingForApp: unresolved.
+  a run. With port 9000 free (a Docker service had held it), `api_33_0`: instrumenting Ready; sampling
+  once blocked in the environment request for 2 min with the TCP connection established, once
+  connected but its stop never ended the event stream; weaver marker never written; heap snapshot
+  crashed the test host. A killed session leaves its override environment behind and an
+  incremental install keeps it: uninstall, then install.
 - .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
   templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
   check it builds here before P1 integration).
