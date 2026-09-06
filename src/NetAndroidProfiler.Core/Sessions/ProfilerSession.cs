@@ -976,7 +976,15 @@ public sealed class ProfilerSession : IAsyncDisposable
         catch (Exception e) { Log("restore environment failed: " + e.Message); }
         try { if (_reverseSet) await _adb.ReverseRemoveAsync(Spec.DeviceSerial, DsRouterProcess.AppPort, ct).ConfigureAwait(false); }
         catch (Exception e) { Log("adb reverse --remove failed: " + e.Message); }
-        if (_dsrouter is not null) { await _dsrouter.DisposeAsync().ConfigureAwait(false); _dsrouter = null; }
+        if (_dsrouter is not null)
+        {
+            // What the router saw is the only account of the device side of a failed session.
+            if (_state != SessionState.Ready)
+                foreach (var line in _dsrouter.Log.Where(l => !l.TrimEnd().EndsWith("[0]", StringComparison.Ordinal)).TakeLast(40))
+                    Log("dsrouter| " + line.Trim());
+            await _dsrouter.DisposeAsync().ConfigureAwait(false);
+            _dsrouter = null;
+        }
         if (_writeStore is not null) { try { _writeStore.Dispose(); } catch { } _writeStore = null; }
         try { await File.WriteAllLinesAsync(LogPath, _log, ct).ConfigureAwait(false); } catch { }
     }

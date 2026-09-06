@@ -58,15 +58,15 @@ Final state: 168 commits, 334 tracked files, `examples/` intact (49 files), subm
   either waits for a runtime that never comes or times out on its stop; killing a run (which
   I did several times) is exactly what leaves such a process behind, and the untouched source
   repository hung the same way for the same reason. On the API 33 emulator (`api_33_0`, started later on request), with port 9000 free (a Docker
-  service of the user's had held it during the day) and no stale app: 2 passed / 4 failed / 7
-  skipped, then the test host crashed in the heap snapshot test. The instrumenting session reached
-  Ready; one sampling session never saw the runtime for two minutes although its TCP connection to
-  the router was established (the environment request only returned once the app was force-stopped);
-  the next sampling session connected at once, collected, then its stop never ended the event
-  stream until the 4-minute cancel (the same symptom as the API 30 failure in phase 3); the weaver
-  session never saw the collector's marker file. All of it is the profiler's collection code,
-  untouched by the move, and is open work on that component (session logs under
-  `X:\Temp\net-android-profiler-tests\sessions`, 2026-09-06 18:52 to 19:02).
+  service of the user's had held it during the day) and no stale app, the first runs failed on
+  two transport stalls: a runtime connection whose reply the emulator holds until the app dies
+  (the environment probe waited on it for minutes) and an event stream the router never ends
+  after the stop although every byte is through. Both got a guard in the profiler's
+  `EventPipeCollector` the same evening (probe deadline with retry on a new connection; drain
+  that ends when the file stops growing), after which the suite passes on API 33: 25 passed,
+  0 failed, 7 skipped by design, 7 min 14 s; API 30 the same: 25 passed, 0 failed, 7 skipped,
+  6 min 31 s. Details in `docs/profiler/TASK_RESUME.md` and the
+  profiler's notes.
 - Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
   `-p:NapWeave=true` install), anything on the Redmi.
 
@@ -103,9 +103,9 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
 1. The profiler's device suite: before any run, force-stop `com.mcasoftware.testtarget` on every
    attached emulator and kill leftover `dotnet-dsrouter` processes (a stale app reconnecting to
    port 9000 poisons every later session, on any emulator, since all reach the host as 10.0.2.2;
-   the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time
-   and take the API 33 symptoms above one by one: the stop that never ends the event stream first,
-   since it also failed on API 30.
+   the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time.
+   The two transport stalls seen on API 33 have their guards in `EventPipeCollector` (evening of
+   2026-09-06).
 2. The unified MCP server (`docs/ARCHITECTURE.md`, decision 2): one server over both Cores
    owning the device-global state that `DeviceGlobals` names.
 3. The CoreCLR engine question (`docs/KNOWN_UNKNOWNS.md` R2; debugger U8, profiler U9).

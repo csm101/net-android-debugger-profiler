@@ -78,7 +78,8 @@ public sealed class EventPipeCollector
             ct.ThrowIfCancellationRequested();
             try
             {
-                var env = await Task.Run(() => _client.GetProcessEnvironment(), ct).ConfigureAwait(false);
+                var env = await ProbeEnvironmentAsync(TimeSpan.FromSeconds(3), ct).ConfigureAwait(false);
+                if (env is null) continue;
                 _log?.Invoke($"runtime connected ({env.Count} environment variables)");
                 if (expectedMarker is not null)
                 {
@@ -106,6 +107,30 @@ public sealed class EventPipeCollector
     }
 
     /// <summary>
+    /// One environment request with a deadline. The router pairs each request with one of the
+    /// runtime's connections, and on the emulator a connection has been seen whose reply only
+    /// arrives when the app dies (right after a session that left the app reconnecting); a
+    /// request that waited on it would block the probe for good. After the deadline the request
+    /// is abandoned on its thread and the caller asks again on a new connection, which the
+    /// router pairs with the runtime's next one.
+    /// </summary>
+    private async Task<Dictionary<string, string>?> ProbeEnvironmentAsync(TimeSpan deadline, CancellationToken ct)
+    {
+        var probe = new TaskCompletionSource<Dictionary<string, string>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            try { probe.TrySetResult(_client.GetProcessEnvironment()); }
+            catch (Exception e) { probe.TrySetException(e); }
+        }) { IsBackground = true, Name = "nap-environment-probe" };
+        thread.Start();
+        var done = await Task.WhenAny(probe.Task, Task.Delay(deadline, ct)).ConfigureAwait(false);
+        if (done == probe.Task) return await probe.Task.ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        _log?.Invoke($"environment request unanswered after {deadline.TotalSeconds:F0}s: asking again on a new connection");
+        return null;
+    }
+
+    /// <summary>
     /// Collect a session to <paramref name="outputFile"/>: starts the session
     /// (retrying transient IPC failures), resumes a suspended runtime, streams
     /// until <paramref name="duration"/> elapses or <paramref name="stop"/> is
@@ -128,7 +153,8 @@ public sealed class EventPipeCollector
             }
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outputFile))!);
             await using var file = new FileStream(outputFile, FileMode.Create, FileAccess.Write, FileShare.Read, 1 << 16, useAsync: true);
-            var copy = session.EventStream.CopyToAsync(file, 1 << 16, ct);
+            using var copyCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var copy = session.EventStream.CopyToAsync(file, 1 << 16, copyCts.Token);
 
             using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(stop, ct);
             if (duration is not null) waitCts.CancelAfter(duration.Value);
@@ -162,9 +188,45 @@ public sealed class EventPipeCollector
             _log?.Invoke("stopping session");
             try { await session.StopAsync(ct).ConfigureAwait(false); }
             catch (Exception e) when (e is EndOfStreamException or IOException) { _log?.Invoke($"stop: {e.Message} (runtime gone?)"); }
-            await copy.ConfigureAwait(false);
+            _log?.Invoke("stop acknowledged by the runtime, draining the event stream");
+            await DrainAfterStopAsync(copy, file, copyCts, TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
             _log?.Invoke($"trace written: {outputFile} ({file.Length} bytes)");
             return new TraceCollection(file.Length, hitLimit);
+        }
+    }
+
+    /// <summary>
+    /// The runtime writes the rundown and closes its end of the stream before it acknowledges
+    /// the stop, so whatever follows the acknowledgement is already in flight. dsrouter does
+    /// not always propagate that end to the pipe (seen on the emulator: every byte it
+    /// forwarded was in the file and the read stayed pending until cancelled), so the drain
+    /// also ends when the file has stopped growing for <paramref name="quiet"/>.
+    /// </summary>
+    private async Task DrainAfterStopAsync(Task copy, FileStream file, CancellationTokenSource copyCts, TimeSpan quiet, CancellationToken ct)
+    {
+        long lastLength = file.Length;
+        var lastGrowth = DateTime.UtcNow;
+        while (true)
+        {
+            var done = await Task.WhenAny(copy, Task.Delay(500, ct)).ConfigureAwait(false);
+            if (done == copy)
+            {
+                await copy.ConfigureAwait(false);
+                return;
+            }
+            ct.ThrowIfCancellationRequested();
+            if (file.Length != lastLength)
+            {
+                lastLength = file.Length;
+                lastGrowth = DateTime.UtcNow;
+                continue;
+            }
+            if (DateTime.UtcNow - lastGrowth < quiet) continue;
+            _log?.Invoke($"event stream did not end within {quiet.TotalSeconds:F0}s of the stop: closing it with {file.Length} bytes");
+            copyCts.Cancel();
+            try { await copy.ConfigureAwait(false); }
+            catch (Exception e) when (e is OperationCanceledException or IOException or ObjectDisposedException) { }
+            return;
         }
     }
 

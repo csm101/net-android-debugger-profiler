@@ -36,7 +36,9 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Heap snapshot of running app - `Heap_snapshot_of_running_app_shows_retained_records`
 - [x] A heap session with default settings captures objects (it must not suspend the app) -
   `Heap_snapshot_with_default_settings_captures_objects`
-- [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`
+- [x] Attach to running Debug app without restart (adb reverse) - `Sampling_attach_to_running_debug_app_without_restart`.
+  Since 2026-09-06 also the specification of the drain after a stop: on the API 33 emulator the
+  router never ends the event stream, and the session must still finish with every byte.
 - [x] Missing package fails with guidance - `Missing_package_fails_with_guidance`
 - [x] Missing diagnostics component fails with guidance, before anything is collected -
   `An_app_built_without_diagnostics_is_refused_with_guidance` (device; skips unless the
@@ -49,7 +51,9 @@ Conventions (mirroring the debugger project's discipline):
 - [ ] Physical device (adb reverse 9000->9001) path - deferred (U10)
 - [x] Clean teardown: environment restored, no dsrouter left - `Session_restores_app_environment_and_leaves_no_dsrouter`
 - [x] Stop() on a session without Duration ends collection and analyses what it has -
-  `Stop_ends_a_session_that_was_started_without_a_duration`
+  `Stop_ends_a_session_that_was_started_without_a_duration`. Run right after the attach test it is
+  also the specification of the environment probe's deadline: the runtime's first connection
+  answers only when the app dies, and the session must ask again on the next one.
 
 - [x] A session still runs when the app was left with an empty override environment file - `Session_runs_when_the_app_has_an_empty_override_environment_file`
 - [x] Live control on a weaver session: snapshot grows, pause freezes, resume restarts, clear empties - `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`

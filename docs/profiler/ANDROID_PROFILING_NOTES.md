@@ -136,7 +136,13 @@ drives EventPipe through `Microsoft.Diagnostics.NETCore.Client`
 (`DiagnosticsClient(dsrouterPid)`): `GetProcessEnvironment()` as the
 "runtime connected" probe, `StartEventPipeSessionAsync(providers,
 requestRundown: true)`, `ResumeRuntime()`, `EventStream` copied to
-trace.nettrace, `StopAsync()` (rundown arrives before the stream ends).
+trace.nettrace, `StopAsync()` (rundown arrives before the stream ends). Two guards
+added 2026-09-06 after the API 33 emulator: the environment probe has a 3 s deadline
+and asks again on a new connection (a runtime connection has been seen whose reply
+is held by the emulator's slirp until the app dies), and the drain after the stop ends
+when the file has stopped growing for 5 s (dsrouter on that emulator never ends the
+stream, although every byte it forwarded is in the file: the runtime writes the rundown
+and closes before it acknowledges the stop, so nothing is lost).
 Heap snapshots: session with `Microsoft-Windows-DotNETRuntime` keywords
 `GCHeapSnapshot` (GC|GCHeapDump|GCHeapCollect|GCHeapAndTypeNames|Type),
 parsed live with TraceEvent (`TypeBulkType`, `GCBulkNode`), stopped at the
@@ -650,11 +656,18 @@ class's session marker]**
   session, from whichever emulator it lives on (all reach the host as 10.0.2.2, and dsrouter
   android-emu has no port option); the session then waits for a runtime that never comes or
   hangs on its stop. Force-stop the package on every emulator and kill leftover dsrouters before
-  a run. With port 9000 free (a Docker service had held it), `api_33_0`: instrumenting Ready; sampling
-  once blocked in the environment request for 2 min with the TCP connection established, once
-  connected but its stop never ended the event stream; weaver marker never written; heap snapshot
-  crashed the test host. A killed session leaves its override environment behind and an
-  incremental install keeps it: uninstall, then install.
+  a run. With port 9000 free (a Docker service had held it), `api_33_0` showed two
+  transport stalls, both fixed in `EventPipeCollector` the same evening (see "Engine
+  collection path"): a runtime connection whose reply the emulator holds until the app
+  dies (the environment probe waited on it for minutes), and an event stream the router
+  never ends after the stop although every byte is through. With the two guards the
+  device suite passes on `api_33_0`: 25 passed, 7 skipped by design, 7 min 14 s; the
+  probe was abandoned 19 times in that run, each retry answered within milliseconds. A
+  killed session leaves its override environment behind and an incremental install keeps
+  it: uninstall, then install. On `pixel_7_-_api_30` a run broke off with every adb command
+  timing out at 60 s (`pm path`, `run-as`) while the guest sat at load average 15; the test
+  host crashed after that, and a later run on the idle emulator passed 25/25. Check `adb shell
+  uptime` before blaming a session for a stalled device.
 - .NET SDK 10.0.301, workloads: android 36.1.43 (VS 18.7); net10.0-android
   templates; no net9 android pack installed (the reference application is net9.0-android35.0 -
   check it builds here before P1 integration).

@@ -6,6 +6,48 @@ private) as its profiler component: sources under `src/NetAndroidProfiler.*`, th
 under `docs/profiler/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
 rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidProfiler.Core/CLAUDE.md`.
 ## Current task
+**Sampling stop that never ends the event stream (2026-09-06, evening).** Device suite on the API 33
+emulator (`api_33_0` = emulator-5556) with port 9000 free: `Sampling_restart_session_finds_busy_method`
+and `Stop_ends_a_session_that_was_started_without_a_duration` fail; the session log stops at
+"stopping session" and the 4-minute cancel lands in `CopyToAsync` of the event stream. Same symptom
+as `Sampling_attach_to_running_debug_app_without_restart` on API 30 in the monorepo's phase 3.
+Substep: make the log say whether `StopAsync` returned (new "stop acknowledged" line) and what
+dsrouter saw (`-v debug`, tail appended to the session log on failure), then reproduce with the
+single test on emulator-5556. Done 19:37: the single test PASSES on API 33 (stop acknowledged in 170 ms,
+stream drained), so the hang needs the suite's context: a session right after another one's
+force-stop, or after a failed weaver/heap session. Next: full device suite on emulator-5556 with
+the diagnostics in, then read the failing sessions' dsrouter tails. Done 19:38-20:03 (2 failed, then killed at the cap): attach session
+193858: stop acknowledged, dsrouter forwarded 864118 bytes and disposed the stream instance ("Active
+instances: 0"), the file holds 864090 = all of it minus the IPC header, the pipe read never ended.
+Fix in `EventPipeCollector.DrainAfterStopAsync`: after the acknowledgement the drain ends when the
+file stops growing for 5 s. Second failure, `Stop_ends...` (194258): runtime never connected for
+2 min after a launch that followed the previous test's force-stop by a second; the dsrouter tail
+was lost (cleanup disposed it before the catch), now logged from CleanupAsync. Next: run the attach
+test and `Stop_ends` together on emulator-5556. Done 20:06-20:19: attach passes with the drain (stream
+never ends on API 33, closed after 5 s with every byte, hotspots found); `Stop_ends` still failed
+right after it. Snapshot during the stall (t+55 s): host has two ESTABLISHED runtime connections to
+the router; on the device the app's first connection to 10.0.2.2:9000 is already TIME_WAIT while the
+second is alive, so the runtime answered the environment request and closed, and the bytes sit in
+the emulator's slirp until the app dies (that is when "runtime connected" always appeared). Fix:
+`EventPipeCollector.ProbeEnvironmentAsync` gives each request a 10 s deadline and asks again on a
+new connection, which the router pairs with the runtime's next one. Pair run 20:19: both pass
+(two probes unanswered, the third answered in 8 ms). Also seen: a leftover `adb reverse tcp:9000`
+during the stall (`ReverseRemoveAsync` ignores adb's exit code) - to check by hand. Next: full device
+suite on emulator-5556 with both fixes, then TEST_CATALOG/NOTES, commit. Done 20:22-20:31: 24 passed,
+1 failed (`Two_heap_snapshots_support_a_growth_diff`, 30 s), 7 skipped by design, 8.5 min, no test
+host crash, weaver tests green (the marker problem was the stale environment). `adb reverse
+--remove tcp:9000` works by hand (exit 0, list empty): the leftover seen mid-stall was timing.
+The heap growth
+failure was the attach budget (20 s) eaten by two 10 s probes: deadline now 3 s. Final run 20:36 on
+emulator-5556: 25 passed, 0 failed, 7 skipped by design, 7 min 14 s, 19 probes abandoned and
+retried. Device-free suite 111/111. API 30 (emulator-5554) 20:47: 25 passed, 0 failed, 7 skipped, 6 min 31 s (a first run there
+broke off when the guest reached load average 15 and every adb command timed out at 60 s, after
+which the test host crashed; idle again, all green). **Task closed.** Files: `Collection/EventPipeCollector.cs`, `Collection/DsRouterProcess.cs`,
+`Sessions/ProfilerSession.cs`. Traps: a killed session leaves its override environment on the
+device (uninstall + install restores the default); a weaver session on API 33 never sees the
+collector marker and a heap snapshot crashed the test host - both still to look at after this.
+
+### Previous task
 **The example app (2026-09-05).** `examples/ProfileMeExample.sln` - MAUI Android app plus
 `ProfileMeExample.Domain` library, seven screens, one deliberate problem each, a Guide per
 screen (`Scenarios/ScenarioCatalog.cs`), README chapter "Example app: ProfileMeExample".

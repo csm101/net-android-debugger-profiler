@@ -55,6 +55,8 @@ public sealed class DsRouterProcess : IAsyncDisposable
                 "or a dotnet-dsrouter left over from an interrupted one is still alive - stop it and retry.");
 
         psi.ArgumentList.Add(isEmulator ? "android-emu" : "android");
+        psi.ArgumentList.Add("-v");
+        psi.ArgumentList.Add("debug");
         var p = new Process { StartInfo = psi, EnableRaisingEvents = true };
         var router = new DsRouterProcess(p, isEmulator);
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
