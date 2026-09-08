@@ -59,6 +59,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Live control on a weaver session: snapshot grows, pause freezes, resume restarts, clear empties - `Weaver_session_can_snapshot_pause_and_clear_while_the_app_runs`
 - [x] U5: collection stops at the trace size limit, keeps a valid trace and warns - `Collection_stops_when_the_trace_reaches_its_size_limit`
 - [x] Iterator bodies are instrumented on the device (one call per item produced) - `Weaver_instruments_iterator_bodies_on_the_device`
+- [x] A pdb left aside as `.pdb.naporig` by a killed weaver session is put back by the next deploy of that assembly, as the dll already was (without it the debugger binds no breakpoint) - `WeaveDeployerTests.Deployer_restores_a_pdb_left_aside_by_a_killed_session`
 - [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
 - [x] A port already in use is detected before spawning dsrouter - `Fast/DsRouterTests`
 

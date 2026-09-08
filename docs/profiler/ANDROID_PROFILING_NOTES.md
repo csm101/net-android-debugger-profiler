@@ -149,11 +149,14 @@ not covered: the weaver session launches the app itself, and an app the debugger
 emulator-5554, 22 s]**
 
 Trap found on the way: a weaver session killed half-way leaves `<assembly>.pdb.naporig` in the
-override directory. `WeaveDeployer` restores a leftover `.dll.naporig` before weaving again, not
-the pdb beside it, so the app runs without symbols from then on: the debugger binds no breakpoint
-and `get_source_files` reports no file. Remedy until the engine restores it too:
+override directory, and `WeaveDeployer` used to restore only a leftover `.dll.naporig` before
+weaving again, not the pdb beside it, so the app ran without symbols from then on: the debugger
+bound no breakpoint and `get_source_files` reported no file. The deployer now puts both back
+before it touches the assembly (`RestoreLeftoversAsync`); an app in that state is repaired by the
+next weaver session on it, or by hand with
 `run-as <pkg> mv files/.__override__/<abi>/<assembly>.pdb.naporig <assembly>.pdb`. **[seen
-2026-09-08 on emulator-5554, left by a session killed on 2026-09-06]**
+2026-09-08 on emulator-5554, left by a session killed on 2026-09-06; fixed the same day,
+`WeaveDeployerTests.Deployer_restores_a_pdb_left_aside_by_a_killed_session`]**
 
 ### Engine collection path (Core)
 

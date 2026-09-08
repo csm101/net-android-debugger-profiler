@@ -16,10 +16,11 @@ one start passes, every other profiler start on the debugger's device is still r
 refusal says how to attach. `tests/NetAndroid.Mcp.Tests`: `Support.cs`, four more arbiter tests,
 `DebugAndProfileTogetherTests` (device). Suite: 19/19 on emulator-5554 (2026-09-08).
 
-Found on the way, open (follow-up 1): a weaver session killed half-way leaves `<assembly>.pdb.naporig`
-in the override directory and `WeaveDeployer` never restores the pdb, only the dll; the debugger then
-binds no breakpoint. Restored by hand on emulator-5554. Port 9000 was held by Docker (`sal-minio`)
-for one run; the user freed it.
+Found on the way and fixed the same day: a weaver session killed half-way leaves
+`<assembly>.pdb.naporig` in the override directory and `WeaveDeployer` restored only the dll; the
+debugger then bound no breakpoint. `RestoreLeftoversAsync` now puts the pdb back too, with
+`WeaveDeployerTests.Deployer_restores_a_pdb_left_aside_by_a_killed_session` (red before, green after,
+emulator-5554). Port 9000 was held by Docker (`sal-minio`) for one run; the user freed it.
 
 ## Previous repository-level task, done: the unified MCP server (`docs/ARCHITECTURE.md`, decision 2; 2026-09-06 evening)
 
@@ -156,9 +157,7 @@ Both old repositories are private today (checked with `gh repo view`), so nothin
    port 9000 poisons every later session, on any emulator, since all reach the host as 10.0.2.2;
    the profiler's U10/U12b cover the port design). Then run the suite on one emulator at a time.
    The two transport stalls seen on API 33 have their guards in `EventPipeCollector` (evening of
-   2026-09-06). Also: `WeaveDeployer` must restore a leftover `<assembly>.pdb.naporig` the way it
-   restores the dll (found 2026-09-08; without it the debugger binds no breakpoint after a killed
-   weaver session) - with a named device test.
+   2026-09-06).
 2. The unified MCP server: done (2026-09-06; the top of this file). Left out on purpose: one device
    selection and one app discovery for both Cores (a refactoring of the Cores, not of the frontend);
    retiring the two product MCP registrations (`register-mcp.cmd` says how; the user decides when).

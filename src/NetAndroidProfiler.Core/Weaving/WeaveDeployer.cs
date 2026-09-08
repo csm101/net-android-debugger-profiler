@@ -60,12 +60,9 @@ public sealed class WeaveDeployer
             ct.ThrowIfCancellationRequested();
             string dll = name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? name : name + ".dll";
             string remote = $"{OverrideDir}/{dll}";
-            // A previous session may have left a woven copy in place (restore failed):
-            // put the pristine assembly back before weaving, never weave a woven file.
-            if (await RemoteExistsAsync(remote + ".naporig", ct).ConfigureAwait(false))
-            {
-                await RestoreOneAsync(remote, ct).ConfigureAwait(false);
-            }
+            // A previous session may have left its backups in place (restore failed): put the
+            // pristine assembly and its pdb back before weaving, never weave a woven file.
+            await RestoreLeftoversAsync(remote, ct).ConfigureAwait(false);
             if (!await RemoteExistsAsync(remote, ct).ConfigureAwait(false))
                 throw new ToolException($"Assembly {dll} is not in the app override directory ({OverrideDir}); it may be AOT-only, merged, or not fast-deployed. Deploy a Debug build.");
             string local = Path.Combine(pulled, dll);
@@ -94,7 +91,7 @@ public sealed class WeaveDeployer
             // The original .pdb no longer matches the rewritten assembly; move it aside
             // for the duration of the session (a stale pdb can upset the debugger
             // component that Debug builds load).
-            string pdb = remote[..^4] + ".pdb";
+            string pdb = PdbOf(remote);
             if (await RemoteExistsAsync(pdb, ct).ConfigureAwait(false))
             {
                 try
@@ -119,7 +116,7 @@ public sealed class WeaveDeployer
         _deployed.Clear();
         foreach (var pdb in _movedPdbs)
         {
-            try { await _adb.RunAsAsync(_serial, _package, $"test -f {pdb}.naporig && mv {pdb}.naporig {pdb}", ct).ConfigureAwait(false); }
+            try { await RestorePdbAsync(pdb, ct).ConfigureAwait(false); }
             catch (Exception e) { RestoreErrors.Add($"{pdb}: {e.Message}"); }
         }
         _movedPdbs.Clear();
@@ -130,6 +127,25 @@ public sealed class WeaveDeployer
             _collectorDeployed = false;
         }
     }
+
+    /// <summary>
+    /// A session that died half-way leaves its backups behind: the woven assembly in place of
+    /// the original, and the pdb moved aside. Both go back before this session touches the
+    /// assembly; a pdb left aside keeps the app without symbols and the debugger binds no
+    /// breakpoint in it.
+    /// </summary>
+    private async Task RestoreLeftoversAsync(string remote, CancellationToken ct)
+    {
+        if (await RemoteExistsAsync(remote + ".naporig", ct).ConfigureAwait(false))
+            await RestoreOneAsync(remote, ct).ConfigureAwait(false);
+        await RestorePdbAsync(PdbOf(remote), ct).ConfigureAwait(false);
+    }
+
+    private static string PdbOf(string remoteDll) => remoteDll[..^4] + ".pdb";
+
+    /// <summary>Put a pdb moved aside back in place; nothing happens when there is no backup.</summary>
+    private Task RestorePdbAsync(string pdb, CancellationToken ct) =>
+        _adb.RunAsAsync(_serial, _package, $"if [ -f {pdb}.naporig ]; then chmod 600 {pdb}.naporig 2>/dev/null; mv {pdb}.naporig {pdb}; fi", ct);
 
     /// <summary>Restore one assembly from its .naporig backup (removes the backup on success).</summary>
     private async Task RestoreOneAsync(string remote, CancellationToken ct)
