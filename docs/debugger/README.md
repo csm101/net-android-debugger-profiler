@@ -22,8 +22,7 @@ two-frontends-over-one-core layout, same development methodology.
 
 ## Quick start from sources
 
-There is no package to install and no marketplace entry: this is proprietary
-software in a private repository, so everything starts from a clone. Steps 1-3
+There is no marketplace entry yet, so everything starts from a clone. Steps 1-3
 are once per machine.
 
 ### 1. Clone and build

@@ -60,8 +60,9 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
     Desymbolicate tool (Microsoft.DiaSymReader + portable pdb, method token
     + IL offset -> sequence points, pdbs fetched per build from the
     company symbol server): C:\Work\ReferenceApp\ExternalTools\Desymbolicate.
-- Licensing (2026-08-20): proprietary closed source, copyright MCA Software
-  s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
+- Licensing (2026-09-08): MIT, copyright MCA Software s.a.s. di Sirna Carlo & C.
+  Proprietary until that day; changed because the products are not going to be sold
+  and a permissive license is what lets them be used. Dependency policy unchanged:
   MIT/BSD/Apache-2.0 only, no GPL.
 - THIRD-PARTY-NOTICES.txt (2026-08-21): written and test-guarded. Covers the
   real dependency closure of the shipped build (TraceEvent, DiagnosticsClient,

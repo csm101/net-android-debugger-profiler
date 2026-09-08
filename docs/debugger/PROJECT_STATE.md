@@ -38,8 +38,9 @@ Ultimate real target: the reference application (C:\Work\ReferenceApp, net9.0-an
   (vendored upstream), DevTools/ (argv-driven probes, shared with the profiler), TestTarget/Debugger/ (minimal
   net-android app, created in M0).
 
-- Licensing (2026-08-20): proprietary closed source, copyright MCA Software
-  s.a.s. di Sirna Carlo & C.; commercialization kept open; dependency policy
+- Licensing (2026-09-08): MIT, copyright MCA Software s.a.s. di Sirna Carlo & C.
+  Proprietary until that day; changed because the products are not going to be sold
+  and a permissive license is what lets them be used. Dependency policy unchanged:
   MIT/BSD/Apache-2.0 only, no GPL.
 - THIRD-PARTY-NOTICES.txt (2026-08-23): written from what is actually published,
   with each component's copyright read out of the shipped assemblies rather than

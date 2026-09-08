@@ -177,10 +177,24 @@ Each product keeps its living documents under `docs/<component>/`: `ARCHITECTURE
 empirical notes (`ANDROID_ATTACH_NOTES.md`, `ANDROID_PROFILING_NOTES.md`). The root
 `TASK_RESUME.md` tracks repository-level work.
 
+## What you can expect
+
+This is a tool built to do a job, published because it may do yours too. It is offered as
+it is, with no promise of support, of answers, or of a release on any schedule. Issues and
+pull requests are welcome and read; neither is a ticket.
+
+One part cannot be built by everyone: the profiler's GUI is Delphi and needs RAD Studio
+with DevExpress VCL and SynEdit. Its sources are here under the same license, but the
+built `NapGui.exe` in a release is what to use without those. Everything else - both MCP
+servers, the DAP adapter, `nap`, the weaver, the tests - builds with the .NET SDK alone.
+
 ## Licensing
 
-Proprietary and closed source: see `LICENSE`. The repository is private and must stay
-private. Third-party dependencies are restricted to MIT, BSD and Apache-2.0 (plus MPL
-components used unmodified in the GUI); GPL is excluded. `THIRD-PARTY-NOTICES.txt` lists,
-in one part per product, every component the shipped builds carry, with the full license
-texts; both test suites fail when a distributed package is missing from it.
+MIT: see [LICENSE](LICENSE). Copyright MCA Software s.a.s. di Sirna Carlo & C.
+
+Third-party dependencies are restricted to MIT, BSD and Apache-2.0 (plus MPL components
+used unmodified in the GUI); GPL is excluded, so that nothing here raises a license
+question for whoever uses it. `THIRD-PARTY-NOTICES.txt` lists, in one part per product,
+every component the shipped builds carry, with the full license texts; both test suites
+fail when a distributed package is missing from it. `ThirdParty/debugger-libs` is a
+submodule of a fork of `mono/debugger-libs`, under its own MIT license.

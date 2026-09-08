@@ -1,10 +1,35 @@
+MIT License
+
 Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C.
-All rights reserved.
 
-This software and its source code are proprietary and confidential.
-No part of this repository may be used, copied, modified, distributed,
-sublicensed, or disclosed in any form without prior written permission
-from MCA Software s.a.s. di Sirna Carlo & C.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Third-party components included in or referenced by this repository are
-governed by their own licenses (see THIRD-PARTY-NOTICES where present).
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Third-party components distributed with this software keep their own licenses,
+reproduced in full in THIRD-PARTY-NOTICES.txt.
+
+Two parts of this repository are not covered by the license above, because they
+are not ours to license:
+
+  * ThirdParty/debugger-libs is a git submodule of a fork of mono/debugger-libs,
+    under the MIT license of its own authors.
+  * The Delphi GUI (gui/) is built against DevExpress VCL and SynEdit. The GUI
+    sources here are MIT like the rest; building them needs a DevExpress license
+    of your own, and no DevExpress source or component is redistributed here.

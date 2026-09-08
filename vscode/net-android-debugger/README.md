@@ -26,8 +26,8 @@ Restart VS Code afterwards — reloading the window is not enough for a newly in
 develop on it instead, open this folder in VS Code and press F5: that starts an Extension Development
 Host with it loaded, and needs no install at all.
 
-There is no `.vsix` package and no marketplace entry: this is proprietary software and the
-repository is private.
+There is no `.vsix` package and no marketplace entry yet: the extension is installed from
+the repository.
 
 ## Use it
 

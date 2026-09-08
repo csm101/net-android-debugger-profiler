@@ -237,13 +237,19 @@ executed, result, next step.
 
 # Licensing and IP (blocking)
 
-- This is proprietary, closed-source software.
-  Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights
-  reserved. The repository is private and must stay private: never publish
-  sources, never add an open-source license.
-- Dependency policy: MIT / BSD / Apache-2.0 only. GPL is forbidden (viral
-  copyleft); LGPL only with explicit user approval and dynamic linking. The
-  profiler's CLAUDE.md adds the MPL clause its GUI relies on.
+- **MIT** (`LICENSE`), copyright MCA Software s.a.s. di Sirna Carlo & C. It was
+  proprietary until 2026-09-08 and changed on the copyright holder's decision: the
+  products are not going to be sold, and a permissive license is what lets them be
+  used and improved. Keep every new file under it; add no per-file license header,
+  the repository-level LICENSE covers them.
+- Dependency policy: MIT / BSD / Apache-2.0 only, unchanged. GPL is forbidden and
+  LGPL needs explicit user approval and dynamic linking - not to protect a closed
+  product any more, but to keep this one usable by anyone without a license question.
+  The profiler's CLAUDE.md adds the MPL clause its GUI relies on.
+- Two parts are not ours to license and say so in `LICENSE`: the `debugger-libs`
+  submodule (MIT, its authors'), and the GUI's dependency on DevExpress VCL - the GUI
+  sources are MIT, building them needs a DevExpress license of one's own, and no
+  DevExpress source or component is ever redistributed here.
 - Every distributed release ships `THIRD-PARTY-NOTICES.txt` (at the root, one part
   per product) with the license texts of all embedded components. Both test suites
   fail when a distributed package or assembly is missing from it.

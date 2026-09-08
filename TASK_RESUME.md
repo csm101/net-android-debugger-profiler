@@ -221,6 +221,24 @@ Marketplace publisher `mca-software` - the same one the Delphi debugger extensio
 Where a repository lives and who publishes an extension are separate things: the code is the
 author's, the published artifacts carry the company's name.
 
+### License (2026-09-08)
+
+MIT, on the copyright holder's decision, replacing the proprietary license the repository
+carried from the start. The reasoning, so that it is not re-argued: half the product competes
+with tooling the platform vendor gives away and maintains, the other half sells into a niche
+inside a niche, and the return on this work is reputation and the hours it saves on real
+projects - none of which a proprietary license buys, while it costs adoption and contributions.
+Changed everywhere in one pass: `LICENSE`, the blocking rule in the root `CLAUDE.md` (which said
+the opposite), `Directory.Build.props` (the assembly stamp), `THIRD-PARTY-NOTICES.txt` (both
+product headers), the root README (plus a "what you can expect" section: no promise of support,
+and what needs RAD Studio with DevExpress to build), the package README, `plugin.json`, the two
+`PROJECT_STATE.md`, the component READMEs and the VS Code extension's README. The dependency
+policy is unchanged - MIT/BSD/Apache only, no GPL - for a new reason: no license question for
+whoever uses this. Notices tests green on both suites.
+
+Still to do, and the user's call alone: **the repository is still private**. Making it public is
+one switch; everything else is ready for it.
+
 ### For the day the repository goes public (apply by hand; nothing was written into the old repositories)
 
 Description:
@@ -236,7 +254,9 @@ README for `csm101/net-android-profiler`:
 > This repository has moved: the profiler now lives in [csm101/net-android-debugger-profiler](https://github.com/csm101/net-android-debugger-profiler), together with the debugger and the device layer they share.
 > Sources are under `src/NetAndroidProfiler.*`, the documents under `docs/profiler/`, the ProfileMeExample tutorial app under `examples/`; the full history came along.
 
-Both old repositories are private today (checked with `gh repo view`), so nothing about them changes until then.
+Both old repositories are private today (checked with `gh repo view`), so nothing about them
+changes until then. The license is MIT since 2026-09-08, so publishing is a change of visibility
+and nothing else.
 
 ### Follow-ups, recommended order
 

@@ -91,12 +91,14 @@ typed exceptions, 2-space indent, CRLF sources.
 
 # Licensing additions
 
-- MPL-1.1/2.0 components may be used **unmodified** (its copyleft is per file, so
-  linking it into a closed product is fine as long as we do not change its own
-  sources - keep customization in our units). Approved under this clause: SynEdit
+- MPL-1.1/2.0 components may be used **unmodified** (its copyleft is per file, so a
+  larger work under other terms is fine as long as we do not change their own sources
+  - keep customization in our units). Approved under this clause: SynEdit
   (`C:\Athens\SynEdit`, MPL-1.1/LGPL-2.1 dual) as the GUI's source editor.
 - The GUI uses DevExpress VCL under its commercial license: never redistribute
-  DevExpress sources or components.
+  DevExpress sources or components. The GUI's own sources are MIT like the rest, so
+  say plainly wherever it matters that building them needs a DevExpress license;
+  the released `NapGui.exe` is what somebody without one can use.
 - `THIRD-PARTY-NOTICES.txt` (root, profiler part) lists TraceEvent, Mono.Cecil,
   SQLitePCLRaw, ModelContextProtocol, dotnet-dsrouter, SynEdit and JclDebug;
   `Fast/ThirdPartyNoticesTests` fails when a distributed package is missing from it.

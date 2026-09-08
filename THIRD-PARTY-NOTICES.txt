@@ -2,7 +2,7 @@ THIRD-PARTY NOTICES
 ===================
 
 net-android-debugger-profiler
-Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights reserved.
+Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. - MIT (see LICENSE).
 
 This repository holds two products, net-android-debugger and net-android-profiler,
 each distributed with its own third-party components. The two parts below are the
@@ -22,8 +22,8 @@ Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights reserved.
 
 This product is distributed with the third-party components listed below. Each
 is used under its own license; the full text of every license referenced here is
-reproduced at the end of this file. Nothing in these notices grants rights over
-net-android-debugger itself, which is proprietary.
+reproduced at the end of this file. These notices cover the third-party components
+only; net-android-debugger itself is under the MIT license in LICENSE.
 
 The list covers what is actually shipped: the assemblies published alongside
 NetAndroidDebugger.Mcp.dll and NetAndroidDebugger.Dap.dll. Assemblies that are
@@ -391,12 +391,12 @@ THIRD-PARTY NOTICES
 ===================
 
 net-android-profiler
-Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights reserved.
+Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. - MIT (see LICENSE).
 
-This product is proprietary software. It incorporates the third-party
-components listed below, each distributed under its own license. Those
-licenses are reproduced in full in this file and govern the corresponding
-component only, not this product.
+This product incorporates the third-party components listed below, each
+distributed under its own license. Those licenses are reproduced in full in this
+file and govern the corresponding component only; this product itself is under
+the MIT license in LICENSE.
 
 Components are listed as they are distributed:
 

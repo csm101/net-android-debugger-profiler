@@ -158,8 +158,9 @@ platform-tools (`adb`), the global tools `dotnet-trace`, `dotnet-dsrouter`,
 
 ## Licensing
 
-Proprietary and closed source: see `LICENSE`. The repository is private and
-must stay private.
+MIT: see `LICENSE`. Copyright MCA Software s.a.s. di Sirna Carlo & C. Building the
+GUI needs RAD Studio with DevExpress VCL and SynEdit; the released `NapGui.exe` is
+what to use without them, and no DevExpress component is redistributed here.
 
 Third-party dependencies are restricted to MIT, BSD and Apache-2.0; GPL is
 excluded. `THIRD-PARTY-NOTICES.txt` lists every component the shipped build

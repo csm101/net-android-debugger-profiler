@@ -1,5 +1,5 @@
 net-android @VERSION@
-Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights reserved.
+Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. - MIT (see LICENSE).
 
 A debugger and a profiler for .NET for Android and .NET MAUI Android applications
 (C# on MonoVM), in one MCP server for Claude Code and other agents, with the skill
@@ -85,7 +85,11 @@ results carry the same names as any other instrumenting run.
 LICENSING
 ---------
 
-This is proprietary software. The third-party components it embeds, and their
-licenses in full, are listed in THIRD-PARTY-NOTICES.txt. dotnet-dsrouter and adb are
-Microsoft and Google tools invoked as separate processes; dotnet-dsrouter ships in
-tools\ under its own MIT license, reproduced in the notices.
+MIT: see LICENSE. The third-party components this package embeds, and their licenses in
+full, are listed in THIRD-PARTY-NOTICES.txt. dotnet-dsrouter and adb are Microsoft and
+Google tools invoked as separate processes; dotnet-dsrouter ships in tools\ under its own
+MIT license, reproduced in the notices. The GUI is built against DevExpress VCL under a
+commercial license held by the author: the executable may be used as it ships, and
+rebuilding it from source needs a DevExpress license of your own.
+
+Offered as it is, with no promise of support.
