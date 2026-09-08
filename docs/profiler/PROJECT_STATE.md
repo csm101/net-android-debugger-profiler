@@ -150,6 +150,23 @@ tests). Ultimate real target: the reference application (C:\Work\ReferenceApp, n
   `nap doctor` reports which adb and dsrouter a machine uses. Native AOT and
   obfuscation were measured and deferred, with the reasons recorded.
 
+## Roadmap
+
+- **Per-line instrumenting** (planned, chosen 2026-09-08). The weaver instruments a method's
+  entry and exit; the figures are per method, and `profile_annotate_source` puts them on the
+  method's first line with its range marked. Sampling cannot do better - MonoVM reports no
+  IL offset, so there is no per-line sample to be had - but the weaver can: the portable pdb's
+  sequence points are already read (`Symbols/PortablePdbSymbols`), so a probe can be injected
+  at each of them inside the methods a callspec names.
+  Shape it should take: a second, narrower selection (a method or a handful, never a namespace,
+  because a probe per statement multiplies the cost by the statements actually executed); a
+  hit count and a time per line; a table of its own in the result database, so a schema bump;
+  a Source panel that shows those figures instead of the method's range; a Debug, unoptimised
+  build, or the sequence points do not describe the code that runs.
+  The GUI already lets a person choose it - the callspec picker has a "Per line" column, kept
+  because the choice is theirs to record - and that column is marked "(planned)" and says the
+  figures are not collected yet, so that it promises nothing.
+
 ## Example app (2026-09-05)
 
 `examples/ProfileMeExample.sln`: a .NET MAUI Android app (net10.0-android, package

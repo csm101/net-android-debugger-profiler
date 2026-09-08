@@ -639,6 +639,9 @@ begin
 
   FStatus := TdxStatusBar.Create(Self);
   FStatus.Parent := Self;
+  // Without this a dxStatusBar paints the classic Windows style whatever the skin says:
+  // stpsStandard is its default, and it is the one style that ignores the look and feel.
+  FStatus.PaintStyle := stpsUseLookAndFeel;
   FStatus.Align := alBottom;
   FStatus.Panels.Add.Fixed := False;
   SetStatus('No session open.');

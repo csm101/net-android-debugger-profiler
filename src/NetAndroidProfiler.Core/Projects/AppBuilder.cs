@@ -49,7 +49,10 @@ public static class AppBuilder
             // library, and without these the build instruments only the application project -
             // so a callspec pointing at the logic collects nothing.
             if (request.WeaveAssemblies is { Count: > 0 })
-                args.Add("-p:NapAssemblies=" + string.Join(";", request.WeaveAssemblies));
+                // A semicolon separates properties on an msbuild command line, exactly as a comma
+                // does, so a list of assemblies has to arrive escaped or msbuild reads the second
+                // name as another property and refuses the lot.
+                args.Add("-p:NapAssemblies=" + string.Join("%3B", request.WeaveAssemblies));
             // A comma separates properties on an msbuild command line, and a callspec is
             // allowed to contain them.
             args.Add("-p:NapCallspec=" + request.Callspec.Replace(",", "%2C"));

@@ -30,6 +30,7 @@ type
     BoxFill: TColor;         // call-graph box
     BoxCentreFill: TColor;   // the focused method's box
     Accent: TColor;          // chart line, highlights
+    Warning: TColor;         // what is wrong: red enough to notice, light enough to read on dark
     EditorBack: TColor;
     EditorText: TColor;
     GutterBack: TColor;
@@ -82,6 +83,7 @@ begin
     Result.BoxFill := $002A2A2A;
     Result.BoxCentreFill := $00454545;
     Result.Accent := $00D7BA7D;
+    Result.Warning := $006E78FF;   // a salmon red: $C80000 on this ground is unreadable
     Result.EditorBack := $001E1E1E;
     Result.EditorText := $00E6E6E6;
     Result.GutterBack := $002C2C2C;
@@ -103,6 +105,7 @@ begin
     Result.BoxFill := $00F8F8F8;
     Result.BoxCentreFill := $00F0E0C0;
     Result.Accent := $00C08040;
+    Result.Warning := $000000C8;
     Result.EditorBack := $00FAFAFE;
     Result.EditorText := clWindowText;
     Result.GutterBack := $00F2F2F2;

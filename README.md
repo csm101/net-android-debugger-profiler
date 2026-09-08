@@ -62,6 +62,12 @@ needs no development environment beside it. It opens any session any frontend re
 | **Heap snapshots** | Live objects by type, and the growth between two snapshots - the leak candidates at the top | Seconds of pause per snapshot on a large heap; no rewriting and no restart |
 | **Allocations** | What is allocated, by type, and by the method that allocated it | Recorded during an instrumenting session, so it carries that session's cost |
 
+Figures are per method. **Per-line instrumenting is planned, not yet supported**: sampling
+cannot give it at all on MonoVM (the runtime reports no IL offset), while the weaver can and
+will - `profile_annotate_source` shows a method's figures on its first line with its range
+marked, and the GUI's callspec picker already lets a per-line choice be recorded, marked
+"(planned)" until the collection catches up.
+
 Everything runs against an app installed on an emulator or an attached device; nothing is
 simulated, and no source is required beyond what the app was built with.
 ## Install

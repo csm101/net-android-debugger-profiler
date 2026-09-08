@@ -111,7 +111,10 @@ public class AppBuilderTests : IDisposable
             _project, Weave: true, Callspec: "N:V7", WeavingTargets: targets,
             WeaveAssemblies: ["App.Core", "App.GeoLocation"]));
 
-        Assert.Contains("-p:NapAssemblies=App.Core;App.GeoLocation", args);
+        // Escaped, because msbuild splits properties on a semicolon: unescaped, the second name
+        // arrives as another property and the build is refused with "invalid property".
+        Assert.Contains("-p:NapAssemblies=App.Core%3BApp.GeoLocation", args);
+        Assert.DoesNotContain(args, a => a.StartsWith("-p:NapAssemblies=") && a.Contains(';'));
     }
 
     [Fact]

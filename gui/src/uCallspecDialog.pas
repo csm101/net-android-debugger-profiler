@@ -220,7 +220,7 @@ begin
   // The engine does not collect per-line figures yet; the column is here because the
   // choice is the user's to make, and it is remembered until the collection catches up.
   FLines := FTree.CreateColumn;
-  FLines.Caption.Text := 'Per line';
+  FLines.Caption.Text := 'Per line (planned)';
   FLines.Width := 80;
   FLines.PropertiesClass := TcxCheckBoxProperties;
   (FLines.Properties as TcxCheckBoxProperties).NullStyle := nssUnchecked;

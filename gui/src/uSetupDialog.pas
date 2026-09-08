@@ -112,7 +112,7 @@ implementation
 
 uses
   System.UITypes, System.IOUtils,
-  uJobDialog, uCallspecDialog, uSettings;
+  uJobDialog, uCallspecDialog, uSettings, uTheme;
 
 const
   CLabelLeft = 16;
@@ -319,7 +319,7 @@ begin
   FValidation.Anchors := [akLeft, akRight, akBottom];
   FValidation.Properties.WordWrap := True;
   FValidation.Properties.ShowAccelChar := False;
-  FValidation.Style.TextColor := $000000C8;
+  FValidation.Style.TextColor := ThemeColors.Warning;
   FValidation.Visible := False;
 
   FCheckLabel := TcxLabel.Create(Self);
@@ -883,6 +883,11 @@ begin
       + 'Choose one of the rewriting profilers.', [LProject.Name, LProject.TargetFramework]);
 
   FValidation.Caption := LProblem;
+  // Red says "this cannot run"; a note is only news, and reads in the ordinary colour.
+  if LProblem <> '' then
+    FValidation.Style.TextColor := ThemeColors.Warning
+  else
+    FValidation.Style.TextColor := ThemeColors.Subtle;
   // A note is not a refusal: what was added is worth seeing, and Start stays enabled.
   if (LProblem = '') and (LAdded <> '') then
     FValidation.Caption := Format('Assemblies: added %s, which the callspec reaches. The build '
