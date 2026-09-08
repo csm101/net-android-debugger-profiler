@@ -1,42 +1,61 @@
-net-android-profiler @VERSION@
+net-android @VERSION@
 Copyright (c) 2026 MCA Software s.a.s. di Sirna Carlo & C. All rights reserved.
 
-A profiler for .NET for Android applications: CPU sampling, memory and allocation
-analysis, and deterministic instrumenting profiling. It drives a device or an
-emulator through adb and writes every result into a SQLite database that both
-frontends read.
+A debugger and a profiler for .NET for Android and .NET MAUI Android applications
+(C# on MonoVM), in one MCP server for Claude Code and other agents, with the skill
+that tells an agent how to use them well, and a desktop GUI for the profiler. The
+debugger sets breakpoints, steps, reads locals and applies exception rules; the
+profiler samples the CPU, instruments methods and takes heap snapshots; screen tools
+drive the app on the device through adb.
 
 
 WHAT IS IN THE BOX
 ------------------
 
-  install.cmd   registers the MCP server with Claude Code (install.cmd /remove undoes it)
-  bin\          the MCP server, nap.exe and nap-weave
-  tools\        dotnet-dsrouter, used to reach the device's diagnostics port
-  build\        MSBuild targets for build-time weaving, and the nap-weave they run
-  gui\          NapGui.exe, the Delphi GUI (present when this package was built with it)
+  install.cmd     registers the plugin with Claude Code and puts a shortcut to the GUI
+                  on the desktop (install.cmd /remove undoes both)
+  .claude-plugin\ this folder as a Claude Code plugin: the server registration and
+  skills\         the skill (skills\net-android\SKILL.md and its references)
+  bin\            NetAndroid.Mcp.dll (the unified server), the profiler's own server,
+                  nap.exe (control service and one-shot commands), nap-weave
+  tools\          dotnet-dsrouter, used to reach the device's diagnostics port
+  build\          MSBuild targets for build-time weaving, and the nap-weave they run
+  gui\            NapGui.exe, the Delphi GUI of the profiler (Windows)
 
 
 REQUIREMENTS
 ------------
 
-  * .NET 10 runtime (the tools are framework-dependent)
+  * .NET 10 runtime for the server and the tools; the .NET SDK with the android
+    workload to build apps for profiling or debugging (the build_app tool does it)
   * Android platform-tools: adb on PATH, or ANDROID_HOME / ANDROID_SDK_ROOT set
-  * The app to profile must be built with diagnostics enabled:
-        dotnet build -f net9.0-android35.0 -c Debug -p:EnableDiagnostics=true
-    Instrumenting on the weaver engine also needs fast deployment, which a Debug
-    build gives you by default (-p:EmbedAssembliesIntoApk=false).
+  * A device or emulator with USB debugging on
 
 
 GETTING STARTED
 ---------------
 
-  Agent-driven (MCP):
+  Agent-driven (Claude Code):
 
       install.cmd
-      then ask Claude Code to profile the app: it exposes list_devices, check_app,
-      profile_run, profile_hotspots, profile_tree, alloc_report, heap_report and the
-      rest of the tool surface.
+      then restart Claude Code and ask it to profile or debug the app. The plugin
+      brings the server and the skill; the skill starts with list_devices,
+      list_app_projects, check_app and build_app, and knows which mode answers which
+      question. Without the plugin route, install.cmd /mcp-only registers the server
+      alone and copies the skill under %USERPROFILE%\.claude\skills.
+
+  GUI:
+
+      gui\NapGui.exe (or the desktop shortcut)   the whole profiling flow, no prompt
+
+      It starts bin\nap.exe serve on loopback itself, so keep the package together.
+      New session > Solution: point it at a .sln, .csproj or source folder and it
+      lists the Android applications in it, fills in the package, the build output and
+      the assemblies from the project file, and offers the app's own namespaces and
+      types as the callspec. Build & install builds the app with the settings a
+      session needs and deploys it to the selected device. File > Open picks a
+      session recorded by any frontend: the database is the product, and any SQLite
+      client reads it too.
 
   Command line:
 
@@ -45,28 +64,15 @@ GETTING STARTED
       bin\nap.exe run --package com.example.app --mode sampling --duration 20
 
       run profiles, analyses, and prints where the result database is;
-      bin\nap.exe help lists every option. The database is the product:
-      both frontends read it, and so can any SQLite client.
-
-  GUI:
-
-      gui\NapGui.exe            the whole flow, without a command prompt
-
-      It starts bin\nap.exe serve on loopback itself, so keep the package together.
-      New session > Solution: point it at your .sln, .csproj or source folder and it
-      lists the Android applications in it, fills in the package, the build output and
-      the assemblies from the project file, and offers the app's own namespaces and
-      types as the callspec. Build & install builds the app with the settings above and
-      deploys it to the selected device. It also checks this machine when it starts and
-      offers to install dotnet-dsrouter if the package's copy is not being used.
-      File > Open picks a session recorded by any frontend.
+      bin\nap.exe help lists every option.
 
 
 BUILD-TIME WEAVING
 ------------------
 
 An app that must keep its assemblies inside the APK can be instrumented while it is
-built, instead of on the device:
+built instead of on the device: the build_app tool does it with the purpose
+instrumenting-build-time and a callspec, or by hand:
 
       <Import Project="<this package>\build\NetAndroidProfiler.Weaving.targets" />
       dotnet build -p:NapWeave=true -p:NapCallspec="N:My.Namespace"

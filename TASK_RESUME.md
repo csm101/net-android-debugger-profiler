@@ -1,6 +1,6 @@
 # Task resume (repository level)
 
-## Current repository-level task: the operating skill and the installation package (2026-09-08)
+## Last repository-level task, done: the operating skill and the installation package (2026-09-08)
 
 Follow-up 2b, decided with the user: one skill in English for anyone using the `net-android` server
 with a .NET for Android or MAUI app (nothing of this repository, its scripts, its test apps or any
@@ -12,10 +12,15 @@ so the skill never carries msbuild lines. Plan: `C:\Users\Carlo\.claude\plans\ta
 Step 1 done: `BuildPurpose` (Core, Projects) + `build_app` in `ProfilerTools` (both servers see it);
 `Fast/BuildPurposeTests` 8/8, `McpDeviceTests.Build_app_installs_the_test_target_ready_for_sampling`
 green on emulator-5554; catalog and profiler ARCHITECTURE updated.
-Step 2 next: `plugin/` (plugin.json, .mcp.json, marketplace.json, README) and `build/package.ps1`
-extended into the `net-android` package (unified server in bin/, GUI, plugin files at the root),
-`install.cmd` with the desktop shortcut and the plugin-or-fallback registration. Then step 3 the
-skill (`plugin/skills/net-android/SKILL.md` + references), step 4 `SkillTests`, step 5 documents.
+Steps 2-5 done: `plugin/` (`.claude-plugin/plugin.json` with the server inline, `marketplace.json`,
+README), `build/package.ps1` extended into the `net-android-<version>` package (unified server in
+`bin/`, GUI, plugin files at the root, version stamped into plugin.json), `install.cmd` rewritten
+(plugin route with fallback, desktop shortcut, `/remove`), `README.txt` rewritten; the skill
+(`SKILL.md` 195 lines + `references/` build-matrix, reading-results, ui-driving, traps);
+`SkillTests` 6/6; package built (72.9 MB zip), `claude plugin validate` passes, the packaged server
+answers the profiler's MCP tests; `docs/ARCHITECTURE.md` decision 3, README, root TEST_CATALOG G,
+profiler PACKAGING. Not run on this machine: `install.cmd` (registers at user scope: the user's
+call). Not done, later phase: driving the GUI from the server.
 
 ## Last repository-level task, done: profiling the app the debugger runs (2026-09-08)
 

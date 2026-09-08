@@ -157,6 +157,13 @@ profiler's device suite leaves it. `Support.cs` holds what they share.
       the pid is the same, the debug session survives and a later breakpoint hits (whether the
       runtime connects while stopped is printed, not asserted; it did) -
       `SamplingAttach_ToTheAppUnderTheDebugger_ProfilesWhatRunsAfterTheBreakpoint`
+- [x] The skill (`plugin/skills/net-android`, `SkillTests`, no device): frontmatter and length -
+      `The_skill_has_a_name_and_a_description_and_stays_short`; every tool it names exists in the
+      server's tool list - `Every_tool_the_skill_names_exists_in_the_server`; the tools that start and
+      end an engine are covered - `The_tools_that_start_and_end_an_engine_are_all_covered`; no
+      product, machine or repository name - `The_plugin_names_no_product_machine_or_repository`;
+      every linked reference exists and every reference is linked - `Every_reference_the_skill_links_exists`;
+      the plugin files parse and register the shipped server - `The_plugin_registers_the_unified_server_the_package_ships`
 
 The two product MCP suites also run against the unified server when `NAD_MCP_SERVER_DLL` /
 `NAP_MCP_SERVER_DLL` name it (the profiler's server-name assertion is skipped then).

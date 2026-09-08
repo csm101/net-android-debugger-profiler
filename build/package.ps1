@@ -1,7 +1,7 @@
 <#
-  Builds the redistributable package: everything a machine needs to profile a .NET for
-  Android app, without a clone of this repository and without a dotnet SDK beyond the
-  runtime the tools need.
+  Builds the redistributable package: everything a machine needs to debug and profile a
+  .NET for Android app, without a clone of this repository and without a dotnet SDK beyond
+  the runtime the tools need (building an app for profiling needs the SDK, as always).
 
       powershell -File build\package.ps1                 Release package into dist\
       powershell -File build\package.ps1 -SkipDsRouter   no network: leave tools\ empty
@@ -9,10 +9,12 @@
 
   Layout of the package (see docs/PACKAGING.md):
 
-      bin\      the MCP server, nap.exe (control service + one-shot commands), nap-weave
+      bin\      the unified MCP server (debugger + profiler), the profiler's own MCP server,
+                nap.exe (control service + one-shot commands), nap-weave
       tools\    dotnet-dsrouter, so the install does not depend on a global tool
       build\    NetAndroidProfiler.Weaving.targets and the copy of nap-weave it runs
       gui\      NapGui.exe, when the Delphi GUI has been built
+      .claude-plugin\, .mcp.json, skills\   the Claude Code plugin: the unpacked folder is one
       install.cmd, README.txt, LICENSE, THIRD-PARTY-NOTICES.txt
 #>
 param(
@@ -31,7 +33,7 @@ if (-not $OutputDir) { $OutputDir = Join-Path $repo 'dist' }
 $props = Get-Content (Join-Path $repo 'Directory.Build.props') -Raw
 if ($props -notmatch '<NapVersion>([^<]+)</NapVersion>') { throw 'NapVersion not found in Directory.Build.props' }
 $version = $Matches[1]
-$name = "net-android-profiler-$version"
+$name = "net-android-$version"
 $staging = Join-Path $OutputDir $name
 
 Write-Host "packaging $name ($Configuration)"
@@ -44,9 +46,11 @@ function Publish([string]$project, [string]$into) {
   if ($LASTEXITCODE -ne 0) { throw "publish failed: $project" }
 }
 
-# The MCP server, nap and nap-weave share a folder: their dependency closures overlap
-# almost entirely, and one folder is one thing to put on a PATH.
+# The servers, nap and nap-weave share a folder: their dependency closures overlap almost
+# entirely, and one folder is one thing to put on a PATH. The unified server is the one the
+# plugin registers; the profiler's own server stays for whoever wants only that.
 $bin = Join-Path $staging 'bin'
+Publish 'src\NetAndroid.Mcp\NetAndroid.Mcp.csproj' $bin
 Publish 'src\NetAndroidProfiler.Mcp\NetAndroidProfiler.Mcp.csproj' $bin
 Publish 'src\NetAndroidProfiler.Cli\NetAndroidProfiler.Cli.csproj' $bin
 Publish 'src\NetAndroidProfiler.Weave\NetAndroidProfiler.Weave.csproj' $bin
@@ -90,6 +94,15 @@ if (-not $SkipGui) {
     Write-Warning 'gui\NapGui.exe not found: build it with gui\build-gui.cmd to include it.'
   }
 }
+
+# The plugin files make the unpacked folder a Claude Code plugin (the skill and the server
+# registration); they are copied as they are, the skill is tested from the repository.
+Copy-Item (Join-Path $repo 'plugin\*') $staging -Recurse -Force
+# The plugin's version is the package's: stamped here, so the repository copy carries none.
+$pluginJson = Join-Path $staging '.claude-plugin\plugin.json'
+$plugin = Get-Content $pluginJson -Raw | ConvertFrom-Json
+$plugin | Add-Member -NotePropertyName version -NotePropertyValue $version -Force
+[IO.File]::WriteAllText($pluginJson, ($plugin | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
 
 Copy-Item (Join-Path $repo 'THIRD-PARTY-NOTICES.txt') $staging
 Copy-Item (Join-Path $repo 'LICENSE') $staging

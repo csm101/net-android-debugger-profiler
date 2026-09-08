@@ -1,0 +1,12 @@
+{
+  "name": "net-android",
+  "owner": { "name": "MCA Software s.a.s. di Sirna Carlo & C." },
+  "description": "The net-android debugger and profiler for .NET for Android and MAUI apps, installed from this folder.",
+  "plugins": [
+    {
+      "name": "net-android",
+      "source": "./",
+      "description": "Debugger and profiler MCP server for .NET for Android and MAUI Android apps, with its operating skill."
+    }
+  ]
+}

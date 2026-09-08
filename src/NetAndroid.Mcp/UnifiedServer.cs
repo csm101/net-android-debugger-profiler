@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace NetAndroid.Mcp;
 
 /// <summary>What the server says about itself in the MCP handshake.</summary>
@@ -6,7 +8,10 @@ public static class UnifiedServer
     /// <summary>The registration name (<c>claude mcp add net-android ...</c>) and the server's name in the handshake.</summary>
     public const string Name = "net-android";
 
-    public const string Version = "0.1.0";
+    /// <summary>From the assembly, which takes it from Directory.Build.props: the package, the profiler and this server share one version.</summary>
+    public static readonly string Version =
+        typeof(UnifiedServer).Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 
     public const string Instructions =
         "Debugger and profiler for .NET for Android (MonoVM) apps, MAUI included, in one server. " +

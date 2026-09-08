@@ -15,9 +15,10 @@
     result database's tool stamp all read it from here. ProfilerSession.ToolVersion takes
     it from the assembly rather than repeating it, so a release is a single edit.
 
-    NapVersion is also what build/package.ps1 names the package after.
+    NapVersion is also what build/package.ps1 names the package after, and the unified MCP
+    server (NetAndroid.Mcp) ships in that package, so it carries the same version.
   -->
-  <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('NetAndroidProfiler'))">
+  <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('NetAndroidProfiler')) Or '$(MSBuildProjectName)' == 'NetAndroid.Mcp'">
     <NapVersion>0.2.0</NapVersion>
     <Version>$(NapVersion)</Version>
     <Product>net-android-profiler</Product>

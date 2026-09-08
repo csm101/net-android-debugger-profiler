@@ -154,6 +154,32 @@ Not done, on purpose: one device selection and one app discovery for both engine
 keeps its `AppProjectFinder` and its device choice; unifying them is a Core refactoring, not a
 frontend one), and retiring the two product registrations (the user's choice, when the unified
 server has proved itself in daily use; `register-mcp.cmd` says how).
+## Decision 3 (done 2026-09-08): one package, one plugin, one skill
+
+What ships is one folder, built by `build/package.ps1` (the profiler's packaging script, extended):
+the unified server and its dependencies in `bin/` (next to the profiler's own server, `nap` and
+`nap-weave`), dotnet-dsrouter in `tools/`, the weaving targets in `build/`, the Delphi GUI in `gui/`,
+and at the root the files that make the folder a Claude Code plugin: `.claude-plugin/plugin.json`
+(the `net-android` server registration, `dotnet ${CLAUDE_PLUGIN_ROOT}/bin/NetAndroid.Mcp.dll`),
+`.claude-plugin/marketplace.json` (the folder as a one-plugin marketplace, so a local install is two
+`claude plugin` commands) and `skills/net-android/`. Sources of the plugin files: `plugin/` in the
+repository, copied as they are; the version is stamped at packaging time from `NapVersion`, which the
+unified server now carries too. `install.cmd` (Windows) registers the plugin, falling back to a plain
+`claude mcp add` plus a copy of the skill under the user's skills, and creates the desktop shortcut to
+the GUI; `/remove` undoes it. The GUI is distributed only: driving it from the server as a results
+viewer is a later phase, and this layout (`gui/` next to `bin/`) is what that will rely on.
+
+The skill is written for anyone using the server with a .NET for Android or MAUI app: it assumes
+the server, `dotnet` with the android workload and adb, nothing of this repository or of any
+particular app. It is bound to the server by `tests/NetAndroid.Mcp.Tests/SkillTests`: every tool
+it names exists in the server's tool list, the tools that start and end an engine are all covered,
+the plugin files parse and point at the shipped server, and a list of forbidden words keeps product,
+machine and repository names out. `build_app` (profiler frontend, over Core's `AppBuilder` with a
+one-word `BuildPurpose`) exists so that the skill never carries an msbuild command line.
+
+Windows first: the server and the plugin registration are portable .NET, the GUI and the installer
+are Windows-only, other systems are untested.
+
 ## Conventions the products share
 
 - `NetAndroidDebuggerProfiler.slnx` builds everything; the per-product solutions are for

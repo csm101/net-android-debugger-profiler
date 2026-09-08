@@ -1,0 +1,14 @@
+{
+  "name": "net-android",
+  "displayName": "net-android: debugger and profiler for .NET for Android",
+  "description": "Debugger and profiler for .NET for Android and .NET MAUI Android apps (MonoVM), as one MCP server plus the skill that says how to use it well: breakpoints, stepping, locals and exception rules; CPU sampling, instrumenting and heap snapshots; screen tools to drive the app through adb.",
+  "author": { "name": "MCA Software s.a.s. di Sirna Carlo & C." },
+  "license": "Proprietary",
+  "keywords": ["dotnet", "android", "maui", "debugger", "profiler", "mcp"],
+  "mcpServers": {
+    "net-android": {
+      "command": "dotnet",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/NetAndroid.Mcp.dll"]
+    }
+  }
+}

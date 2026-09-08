@@ -8,6 +8,10 @@ What a release is, how it is built, and what a machine needs to run it.
 
 The script publishes, assembles and zips; it does not build the GUI, which needs
 RAD Studio - run `gui\build-gui.cmd` first and the package picks the executable up.
+Since 2026-09-08 the package is `net-android-<version>`: it ships the unified server
+(debugger and profiler, `bin\NetAndroid.Mcp.dll`) next to the profiler's own, and the
+Claude Code plugin files (root `docs/ARCHITECTURE.md`, decision 3), so that the unpacked
+folder is a plugin carrying the operating skill.
 
 ## Version
 
@@ -23,11 +27,14 @@ change set. `PackagingTests` fails if the tool version stops coming from the bui
 
 ## Layout
 
-    bin\      the MCP server, nap.exe, nap-weave and their shared dependencies
+    bin\      the unified MCP server, the profiler's MCP server, nap.exe, nap-weave and
+              their shared dependencies
     tools\    dotnet-dsrouter
     build\    NetAndroidProfiler.Weaving.targets and the nap-weave copy it runs
     gui\      NapGui.exe, when the package was built with it
-    install.cmd, README.txt, LICENSE, THIRD-PARTY-NOTICES.txt
+    .claude-plugin\plugin.json, .claude-plugin\marketplace.json, skills\net-android\
+              the plugin: copied from plugin\ in the repository, version stamped by the script
+    install.cmd, README.txt, README.md (the plugin's), LICENSE, THIRD-PARTY-NOTICES.txt
 
 One `bin\` for the three .NET entry points: their dependency closures overlap almost
 entirely, and one directory is one thing to put on a PATH.
@@ -63,13 +70,14 @@ path in Settings.
 
 ## Installing
 
-`install.cmd` registers `bin\NetAndroidProfiler.Mcp.dll` with Claude Code at user scope,
-pointing at wherever the package was unpacked - no repository, no publish step, and
-`install.cmd /remove` undoes it. It warns when adb is missing and says which dsrouter
-will be used. `install.cmd /name <name>` registers under another name, so a
-package can be tried beside an existing installation instead of replacing it - which is
-also how the install path gets tested without touching the developer's own
-registration.
+`install.cmd` (Windows) registers the package as a Claude Code plugin at user scope - a local
+marketplace pointing at the unpacked folder, then the plugin from it - which brings the
+`net-android` server and the skill together; when the plugin route fails it falls back to
+`claude mcp add` of `bin\NetAndroid.Mcp.dll` plus a copy of the skill under
+`%USERPROFILE%\.claude\skills\net-android` (`/mcp-only` asks for that form). It also puts a
+shortcut to `gui\NapGui.exe` on the desktop (`/no-shortcut` skips it). `install.cmd /remove`
+undoes all of it. It warns when adb is missing and says which dsrouter will be used. No
+repository, no publish step: the package runs from where it was unpacked.
 
 Verified by unpacking the zip outside the repository (2026-08-23): `nap doctor` reports
 the packaged dsrouter as the one in use, `nap run` profiles the emulator and writes a
@@ -78,9 +86,11 @@ opens a session from the package - the path that needed the fix for the GUI to f
 `..\bin\nap.exe`. Still untested: a machine without the .NET SDK and without this
 repository.
 
-`register-mcp-profiler.cmd` in the repository root is the development counterpart: it publishes
-from source into `%LOCALAPPDATA%` and registers that. Same registration, different
-source of truth.
+`register-mcp.cmd` and `register-mcp-profiler.cmd` in the repository root are the development
+counterparts: they publish from source into `%LOCALAPPDATA%` and register that. Same servers,
+different source of truth; the plugin and the skill come only with the package (2026-09-08:
+package built, `claude plugin validate` passes, the packaged server answers the profiler's MCP
+tests through `NAP_MCP_SERVER_DLL`; `install.cmd` itself not run on the development machine).
 
 ## Native AOT (measured, working for nap)
 

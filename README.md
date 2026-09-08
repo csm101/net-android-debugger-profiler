@@ -39,6 +39,15 @@ folders), and for the profiler the global tools `dotnet-dsrouter` and `dotnet-tr
 `ThirdParty/debugger-libs` is a submodule pinned to a fork: after a plain `git clone`, run
 `git submodule update --init` or the debugger does not build.
 
+**Installing on a machine without this repository**: `gui\build-gui.cmd` (needs RAD Studio) and then
+`powershell -File build\package.ps1` produce `dist\net-android-<version>\` and its zip: the unified
+server with its dependencies, `nap`, `nap-weave`, dotnet-dsrouter, the weaving targets, the GUI and
+the Claude Code plugin files, so that the unpacked folder is a plugin. Its `install.cmd` registers the
+plugin (server and skill) and puts a shortcut to the GUI on the desktop. The skill
+(`plugin/skills/net-android/SKILL.md`) is the operating guide for an agent: preflight, which mode
+answers which question, reading the numbers, driving the app's screen, the traps; `docs/PACKAGING`
+under the profiler's documents describes the package.
+
 Each product publishes and registers itself with Claude Code from its own script, and the unified
 server from `register-mcp.cmd` (a Claude Code with all three registered sees every tool twice; the
 script says which two registrations to remove once the unified server is in use):

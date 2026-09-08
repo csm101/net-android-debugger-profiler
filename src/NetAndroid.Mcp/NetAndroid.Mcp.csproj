@@ -7,7 +7,6 @@
     <Nullable>enable</Nullable>
     <RootNamespace>NetAndroid.Mcp</RootNamespace>
     <AssemblyName>NetAndroid.Mcp</AssemblyName>
-    <Version>0.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
