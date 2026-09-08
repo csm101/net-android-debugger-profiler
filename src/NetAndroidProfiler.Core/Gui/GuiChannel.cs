@@ -101,10 +101,11 @@ public sealed class GuiChannel : IAsyncDisposable
     /// <summary>
     /// A picture of a panel, or of the whole window. The bytes are a PNG; when
     /// <paramref name="savePath"/> is given the GUI writes the file itself, which keeps a
-    /// large picture out of the channel.
+    /// large picture out of the channel. With <paramref name="trim"/> the empty margins are
+    /// cut off, which is what makes a canvas panel readable in a report.
     /// </summary>
     public async Task<GuiPicture> CaptureAsync(string? panel, string target, int width, int height,
-        string? savePath, bool wantBytes, CancellationToken ct)
+        string? savePath, bool wantBytes, bool trim, CancellationToken ct)
     {
         var answer = await SendAsync(new Dictionary<string, object?>
         {
@@ -115,6 +116,7 @@ public sealed class GuiChannel : IAsyncDisposable
             ["height"] = height,
             ["path"] = savePath,
             ["inline"] = wantBytes,
+            ["trim"] = trim,
         }, ct).ConfigureAwait(false);
 
         byte[]? png = null;
@@ -127,7 +129,8 @@ public sealed class GuiChannel : IAsyncDisposable
             answer.GetProperty("height").GetInt32(),
             answer.TryGetProperty("blank", out var blank) && blank.GetBoolean(),
             answer.TryGetProperty("panel", out var shown) ? shown.GetString() ?? "" : "",
-            answer.TryGetProperty("bytes", out var size) ? size.GetInt32() : png?.Length ?? 0);
+            answer.TryGetProperty("bytes", out var size) ? size.GetInt32() : png?.Length ?? 0,
+            answer.TryGetProperty("trimmed", out var trimmed) && trimmed.GetBoolean());
     }
 
     /// <summary>Put the window on the user's screen, or take it off again.</summary>
@@ -225,7 +228,8 @@ public sealed class GuiChannel : IAsyncDisposable
 /// <param name="IsBlank">True when the picture is one flat colour: a panel with nothing on it.</param>
 /// <param name="Panel">The panel that was drawn.</param>
 /// <param name="Bytes">The size of the PNG, whether or not it travelled inline.</param>
-public sealed record GuiPicture(byte[]? Png, string? SavedTo, int Width, int Height, bool IsBlank, string Panel, int Bytes);
+/// <param name="Trimmed">True when empty margins were cut off, so the size is the drawing's.</param>
+public sealed record GuiPicture(byte[]? Png, string? SavedTo, int Width, int Height, bool IsBlank, string Panel, int Bytes, bool Trimmed);
 
 internal static class GuiJson
 {

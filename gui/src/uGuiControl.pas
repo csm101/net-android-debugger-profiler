@@ -20,7 +20,7 @@ unit uGuiControl;
     {"id":1,"command":"status"}
     {"id":2,"command":"open","path":"C:\\...\\session.db"}      a directory works too
     {"id":3,"command":"view","panel":"graph","method":"My.App.Search"}
-    {"id":4,"command":"capture","panel":"graph","width":1400,"height":900}
+    {"id":4,"command":"capture","panel":"graph","width":1400,"height":900}   trim by default
     {"id":5,"command":"show"}      {"id":6,"command":"hide"}    {"id":7,"command":"close"}
   Answers carry the id they belong to, "ok":true with what was done, or "ok":false with
   an "error" that says what to do instead.
@@ -166,7 +166,7 @@ var
   LPanel, LTarget, LPath: string;
   LWidth, LHeight: Integer;
   LControl: TControl;
-  LBitmap: TBitmap;
+  LBitmap, LTrimmed: TBitmap;
   LPng: TBytes;
 begin
   LPanel := StringOf(ARequest, 'panel');
@@ -188,6 +188,18 @@ begin
 
   LBitmap := ControlToBitmap(LControl, MainForm.Color);
   try
+    // Trimmed unless asked otherwise: a panel that draws on a canvas leaves most of it
+    // blank, and the blank is what makes a picture unreadable in a report.
+    if BooleanOf(ARequest, 'trim', True) then
+    begin
+      LTrimmed := TrimToContent(LBitmap);
+      if LTrimmed <> nil then
+      begin
+        LBitmap.Free;
+        LBitmap := LTrimmed;
+        AAnswer.AddPair('trimmed', TJSONBool.Create(True));
+      end;
+    end;
     LPng := BitmapToPng(LBitmap);
     AAnswer.AddPair('width', TJSONNumber.Create(LBitmap.Width));
     AAnswer.AddPair('height', TJSONNumber.Create(LBitmap.Height));

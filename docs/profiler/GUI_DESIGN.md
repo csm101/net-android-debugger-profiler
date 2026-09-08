@@ -461,7 +461,12 @@ describing it in numbers.
   their desktop. `show` puts the window up when somebody asks for it.
 - **Commands**: `status`, `open` (a session.db, or the folder holding one), `view`
   (panel, method to focus, filter, sort), `capture` (panel or whole window, size, an
-  optional file, base64 PNG in the answer), `show`, `hide`, `close`. Each answer carries
+  optional file, base64 PNG in the answer), `show`, `hide`, `close`.
+- **A capture is trimmed** to what was drawn unless `trim: false` says otherwise
+  (`uGuiRender.TrimToContent`). The Call graph draws a few boxes on a canvas the size of
+  the window: untrimmed, the picture is mostly white. The scan starts inside the panel's
+  frame and scroll bars, which are furniture rather than content, and a picture with no
+  empty margin comes back as it was. Each answer carries
   the id of its request and either `ok` with what was done, or `error` with what to do
   instead. `uGuiControl.ExecuteCommand` knows nothing about the transport, so a pipe or a
   socket can be put in front of it later without touching the commands.

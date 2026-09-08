@@ -42,7 +42,7 @@ public class GuiChannelTests
 
         foreach (var panel in new[] { "report", "tree", "graph", "summary" })
         {
-            var picture = await gui.CaptureAsync(panel, "panel", 1200, 800, savePath: null, wantBytes: true, cts.Token);
+            var picture = await gui.CaptureAsync(panel, "panel", 1200, 800, savePath: null, wantBytes: true, trim: true, cts.Token);
             Assert.NotNull(picture.Png);
             // The eight bytes every PNG starts with: what came back is a picture, not a message.
             Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, picture.Png!.Take(8));
@@ -62,7 +62,7 @@ public class GuiChannelTests
         Assert.Contains("TestTarget", viewed.GetProperty("method").GetString());
         Assert.Equal("graph", viewed.GetProperty("panel").GetString());
 
-        var picture = await gui.CaptureAsync(null, "panel", 1200, 800, savePath: null, wantBytes: true, cts.Token);
+        var picture = await gui.CaptureAsync(null, "panel", 1200, 800, savePath: null, wantBytes: true, trim: true, cts.Token);
         Assert.False(picture.IsBlank);
         Assert.Equal("graph", picture.Panel);
     }
@@ -75,10 +75,31 @@ public class GuiChannelTests
         await gui.OpenAsync(SessionDatabase(), "report", cts.Token);
 
         string file = Path.Combine(Path.GetTempPath(), "net-android-profiler-tests", "gui-channel", "report.png");
-        var picture = await gui.CaptureAsync("report", "panel", 1000, 700, file, wantBytes: false, cts.Token);
+        var picture = await gui.CaptureAsync("report", "panel", 1000, 700, file, wantBytes: false, trim: true, cts.Token);
         Assert.Null(picture.Png);
         Assert.Equal(Path.GetFullPath(file), picture.SavedTo);
         Assert.True(new FileInfo(file).Length > 1000, "the saved picture is suspiciously small");
+    }
+
+    /// <summary>
+    /// The call graph draws a few boxes on a large canvas: untrimmed it is mostly white, and
+    /// a picture that is mostly white says nothing in a report.
+    /// </summary>
+    [SkippableFact]
+    public async Task A_canvas_panel_comes_back_cut_to_its_drawing_unless_the_whole_panel_is_asked_for()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        await using var gui = await OpenAsync(cts.Token);
+        await gui.OpenAsync(SessionDatabase(), "report", cts.Token);
+        await gui.ViewAsync("graph", "TestTarget", null, null, false, cts.Token);
+
+        var whole = await gui.CaptureAsync(null, "panel", 1400, 900, null, wantBytes: false, trim: false, cts.Token);
+        var trimmed = await gui.CaptureAsync(null, "panel", 1400, 900, null, wantBytes: false, trim: true, cts.Token);
+        Assert.False(whole.Trimmed);
+        Assert.True(trimmed.Trimmed, "the call graph was not trimmed");
+        Assert.True(trimmed.Width < whole.Width && trimmed.Height < whole.Height,
+            $"trimmed {trimmed.Width}x{trimmed.Height} against {whole.Width}x{whole.Height}");
+        Assert.False(trimmed.IsBlank);
     }
 
     [SkippableFact]

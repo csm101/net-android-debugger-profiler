@@ -182,6 +182,8 @@ method with its figures beside the source. The profiler's GUI draws them on requ
 - A written report is worth a page with the pictures in it: capture what carries the finding
   (`savePath` keeps a large PNG out of the conversation), then build the report around them,
   each picture next to the numbers it illustrates and the session id it came from.
+- Captures come back cut to what was drawn; `trim: false` when the empty room around it is
+  the point (how much of a canvas a graph fills, say).
 - Panels: `report` (the table, with its percentage bars), `tree` (the call tree), `graph`
   (callers and callees around the focused method), `source` (the figures beside the code,
   needs symbols), `memory` (allocations and heap growth), `summary`, `monitor`, `log`.

@@ -36,6 +36,16 @@ function BitmapToPng(ABitmap: TBitmap): TBytes;
 /// looks exactly like a render that was never asked for, and this tells them apart.
 function HasContent(ABitmap: TBitmap): Boolean;
 
+/// <summary>
+/// The same picture with its empty margins cut off, or nil when there is nothing to cut.
+/// A panel that draws on a canvas - the call graph, the charts - leaves most of it blank,
+/// and a report carrying that blank is mostly blank.
+/// The outermost pixels are the panel's own frame and its scroll bars, furniture rather
+/// than content, so the scan starts <paramref name="AFurniture" /> pixels inside them and
+/// what is found is padded by <paramref name="AMargin" />.
+/// </summary>
+function TrimToContent(ABitmap: TBitmap; AMargin: Integer = 14; AFurniture: Integer = 22): TBitmap;
+
 implementation
 
 uses
@@ -100,6 +110,77 @@ begin
     Result := BitmapToPng(LBitmap);
   finally
     LBitmap.Free;
+  end;
+end;
+
+/// The box holding everything that is not the background, scanned inside the furniture.
+/// False when the area is empty.
+function ContentBox(ABitmap: TBitmap; AFurniture: Integer; out ABox: TRect): Boolean;
+type
+  TRgb = record B, G, R: Byte; end;
+  PRgbRow = ^TRgbArray;
+  TRgbArray = array[0..0] of TRgb;
+var
+  LRow: PRgbRow;
+  LBack: TRgb;
+  LLeft, LTop, LRight, LBottom, LX, LY: Integer;
+begin
+  ABox := Rect(0, 0, 0, 0);
+  LLeft := AFurniture;
+  LTop := AFurniture;
+  LRight := ABitmap.Width - AFurniture;
+  LBottom := ABitmap.Height - AFurniture;
+  if (LRight - LLeft < 8) or (LBottom - LTop < 8) then
+    Exit(False);
+
+  // The background is whatever the canvas is painted with where nothing was drawn.
+  LRow := ABitmap.ScanLine[LTop];
+  LBack := LRow[LLeft];
+  ABox := Rect(LRight, LBottom, LLeft, LTop);
+  for LY := LTop to LBottom - 1 do
+  begin
+    LRow := ABitmap.ScanLine[LY];
+    for LX := LLeft to LRight - 1 do
+      if (Abs(LRow[LX].R - LBack.R) + Abs(LRow[LX].G - LBack.G) + Abs(LRow[LX].B - LBack.B)) > 12 then
+      begin
+        if LX < ABox.Left then ABox.Left := LX;
+        if LX > ABox.Right then ABox.Right := LX;
+        if LY < ABox.Top then ABox.Top := LY;
+        if LY > ABox.Bottom then ABox.Bottom := LY;
+      end;
+  end;
+  Result := (ABox.Right >= ABox.Left) and (ABox.Bottom >= ABox.Top);
+end;
+
+function TrimToContent(ABitmap: TBitmap; AMargin: Integer; AFurniture: Integer): TBitmap;
+var
+  LBox: TRect;
+  LWidth, LHeight: Integer;
+begin
+  if (ABitmap = nil) or (ABitmap.PixelFormat <> pf24bit) then
+    Exit(nil);
+  if not ContentBox(ABitmap, AFurniture, LBox) then
+    Exit(nil);
+
+  LBox.Left := Max(0, LBox.Left - AMargin);
+  LBox.Top := Max(0, LBox.Top - AMargin);
+  LBox.Right := Min(ABitmap.Width - 1, LBox.Right + AMargin);
+  LBox.Bottom := Min(ABitmap.Height - 1, LBox.Bottom + AMargin);
+  LWidth := LBox.Right - LBox.Left + 1;
+  LHeight := LBox.Bottom - LBox.Top + 1;
+  // Nothing worth cutting: hand back nil so the caller keeps the picture it has.
+  if (LWidth >= ABitmap.Width - 8) and (LHeight >= ABitmap.Height - 8) then
+    Exit(nil);
+
+  Result := TBitmap.Create;
+  try
+    Result.PixelFormat := pf24bit;
+    Result.SetSize(LWidth, LHeight);
+    Result.Canvas.CopyRect(Rect(0, 0, LWidth, LHeight), ABitmap.Canvas,
+      Rect(LBox.Left, LBox.Top, LBox.Right + 1, LBox.Bottom + 1));
+  except
+    Result.Free;
+    raise;
   end;
 end;
 

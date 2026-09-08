@@ -186,6 +186,7 @@ What a frontend fills a session in from, read from the project files rather than
 - [x] The GUI opens a session and draws report, tree, graph and summary with no window on screen; every picture is a PNG of a sensible size and not blank - `Device/GuiChannelTests.The_gui_opens_a_session_and_draws_its_panels_without_showing_a_window`
 - [x] A method can be focused by part of its name and the call graph follows it - `A_method_can_be_focused_and_the_call_graph_follows_it`
 - [x] A capture can be written to a file instead of travelling inline - `A_capture_can_be_saved_to_a_file_instead_of_travelling_inline`
+- [x] A canvas panel is cut to its drawing unless the whole panel is asked for - `A_canvas_panel_comes_back_cut_to_its_drawing_unless_the_whole_panel_is_asked_for`
 - [x] A refused command is an error with the reason in it (no such session, unknown panel) - `A_command_the_window_refuses_is_an_error_with_the_reason_in_it`
 - [x] Through MCP: gui_open, gui_view and gui_capture answer with a text block and an image block - `Device/GuiMcpTests.Gui_open_view_and_capture_answer_with_a_picture_of_the_panel`
 - [x] A capture with no window open says to call gui_open - `A_capture_without_an_open_window_says_to_open_one`

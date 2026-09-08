@@ -58,8 +58,9 @@ public sealed class GuiTools(SessionHost host, GuiHost gui)
     [McpServerTool(Name = "gui_capture", ReadOnly = true), Description(
         "Draws what the GUI is showing and returns it as a PNG: a panel by default, the whole window with " +
         "target=window. The window is never brought to the screen for this, and nothing of the user's desktop " +
-        "can end up in the picture - the GUI paints itself. Use it to show a call graph, a heap growth or a " +
-        "hot method's source instead of describing it, and to put pictures in a report.")]
+        "can end up in the picture - the GUI paints itself. Empty margins are cut off unless trim=false. Use it " +
+        "to show a call graph, a heap growth or a hot method's source instead of describing it, and to put " +
+        "pictures in a report.")]
     public async Task<CallToolResult> GuiCapture(
         [Description("Panel to draw (default: the one being shown)")] string? panel = null,
         [Description("panel (default) or window")] string target = "panel",
@@ -67,11 +68,12 @@ public sealed class GuiTools(SessionHost host, GuiHost gui)
         [Description("Window height in pixels (default 900)")] int height = 900,
         [Description("Host path to save the PNG to (folders are created)")] string? savePath = null,
         [Description("Return the image inline (default true). Set false with savePath to only save it.")] bool inline = true,
+        [Description("Cut the empty margins off (default true): a panel that draws on a canvas leaves most of it blank")] bool trim = true,
         CancellationToken ct = default)
     {
-        var picture = await gui.Existing().CaptureAsync(panel, target, width, height, savePath, inline, ct);
+        var picture = await gui.Existing().CaptureAsync(panel, target, width, height, savePath, inline, trim, ct);
 
-        var text = new StringBuilder($"{picture.Panel} panel: {picture.Width}x{picture.Height} px, {picture.Bytes} bytes");
+        var text = new StringBuilder($"{picture.Panel} panel: {picture.Width}x{picture.Height} px{(picture.Trimmed ? " (trimmed to the drawing)" : "")}, {picture.Bytes} bytes");
         if (picture.SavedTo is not null) text.Append(", saved to ").Append(picture.SavedTo);
         if (picture.IsBlank) text.Append(" - the panel is empty: this session has nothing for it");
         var result = new CallToolResult { Content = [new TextContentBlock { Text = text.ToString() }] };
