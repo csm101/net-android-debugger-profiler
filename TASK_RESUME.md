@@ -54,8 +54,21 @@ README), `build/package.ps1` extended into the `net-android-<version>` package (
 (`SKILL.md` 195 lines + `references/` build-matrix, reading-results, ui-driving, traps);
 `SkillTests` 6/6; package built (72.9 MB zip), `claude plugin validate` passes, the packaged server
 answers the profiler's MCP tests; `docs/ARCHITECTURE.md` decision 3, README, root TEST_CATALOG G,
-profiler PACKAGING. Not run on this machine: `install.cmd` (registers at user scope: the user's
-call). Not done, later phase: driving the GUI from the server.
+profiler PACKAGING. Hardened on 2026-09-08 after asking whether the install was the best it could be: the plugin
+registers `bin\NetAndroid.Mcp.exe` instead of `dotnet <dll>` (one dependency less between an
+installation and a server that starts), and `install.cmd` copies the package to
+`%LOCALAPPDATA%\Programs\net-android-<version>` and registers from there, so the unpacked folder
+can be deleted and a moved folder no longer breaks the registration (`/here` keeps the old
+behaviour, `/remove` takes the installed copy too). It also clears the "came from the internet"
+mark Windows puts on files from a downloaded archive, which is what raises the SmartScreen
+warning: the binaries are unsigned and will stay so (a certificate costs more per year than this
+project spends). Verified by installing the built package with `claude` off the PATH: the copy
+lands, the marks are gone, the installed `NetAndroid.Mcp.exe` answers an MCP handshake with 76
+tools, and `/remove` takes it away again. Nothing was registered on this machine: the user
+decides when to switch.
+
+Not done, later phase: a git marketplace so `/plugin update` works, and driving the GUI from the
+server (done since, see the task above).
 
 ## Last repository-level task, done: profiling the app the debugger runs (2026-09-08)
 

@@ -13,9 +13,16 @@ From the unpacked package folder, on Windows:
 install.cmd
 ```
 
-It registers the plugin with Claude Code (a local marketplace pointing at this folder, then
-the plugin from it) and puts a shortcut to the GUI on the desktop. `install.cmd /remove`
-undoes both. Without the `claude` command line the script says what to do by hand.
+It copies the package to `%LOCALAPPDATA%\Programs\net-android-<version>`, registers the plugin
+with Claude Code from there (a local marketplace pointing at that folder, then the plugin from
+it) and puts a shortcut to the GUI on the desktop. What you unpacked can then be deleted:
+a registration points at an absolute path, and a package registered where it was unpacked stops
+working the day that folder moves. `install.cmd /here` registers in place instead;
+`install.cmd /remove` undoes everything, the installed copy included. Without the `claude`
+command line the script says what to do by hand.
+
+The binaries are not code-signed: Windows marks files that came out of a downloaded archive and
+SmartScreen warns about them once, so the install clears that mark from the copy it makes.
 
 By hand, on any OS with Claude Code:
 
@@ -46,7 +53,7 @@ description; `/net-android:net-android` loads it by hand.
 .claude-plugin/plugin.json      the plugin, with the server registration
 .claude-plugin/marketplace.json this folder as a one-plugin marketplace
 skills/net-android/             the skill and its references
-bin/                            NetAndroid.Mcp.dll (the server) and its dependencies
+bin/                            NetAndroid.Mcp.exe (the server) and its dependencies
 tools/                          dotnet-dsrouter
 build/                          MSBuild targets for build-time weaving
 gui/                            NapGui.exe (Windows)

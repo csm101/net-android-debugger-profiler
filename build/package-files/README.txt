@@ -12,11 +12,12 @@ drive the app on the device through adb.
 WHAT IS IN THE BOX
 ------------------
 
-  install.cmd     registers the plugin with Claude Code and puts a shortcut to the GUI
-                  on the desktop (install.cmd /remove undoes both)
+  install.cmd     installs into %LOCALAPPDATA%\Programs, registers the plugin with Claude
+                  Code and puts a shortcut to the GUI on the desktop; what you unpacked can
+                  then be deleted (install.cmd /remove undoes all of it, /here skips the copy)
   .claude-plugin\ this folder as a Claude Code plugin: the server registration and
   skills\         the skill (skills\net-android\SKILL.md and its references)
-  bin\            NetAndroid.Mcp.dll (the unified server), the profiler's own server,
+  bin\            NetAndroid.Mcp.exe (the unified server), the profiler's own server,
                   nap.exe (control service and one-shot commands), nap-weave
   tools\          dotnet-dsrouter, used to reach the device's diagnostics port
   build\          MSBuild targets for build-time weaving, and the nap-weave they run

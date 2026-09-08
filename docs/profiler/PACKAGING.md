@@ -70,10 +70,17 @@ path in Settings.
 
 ## Installing
 
-`install.cmd` (Windows) registers the package as a Claude Code plugin at user scope - a local
-marketplace pointing at the unpacked folder, then the plugin from it - which brings the
+`install.cmd` (Windows) **copies the package** to `%LOCALAPPDATA%\Programs\net-android-<version>`
+and registers it from there, so the folder that was unpacked can be deleted: a registration is an
+absolute path, and a package registered where it was unpacked stops working the day that folder
+moves - a failure that looks like a broken server rather than a moved folder. `/here` registers in
+place instead, and `/remove` takes the installed copy with it. The binaries are unsigned (a
+certificate costs more per year than this project spends), so the install clears the
+"came from the internet" mark Windows puts on files extracted from a downloaded archive, which is
+what raises the SmartScreen warning. It registers a Claude Code plugin at user scope - a local
+marketplace pointing at the installed folder, then the plugin from it - which brings the
 `net-android` server and the skill together; when the plugin route fails it falls back to
-`claude mcp add` of `bin\NetAndroid.Mcp.dll` plus a copy of the skill under
+`claude mcp add` of `bin\NetAndroid.Mcp.exe` plus a copy of the skill under
 `%USERPROFILE%\.claude\skills\net-android` (`/mcp-only` asks for that form). It also puts a
 shortcut to `gui\NapGui.exe` on the desktop (`/no-shortcut` skips it). `install.cmd /remove`
 undoes all of it. It warns when adb is missing and says which dsrouter will be used. No

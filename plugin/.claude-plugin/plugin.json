@@ -7,8 +7,7 @@
   "keywords": ["dotnet", "android", "maui", "debugger", "profiler", "mcp"],
   "mcpServers": {
     "net-android": {
-      "command": "dotnet",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/bin/NetAndroid.Mcp.dll"]
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/NetAndroid.Mcp.exe"
     }
   }
 }

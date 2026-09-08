@@ -117,11 +117,13 @@ public sealed class SkillTests
     {
         using var plugin = JsonDocument.Parse(File.ReadAllText(Path.Combine(PluginRoot, ".claude-plugin", "plugin.json")));
         Assert.Equal(UnifiedServer.Name, plugin.RootElement.GetProperty("name").GetString());
+        // The package ships an executable, so the registration names it: one dependency less
+        // (dotnet on PATH) between an installation and a server that starts.
         var server = plugin.RootElement.GetProperty("mcpServers").GetProperty(UnifiedServer.Name);
-        Assert.Equal("dotnet", server.GetProperty("command").GetString());
-        var dll = server.GetProperty("args")[0].GetString()!;
-        Assert.StartsWith("${CLAUDE_PLUGIN_ROOT}/bin/", dll);
-        Assert.EndsWith(Path.GetFileName(Support.ServerDll("NetAndroid.Mcp")), dll);
+        var command = server.GetProperty("command").GetString()!;
+        Assert.StartsWith("${CLAUDE_PLUGIN_ROOT}/bin/", command);
+        Assert.EndsWith(Path.GetFileNameWithoutExtension(Support.ServerDll("NetAndroid.Mcp")) + ".exe", command);
+        Assert.False(server.TryGetProperty("args", out _), "the executable takes no arguments");
 
         using var marketplace = JsonDocument.Parse(File.ReadAllText(Path.Combine(PluginRoot, ".claude-plugin", "marketplace.json")));
         var entry = marketplace.RootElement.GetProperty("plugins").EnumerateArray().Single();
