@@ -131,6 +131,8 @@ assertion skipped.
 - [x] initialize + tools/list expose the P1 tool surface - `Initialize_and_tools_list_expose_the_P1_tool_surface`
 - [x] Read-only tools answer from a prepared sessions root (sessions, hotspots, report, tree, callers, threads) - `Read_only_tools_answer_from_the_prepared_session`
 - [x] Error paths return MCP errors and the server stays alive - `Error_paths_return_mcp_errors_instead_of_hanging`
+- [x] build_app through MCP installs the TestTarget for sampling and check_app confirms it; the
+  device suite no longer depends on an install done by hand - `Build_app_installs_the_test_target_ready_for_sampling` (device)
 - [x] profile_run on TestTarget through MCP, and the read-only tools answering from the
   session it created without being told its id - `Profile_run_produces_a_session_the_read_only_tools_can_answer_from` (device)
 - [x] profile_start / profile_status / profile_stop round trip -
@@ -180,6 +182,7 @@ What a frontend fills a session in from, read from the project files rather than
 - [x] Weaving during the build passes the targets file and escapes the commas of the callspec; without a callspec it is refused; a build that does not weave says nothing about weaving - `Weaving_during_the_build_passes_the_targets_and_the_callspec`, `Weaving_during_the_build_without_a_callspec_is_refused`, `A_build_that_does_not_weave_says_nothing_about_weaving`
 - [ ] The Setup dialog's own validation rules (which combinations it refuses): checked by hand on 2026-08-26 - a remembered runtime-provider choice on the net9 the reference application project showed the red line and disabled Start. No harness drives DevExpress controls, which is why this is not automated.
 - [x] Clearing the app's deployed assemblies is an adb step, never an msbuild property - `Clearing_the_deployed_assemblies_is_an_adb_step_and_never_an_msbuild_property`
+- [x] `BuildPurpose` (Fast/BuildPurposeTests): every on-device purpose is the one Debug build with diagnostics and fast deployment; build-time instrumenting weaves with the callspec and keeps the assemblies embedded, and is refused without a callspec; an unknown purpose lists the known ones; case and configuration override - `Every_on_device_purpose_is_the_same_debug_build_with_diagnostics_and_fast_deployment`, `Build_time_instrumenting_weaves_with_the_callspec_and_keeps_the_assemblies_embedded`, `Build_time_instrumenting_without_a_callspec_is_refused_with_the_reason`, `An_unknown_purpose_is_refused_listing_the_known_ones`, `The_purpose_is_case_insensitive_and_the_configuration_can_be_overridden`
 - [ ] A build actually run end to end, and the clearing of files/.__override__ with it (needs the android workload, a device and minutes): covered by hand through the GUI's Build & install
 
 ## Known flake

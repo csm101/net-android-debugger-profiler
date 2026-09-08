@@ -79,6 +79,66 @@ public sealed class ProfilerTools(SessionHost host)
 
     // ------------------------------------------------------------------ sessions
 
+    [McpServerTool(Name = "build_app"), Description(
+        "Builds and installs an app project the way the next step needs it, so nothing is rebuilt by hand. purpose: " +
+        "debug | sampling | heap | instrumenting (all the same build: Debug, EnableDiagnostics, fast deployment - one " +
+        "installed app serves the debugger and every on-device profiling mode) or instrumenting-build-time (the app keeps " +
+        "its assemblies inside the APK and is woven while it is built; needs callspec). Runs dotnet build -t:Install on the " +
+        "project and returns the outcome, the tail of the build log and the arguments the next call needs (packageName, " +
+        "symbolsDir, weaveMapPath). Rebuild when check_app reports a mode as not available, when the app must change " +
+        "deployment shape (clearDeployedAssemblies=true then), or when the sources changed; not otherwise.")]
+    public async Task<string> BuildApp(
+        [Description("Path to the Android application .csproj (list_app_projects finds it)")] string projectPath,
+        [Description("debug | sampling | heap | instrumenting | instrumenting-build-time")] string purpose = "sampling",
+        [Description("adb serial to install on (from list_devices); omit only with exactly one device")] string? deviceSerial = null,
+        [Description("Build configuration (default Debug; e.g. a Profiling configuration the project defines)")] string? configuration = null,
+        [Description("instrumenting-build-time: the callspec baked into the app, e.g. N:My.App.Services")] string? callspec = null,
+        [Description("instrumenting-build-time: assembly names to weave, comma-separated (default: the application project only; list_app_projects says which assemblies hold a callspec)")] string? weaveAssemblies = null,
+        [Description("Delete the app's fast-deployment directory on the device first: for an app switching from embedded assemblies, whose stale copies would stop it from starting")] bool clearDeployedAssemblies = false,
+        [Description("Install on the device (default) or only build")] bool install = true,
+        [Description("Build log lines to return (default 40)")] int logLines = 40,
+        CancellationToken ct = default)
+    {
+        var info = AppProjectFinder.Describe(projectPath, string.IsNullOrWhiteSpace(configuration) ? "Debug" : configuration)
+            ?? throw new McpException($"Not a .NET for Android application project: {projectPath}");
+        var assemblies = string.IsNullOrWhiteSpace(weaveAssemblies)
+            ? null
+            : weaveAssemblies.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        AppBuildRequest request;
+        try
+        {
+            request = BuildPurpose.ToRequest(purpose, projectPath, deviceSerial, configuration, callspec, assemblies,
+                clearDeployedAssemblies, info.ApplicationId, install);
+            AppBuilder.ArgumentsFor(request);
+        }
+        catch (ProfilerException e) { throw new McpException(e.Message); }
+
+        var log = new List<string>();
+        int exit;
+        try { exit = await AppBuilder.RunAsync(request, log.Add, ct); }
+        catch (ToolException e) { throw new McpException(e.Message); }
+
+        var sb = new StringBuilder();
+        sb.AppendLine(exit == 0 ? $"Build succeeded ({purpose})." : $"Build FAILED with exit code {exit} ({purpose}): the log below is the diagnosis.");
+        sb.AppendLine($"packageName={info.ApplicationId ?? "?"}  symbolsDir={info.OutputDir}" +
+                      (request.Weave ? $"  weaveMapPath={Path.Combine(info.OutputDir, "nap-weave.map")}" : ""));
+        if (exit == 0)
+            sb.AppendLine("next: " + NextStepAfterBuild(purpose, request, info));
+        sb.AppendLine("build log (tail):");
+        foreach (var line in log.TakeLast(Math.Max(1, logLines)))
+            sb.AppendLine("  " + line);
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string NextStepAfterBuild(string purpose, AppBuildRequest request, AppProjectInfo info) =>
+        purpose.Trim().ToLowerInvariant() switch
+        {
+            BuildPurpose.Debug => $"launch_app(deviceSerial, packageName: {info.ApplicationId}) - the app is already installed, so deploy=false.",
+            BuildPurpose.Heap => $"profile_run(deviceSerial, packageName: {info.ApplicationId}, mode: heap, snapshots: 2) then heap_diff.",
+            BuildPurpose.Instrumenting => $"profile_run(deviceSerial, packageName: {info.ApplicationId}, mode: instrumenting, callspec: <narrow>, weaveReferenceDirs: {info.OutputDir}, symbolsDir: {info.OutputDir}).",
+            BuildPurpose.InstrumentingBuildTime => $"profile_run(deviceSerial, packageName: {info.ApplicationId}, mode: instrumenting, engine: weaver, weaveMapPath: {Path.Combine(info.OutputDir, "nap-weave.map")}, symbolsDir: {info.OutputDir}); the callspec is already in the app.",
+            _ => $"profile_run(deviceSerial, packageName: {info.ApplicationId}, mode: sampling, symbolsDir: {info.OutputDir}).",
+        };
     [McpServerTool(Name = "profile_run"), Description(
         "One-shot profiling session: configures the device/app, collects for durationSeconds, analyzes into a SQLite database and returns a summary. " +
         "mode: sampling (CPU, default), instrumenting (exact enter/leave timings + allocations, needs callspec, restarts the app), heap (live-heap snapshot by type). " +

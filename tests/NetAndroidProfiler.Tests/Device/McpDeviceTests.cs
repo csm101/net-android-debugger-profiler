@@ -31,16 +31,40 @@ public sealed class McpDeviceTests : IDisposable
 
     public void Dispose() => _server.Dispose();
 
-    /// <summary>The app's build output, so the session records where each method lives.</summary>
-    private static string SymbolsDir()
+    private static string RepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidProfiler.slnx")))
             dir = dir.Parent;
-        string bin = Path.Combine(dir!.FullName, "TestTarget", "Profiler", "bin", "Debug");
+        return dir?.FullName ?? throw new InvalidOperationException("repository root not found above " + AppContext.BaseDirectory);
+    }
+
+    /// <summary>The app's build output, so the session records where each method lives.</summary>
+    private static string SymbolsDir()
+    {
+        string bin = Path.Combine(RepoRoot(), "TestTarget", "Profiler", "bin", "Debug");
         return Directory.Exists(bin)
             ? Directory.GetDirectories(bin).FirstOrDefault(d => File.Exists(Path.Combine(d, "TestTarget.pdb"))) ?? bin
             : bin;
+    }
+
+    /// <summary>
+    /// build_app prepares the app the way the next call needs it, and check_app is the judge of
+    /// that. It also makes the device suite self-sufficient: whatever was installed before, the
+    /// TestTarget is now the build the other tests expect.
+    /// </summary>
+    [Fact]
+    public void Build_app_installs_the_test_target_ready_for_sampling()
+    {
+        string project = Path.Combine(RepoRoot(), "TestTarget", "Profiler", "TestTarget.csproj");
+        string built = _server.CallTool("build_app", new { projectPath = project, purpose = "sampling", deviceSerial = Serial });
+        Assert.Contains("Build succeeded", built);
+        Assert.Contains($"packageName={Package}", built);
+        Assert.Contains("symbolsDir=", built);
+        Assert.Contains("profile_run", built);
+
+        string check = _server.CallTool("check_app", new { deviceSerial = Serial, packageName = Package });
+        Assert.Contains("Sampling: ok", check);
     }
 
     [Fact]
