@@ -100,7 +100,7 @@ type
     function SelectedMode: string;
     function SelectedEngine: string;
     function WeaveMapPath: string;
-    function CallspecOutsideTheApp(out AWhere: string): Boolean;
+    procedure EnsureAssembliesForCallspec(out AAdded: string);
     function ChosenAssemblies: TArray<string>;
     procedure LoadCandidates(const AProject: TAppProject);
   public
@@ -521,53 +521,69 @@ begin
     or LName.StartsWith(ANamespaceOrType + '+', True);
 end;
 
-/// Whether the chosen callspec reaches an assembly the build is not being told to weave.
-/// The build rewrites the application's own assembly plus the ones named in Assemblies, so
-/// this is not "a library cannot be profiled" - it is "name it".
-function TSetupDialog.CallspecOutsideTheApp(out AWhere: string): Boolean;
+/// The assemblies a callspec reaches, put into the field instead of demanded from whoever
+/// is filling the dialog. The build weaves the application's own assembly and the ones
+/// named in Assemblies; which candidate came out of which assembly is something this
+/// dialog already knows, so asking for it back was asking somebody to guess what was on
+/// the screen. Names are added, never removed: one that is not reached weaves nothing.
+procedure TSetupDialog.EnsureAssembliesForCallspec(out AAdded: string);
 var
   LProject: TAppProject;
-  LPart, LOwn, LName, LPrefix, LNamed: string;
+  LPart, LOwn, LName, LPrefix, LNamed, LAssembly: string;
   LChosen: TArray<string>;
+  LMissing: TStringList;
   I: Integer;
-  LCovered: Boolean;
+  LKnown: Boolean;
 begin
-  AWhere := '';
-  Result := False;
+  AAdded := '';
   if not SelectedProject(LProject) or (Length(FCandidates) = 0) then
     Exit;
   LOwn := LProject.AssemblyName;
   LChosen := ChosenAssemblies;
-  for LPart in Trim(FCallspec.Text).Split([','], TStringSplitOptions.ExcludeEmpty) do
-  begin
-    LPrefix := Trim(LPart);
-    if LPrefix.StartsWith('-') then
-      Continue;
-    LName := LPrefix;
-    if (Length(LName) > 2) and (LName[2] = ':') then
-      LName := Copy(LName, 3, MaxInt);
-    for I := 0 to High(FCandidates) do
+  LMissing := TStringList.Create;
+  try
+    LMissing.Sorted := True;
+    LMissing.Duplicates := dupIgnore;
+    for LPart in Trim(FCallspec.Text).Split([','], TStringSplitOptions.ExcludeEmpty) do
     begin
-      if (FCandidates[I].Assembly = '') or SameText(FCandidates[I].Assembly, LOwn) then
+      LPrefix := Trim(LPart);
+      if LPrefix.StartsWith('-') then
         Continue;
-      if not CallspecCovers(LName, FCandidates[I].Callspec) then
-        Continue;
-      LCovered := False;
-      for LNamed in LChosen do
-        if SameText(LNamed, FCandidates[I].Assembly) then
+      LName := LPrefix;
+      if (Length(LName) > 2) and (LName[2] = ':') then
+        LName := Copy(LName, 3, MaxInt);
+      for I := 0 to High(FCandidates) do
+      begin
+        if (FCandidates[I].Assembly = '') or not CallspecCovers(LName, FCandidates[I].Callspec) then
+          Continue;
+        // A candidate can live in more than one assembly, and says so comma separated.
+        for LAssembly in FCandidates[I].Assembly.Split([','], TStringSplitOptions.ExcludeEmpty) do
         begin
-          LCovered := True;
-          Break;
+          if SameText(Trim(LAssembly), LOwn) then
+            Continue;
+          LKnown := False;
+          for LNamed in LChosen do
+            if SameText(LNamed, Trim(LAssembly)) then
+            begin
+              LKnown := True;
+              Break;
+            end;
+          if not LKnown then
+            LMissing.Add(Trim(LAssembly));
         end;
-      if LCovered then
-        Continue;
-      AWhere := Format('%s reaches %s in %s, which is not in Assemblies: add it there',
-        [LPrefix, FCandidates[I].Callspec, FCandidates[I].Assembly]);
-      Exit(True);
+      end;
     end;
+    if LMissing.Count = 0 then
+      Exit;
+    if Trim(FAssemblies.Text) = '' then
+      FAssemblies.Text := string.Join(', ', LMissing.ToStringArray)
+    else
+      FAssemblies.Text := Trim(FAssemblies.Text) + ', ' + string.Join(', ', LMissing.ToStringArray);
+    AAdded := string.Join(', ', LMissing.ToStringArray);
+  finally
+    LMissing.Free;
   end;
 end;
-
 procedure TSetupDialog.DeferredScan(Sender: TObject);
 var
   I: Integer;
@@ -717,20 +733,11 @@ begin
   Validate;
 end;
 
-/// Choosing a callspec settles which assemblies have to be woven, because the candidate
-/// came out of them. A callspec typed by hand leaves the field alone: it may well name
-/// something this dialog never listed.
+/// Choosing a callspec settles which assemblies have to be woven, because the candidates
+/// came out of them. Validate adds what is reached and says what it added, for a callspec
+/// picked from the list and for one typed by hand alike.
 procedure TSetupDialog.CallspecChanged(Sender: TObject);
-var
-  I: Integer;
 begin
-  for I := 0 to High(FCandidates) do
-    if FCandidates[I].Callspec = FCallspec.Text then
-    begin
-      if FCandidates[I].Assembly <> '' then
-        FAssemblies.Text := FCandidates[I].Assembly;
-      Break;
-    end;
   Validate;
 end;
 
@@ -832,11 +839,16 @@ end;
 procedure TSetupDialog.Validate;
 var
   LProject: TAppProject;
-  LProblem, LOutside: string;
+  LProblem, LAdded: string;
   LWeaves: Boolean;
 begin
   LWeaves := (SelectedEngine = 'weaver') or (SelectedEngine = 'weaver-tree');
   LProblem := '';
+  LAdded := '';
+  // Whatever the callspec reaches has to be woven, and the dialog knows where it lives:
+  // it fills the field in and says so, rather than refusing until somebody types it.
+  if SelectedMode = 'instrumenting' then
+    EnsureAssembliesForCallspec(LAdded);
 
   if SelectedSerial = '' then
     LProblem := 'Pick a device.'
@@ -858,9 +870,6 @@ begin
     LProblem := 'A rewriting profiler changes the app assemblies where they are deployed, and '
       + 'with them inside the APK it cannot reach them. Either leave fast deployment on, or tick '
       + '"Instrument during the build".'
-  else if FBuildWeaving.Checked and CallspecOutsideTheApp(LOutside) then
-    LProblem := Format('The build weaves the application''s assembly and the ones named in '
-      + 'Assemblies, and %s.', [LOutside])
   else if FBuildWeaving.Checked and (WeaveMapPath <> '') and not TFile.Exists(WeaveMapPath) then
     LProblem := Format('The build has not woven this app yet: %s is missing. Press Build & install '
       + 'with "Instrument during the build" ticked - that map is what the session reads instead of '
@@ -874,7 +883,11 @@ begin
       + 'Choose one of the rewriting profilers.', [LProject.Name, LProject.TargetFramework]);
 
   FValidation.Caption := LProblem;
-  FValidation.Visible := LProblem <> '';
+  // A note is not a refusal: what was added is worth seeing, and Start stays enabled.
+  if (LProblem = '') and (LAdded <> '') then
+    FValidation.Caption := Format('Assemblies: added %s, which the callspec reaches. The build '
+      + 'weaves the application''s assembly and the ones named there.', [LAdded]);
+  FValidation.Visible := FValidation.Caption <> '';
   FOk.Enabled := LProblem = '';
 end;
 

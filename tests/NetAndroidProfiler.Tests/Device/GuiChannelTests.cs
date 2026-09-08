@@ -102,6 +102,50 @@ public class GuiChannelTests
         Assert.False(trimmed.IsBlank);
     }
 
+    /// <summary>
+    /// A window nobody can see is a window nobody closes: when the process that started it is
+    /// killed rather than shut down, the window has to go by itself - and take the control
+    /// service it started with it. Found the hard way, by a killed test server whose leftovers
+    /// blocked a build hours later.
+    /// </summary>
+    [SkippableFact]
+    public async Task The_window_closes_when_the_process_that_owns_it_is_killed()
+    {
+        Skip.If(ToolLocator.FindGui() is null, "NapGui.exe is not built: run gui\\\\build-gui.cmd (needs RAD Studio).");
+        // A stand-in owner, so that killing it proves the point without killing this test run.
+        using var owner = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c pause")
+        {
+            RedirectStandardInput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        })!;
+
+        var gui = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ToolLocator.FindGui()!)
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "--control", $"--parent-pid={owner.Id}" },
+        })!;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            var ready = await gui.StandardOutput.ReadLineAsync(cts.Token);
+            Assert.Contains("ready", ready ?? "");
+
+            owner.Kill();
+            await gui.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.True(gui.HasExited, "the window outlived the process that owned it");
+        }
+        finally
+        {
+            if (!gui.HasExited) gui.Kill(entireProcessTree: true);
+            gui.Dispose();
+            if (!owner.HasExited) owner.Kill();
+        }
+    }
+
     [SkippableFact]
     public async Task A_command_the_window_refuses_is_an_error_with_the_reason_in_it()
     {

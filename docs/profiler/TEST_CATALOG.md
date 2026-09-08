@@ -180,13 +180,14 @@ What a frontend fills a session in from, read from the project files rather than
 - [x] A project that does not exist is refused before msbuild starts - `A_project_that_does_not_exist_is_refused_before_msbuild_is_started`
 - [x] Keeping the assemblies in the APK is stated explicitly, not left to the project's default - `Keeping_the_assemblies_in_the_apk_is_said_explicitly`
 - [x] Weaving during the build passes the targets file and escapes the commas of the callspec; without a callspec it is refused; a build that does not weave says nothing about weaving - `Weaving_during_the_build_passes_the_targets_and_the_callspec`, `Weaving_during_the_build_without_a_callspec_is_refused`, `A_build_that_does_not_weave_says_nothing_about_weaving`
-- [ ] The Setup dialog's own validation rules (which combinations it refuses): checked by hand on 2026-08-26 - a remembered runtime-provider choice on the net9 the reference application project showed the red line and disabled Start. No harness drives DevExpress controls, which is why this is not automated.
+- [ ] The Setup dialog's own validation rules (which combinations it refuses) and the assemblies it fills in for a callspec: checked by hand (2026-08-26 the refusals; 2026-09-08 the filling-in). No harness drives DevExpress controls, which is why this is not automated; `gui/tests/smoke.ps1` only proves the dialog opens.
 - [x] Clearing the app's deployed assemblies is an adb step, never an msbuild property - `Clearing_the_deployed_assemblies_is_an_adb_step_and_never_an_msbuild_property`
 - [x] The GUI as a renderer (Device/GuiChannelTests, Device/GuiMcpTests; no device, but they need the built NapGui.exe and skip without it):
 - [x] The GUI opens a session and draws report, tree, graph and summary with no window on screen; every picture is a PNG of a sensible size and not blank - `Device/GuiChannelTests.The_gui_opens_a_session_and_draws_its_panels_without_showing_a_window`
 - [x] A method can be focused by part of its name and the call graph follows it - `A_method_can_be_focused_and_the_call_graph_follows_it`
 - [x] A capture can be written to a file instead of travelling inline - `A_capture_can_be_saved_to_a_file_instead_of_travelling_inline`
 - [x] A canvas panel is cut to its drawing unless the whole panel is asked for - `A_canvas_panel_comes_back_cut_to_its_drawing_unless_the_whole_panel_is_asked_for`
+- [x] The window ends when the process that owns it is killed rather than closed (--parent-pid), so no hidden window and no control service outlive their server - `The_window_closes_when_the_process_that_owns_it_is_killed`
 - [x] A refused command is an error with the reason in it (no such session, unknown panel) - `A_command_the_window_refuses_is_an_error_with_the_reason_in_it`
 - [x] Through MCP: gui_open, gui_view and gui_capture answer with a text block and an image block - `Device/GuiMcpTests.Gui_open_view_and_capture_answer_with_a_picture_of_the_panel`
 - [x] A capture with no window open says to call gui_open - `A_capture_without_an_open_window_says_to_open_one`

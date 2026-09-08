@@ -38,6 +38,12 @@ function ExecuteCommand(const ARequest: TJSONObject): TJSONObject;
 /// to standard output; nothing else in the process may write there.
 procedure StartControlChannel;
 
+/// End this window when the process that owns it does. A driven window nobody can see is
+/// a window nobody will close: when the server that started it is killed rather than shut
+/// down, without this it stays for the rest of the day, holding its files.
+/// Same guard the GUI puts on the control service it starts (--parent-pid).
+procedure WatchParentProcess(APid: Cardinal);
+
 /// True while the channel is running, so the window knows it is being driven.
 function ControlChannelRunning: Boolean;
 
@@ -63,6 +69,9 @@ type
 
 var
   GChannel: TChannelThread = nil;
+  /// The process this window belongs to, reported in the ready line so that a client can
+  /// see its own pid come back and know the guard is on.
+  GParentPid: Cardinal = 0;
   GOutput: THandleStream = nil;
   GWriteLock: TObject = nil;
 
@@ -332,18 +341,74 @@ begin
       // End of input: the process that owns this window has gone, so the window goes too.
       if FReader.EndOfStream then
       begin
-        TThread.Queue(nil,
-          procedure
-          begin
-            if MainForm <> nil then
-              PostMessage(MainForm.Handle, WM_CLOSE, 0, 0);
-          end);
+        if MainForm <> nil then
+          PostMessage(MainForm.Handle, WM_CLOSE, 0, 0);
         Break;
       end;
       Continue;
     end;
     HandleLine(LLine);
   end;
+end;
+
+procedure EndBecauseTheOwnerIsGone; forward;
+
+type
+  /// Waits on the owner's handle and closes the window when it is signalled.
+  TParentWatchThread = class(TThread)
+  private
+    FParent: THandle;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(AParent: THandle);
+  end;
+
+constructor TParentWatchThread.Create(AParent: THandle);
+begin
+  FParent := AParent;
+  FreeOnTerminate := True;
+  inherited Create(False);
+end;
+
+procedure TParentWatchThread.Execute;
+begin
+  NameThreadForDebugging('nap-gui-parent-watch');
+  WaitForSingleObject(FParent, INFINITE);
+  CloseHandle(FParent);
+  EndBecauseTheOwnerIsGone;
+end;
+
+/// The owner is gone, so this window has to go. It is asked politely first; measured on
+/// this window, a WM_CLOSE that closes it perfectly well when it came from the channel's
+/// end of input does not always take here, and a window nobody can see is a window nobody
+/// will ever close by hand - so the process ends itself if the polite way has not worked
+/// within a few seconds. Nothing is lost: a driven window writes neither layout nor
+/// settings, and its session database belongs to the profiler, not to it.
+procedure EndBecauseTheOwnerIsGone;
+begin
+  if MainForm <> nil then
+    PostMessage(MainForm.Handle, WM_CLOSE, 0, 0);
+  Sleep(3000);
+  ExitProcess(0);
+end;
+
+procedure WatchParentProcess(APid: Cardinal);
+var
+  LParent: THandle;
+begin
+  GParentPid := APid;
+  if APid = 0 then
+    Exit;
+  LParent := OpenProcess(SYNCHRONIZE, False, APid);
+  // A parent that is already gone means this window has nobody: end the same way, but not
+  // on this thread - the caller is still setting the window up.
+  if LParent = 0 then
+  begin
+    TThread.CreateAnonymousThread(EndBecauseTheOwnerIsGone).Start;
+    Exit;
+  end;
+  TParentWatchThread.Create(LParent);
 end;
 
 procedure StartControlChannel;
@@ -355,7 +420,7 @@ begin
   GChannel := TChannelThread.Create;
   // The readiness line, the way dsrouter announces itself: the client waits for it
   // instead of sleeping and hoping.
-  WriteLine(Format('{"ready":true,"pid":%d,"gui":%s}', [GetCurrentProcessId,
+  WriteLine(Format('{"ready":true,"pid":%d,"parent":%d,"gui":%s}', [GetCurrentProcessId, GParentPid,
     TJSONString.Create(ParamStr(0)).ToJSON]));
 end;
 

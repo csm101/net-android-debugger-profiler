@@ -61,6 +61,9 @@ public sealed class GuiChannel : IAsyncDisposable
             StandardOutputEncoding = Encoding.UTF8,
         };
         psi.ArgumentList.Add("--control");
+        // The window belongs to this process: a server that is killed rather than closed would
+        // otherwise leave a hidden window behind, holding its files, for the rest of the day.
+        psi.ArgumentList.Add($"--parent-pid={Environment.ProcessId}");
 
         var process = Process.Start(psi) ?? throw new ToolException($"Could not start {exe}.");
         var channel = new GuiChannel(process) { ExecutablePath = exe };

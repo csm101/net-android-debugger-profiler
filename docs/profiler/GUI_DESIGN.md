@@ -481,6 +481,32 @@ describing it in numbers.
   script with no channel; `gui/tests/smoke.ps1` checks it.
 - The other side is `src/NetAndroidProfiler.Core/Gui/GuiChannel.cs` (the process and the
   protocol) and the `gui_*` MCP tools over it.
+## The Setup dialog fills in what it already knows (2026-09-08)
+
+The dialog used to refuse a callspec that reached an assembly missing from the Assemblies
+field - "add it there" - and send the reader back to the picker to type a name the dialog
+had on screen. It now adds every assembly the callspec reaches (`EnsureAssembliesForCallspec`,
+called from `Validate`) and says what it added, without blocking Start. Names are added and
+never removed: an assembly the callspec does not reach weaves nothing, while removing one
+somebody typed on purpose would lose it. Picking a candidate no longer overwrites the field
+either, which used to drop the assemblies of the other parts of a multi-part callspec.
+
+## The window dies with its owner (2026-09-08)
+
+`--parent-pid=<n>` in control mode: the window watches that process and ends when it goes. The
+same guard the GUI puts on the `nap serve` it starts, for the same reason - a server that is
+killed rather than shut down would otherwise leave a hidden window, and its control service with
+it, holding files for the rest of the day. Found exactly that way: a killed test server left a
+window whose `nap serve` blocked a build hours later. The ready line reports the owner it was
+given, so a client can see its own pid come back and know the guard is on.
+
+It asks politely and then insists: a `WM_CLOSE` posted when the owner dies does not reliably
+close this never-shown window, although the identical message closes it when the channel's
+input ends (measured, both ways, 2026-09-08). So the guard posts it and, three seconds later,
+ends the process. Nothing is lost by that: a driven window writes neither layout nor settings,
+and the session database is the profiler's, not the window's. A window nobody can see is a
+window nobody will close by hand, which is the whole reason for the guard.
+
 ## Open questions
 
 - (decided) Call Graph: kept. The trees answer "where did the time go"; the graph

@@ -148,6 +148,20 @@ begin
   Result := False;
 end;
 
+/// --parent-pid=<n>: the process this window belongs to. When it goes, the window goes with
+/// it; a hidden window whose owner was killed would otherwise stay for the rest of the day.
+function ParentPid: Cardinal;
+var
+  LIndex: Integer;
+  LValue: Integer;
+begin
+  for LIndex := 1 to ParamCount do
+    if ParamStr(LIndex).StartsWith('--parent-pid=', True) then
+      if TryStrToInt(ParamStr(LIndex).Substring(Length('--parent-pid=')), LValue) and (LValue > 0) then
+        Exit(Cardinal(LValue));
+  Result := 0;
+end;
+
 /// --render=<panel>:<file>: the same window, used once for one picture. Like --control
 /// it is a window nobody looks at, so it takes the same path: no splash, no saved
 /// layout, and the arrangement this code builds rather than the one somebody left.
@@ -181,7 +195,12 @@ begin
       GDrivenWindow := True;
       Application.CreateForm(TMainForm, MainForm);
       if ControlMode then
+      begin
+        // The guard goes on before the window announces itself: an owner that is already
+        // gone should not get an answer at all.
+        WatchParentProcess(ParentPid);
         StartControlChannel;
+      end;
     end
     else
     begin
