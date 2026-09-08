@@ -209,9 +209,10 @@ The repository lives at `csm101/net-android-debugger-profiler`. It was created u
 `mca-software` organization and moved to the personal account once it was clear it would not
 become a product with a licence holder and customers behind it: the organization is for what is
 sold or supported, the personal account for what is published because it may help somebody - and
-that account is where this author's audience already is. GitHub keeps a permanent redirect from
-the old path, so older clones and links still work; a repository of the same name must never be
-created in the organization again, or that redirect breaks.
+that account is where this author's audience already is. The only clone is the working folder, and
+its remote was repointed with the move, so nothing depends on the redirect GitHub keeps from the
+old path - it is there for links written elsewhere, and it breaks if a repository of the same name
+is ever created in the organization again.
 
 Still naming the organization, on purpose, and both are right: `LICENSE` and the copyright headers
 (the company holds the copyright wherever the code is hosted), and the VS Code extension's
