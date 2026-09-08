@@ -168,6 +168,27 @@ Details: [references/ui-driving.md](references/ui-driving.md).
   user if the keyboard loops.
 - `wake_screen` before anything on a device that went dark: an off screen has no UI hierarchy.
 
+## Showing results, not only describing them
+
+Some findings are a picture: a call graph, the growth between two heap snapshots, a hot
+method with its figures beside the source. The profiler's GUI draws them on request.
+
+- `gui_open` (a session id, a panel) starts the GUI **without showing a window**, `gui_view`
+  chooses the panel and focuses a method, `gui_capture` returns the panel as a PNG in the
+  answer. Nothing appears on anyone's screen and nothing of their desktop can end up in the
+  picture: the GUI paints itself. `gui_close` when done.
+- That is the default because the person asking may not be at that machine. `gui_show` puts
+  the window on their screen only when they ask for it ("open it", "show me on screen").
+- A written report is worth a page with the pictures in it: capture what carries the finding
+  (`savePath` keeps a large PNG out of the conversation), then build the report around them,
+  each picture next to the numbers it illustrates and the session id it came from.
+- Panels: `report` (the table, with its percentage bars), `tree` (the call tree), `graph`
+  (callers and callees around the focused method), `source` (the figures beside the code,
+  needs symbols), `memory` (allocations and heap growth), `summary`, `monitor`, `log`.
+  `target: window` draws the whole window instead of one panel.
+- The GUI ships with the server. Where it is missing, say so and report in words: it is a
+  convenience, never a prerequisite for an answer.
+
 ## Traps, one line each
 
 Full list with symptom, cause and remedy: [references/traps.md](references/traps.md).

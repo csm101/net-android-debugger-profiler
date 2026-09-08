@@ -69,6 +69,21 @@ foreach ($session in $Sessions) {
     }
     Remove-Item $out -ErrorAction SilentlyContinue
   }
+  # The rendering path: one picture of a panel, written and quit. It is what the control
+  # channel does for an agent, reachable from a script without the channel.
+  foreach ($panel in @('report', 'graph')) {
+    $shot = Join-Path ([System.IO.Path]::GetTempPath()) "nap-smoke-$panel.png"
+    Remove-Item $shot -ErrorAction SilentlyContinue
+    Start-Process -FilePath $exePath -ArgumentList @("`"$db`"", "--render=${panel}:$shot") -Wait
+    if ((Test-Path $shot) -and (Get-Item $shot).Length -gt 2000) {
+      Write-Host "  ok    render $panel ($((Get-Item $shot).Length) bytes)"
+    }
+    else {
+      Write-Host "  FAIL  render $panel produced nothing usable"
+      $failures++
+    }
+    Remove-Item $shot -ErrorAction SilentlyContinue
+  }
   Write-Output ''
 }
 

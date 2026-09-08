@@ -55,13 +55,23 @@ folder installable — including the skill in `skills/net-android/`. Building a 
 **With an agent.** Ask Claude Code to profile or debug the app. The plugin's skill is the
 operating guide: it starts with `list_devices`, `list_app_projects` and `check_app`, builds the
 app for the right purpose with `build_app`, chooses the profiling mode the question needs,
-reads the numbers correctly and knows the traps. Read it at
+reads the numbers correctly and knows the traps. When a finding is easier seen than told, it
+has the GUI draw the panel and shows the picture. Read it at
 [plugin/skills/net-android/SKILL.md](plugin/skills/net-android/SKILL.md).
 
 **With the GUI.** `gui\NapGui.exe`: point it at a solution, a project or a source folder, and it
 fills in the package, the build output and the callspec from the project files, builds and
 installs the app, runs the session and shows the results. Every session is a SQLite database
 that any frontend — or any SQLite client — reads.
+
+The report names the hot methods and shows their share; the call graph puts one of them
+between its callers and its callees. Both pictures below are of the example app's "slow
+search" screen, and both were drawn by the GUI itself on request — the agent asks for a
+panel and gets the image back, with no window on anyone's screen:
+
+![The report panel: hottest methods of a sampling session, with their share of the samples](docs/images/gui-report.png)
+
+![The call graph around the hot method, with its callers above and its sample counts](docs/images/gui-call-graph.png)
 
 **With the command line.** `nap doctor` says what the machine offers, `nap devices` lists them,
 `nap run --package <id> --mode sampling --duration 20` profiles and prints where the result
@@ -159,7 +169,7 @@ gui/                                                  the profiler's Delphi + De
 build/                                                packaging and build-time weaving targets
 examples/                                             ProfileMeExample, the profiler GUI tutorial
 vscode/                                               the debugger's VS Code extension and DAP client notes
-docs/                                                 ARCHITECTURE.md, KNOWN_UNKNOWNS.md; docs/debugger/, docs/profiler/
+docs/                                                 ARCHITECTURE.md, KNOWN_UNKNOWNS.md; docs/debugger/, docs/profiler/, images/
 ```
 
 Each product keeps its living documents under `docs/<component>/`: `ARCHITECTURE.md`,

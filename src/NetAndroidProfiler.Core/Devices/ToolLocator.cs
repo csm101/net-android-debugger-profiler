@@ -22,6 +22,28 @@ public static class ToolLocator
     public static string? FindDsRouter() => FindDotnetTool("dotnet-dsrouter");
 
     /// <summary>
+    /// The desktop GUI. It ships in the package's gui/ folder next to bin/, and lives in
+    /// gui/ at the root of a source tree, so both are searched - the same shape as
+    /// <see cref="FindWeavingTargets"/>. The GUI is optional: a machine without it profiles
+    /// exactly as well, it just has nothing to draw a picture with.
+    /// </summary>
+    public static string? FindGui(string? appBase = null)
+    {
+        const string exe = "NapGui.exe";
+        var fromEnv = Environment.GetEnvironmentVariable("NETANDROIDPROFILER_NAPGUI");
+        if (!string.IsNullOrEmpty(fromEnv) && File.Exists(fromEnv)) return Path.GetFullPath(fromEnv);
+        if (!OperatingSystem.IsWindows()) return null;
+
+        var dir = new DirectoryInfo(appBase ?? AppContext.BaseDirectory);
+        for (int i = 0; dir is not null && i < 8; i++, dir = dir.Parent)
+        {
+            foreach (var candidate in new[] { Path.Combine(dir.FullName, exe), Path.Combine(dir.FullName, "gui", exe) })
+                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// The msbuild targets that weave an app while it is built, for apps that keep their
     /// assemblies inside the APK and cannot be rewritten on the device. Shipped in the
     /// package's build/ folder, and found in the repository the same way.
@@ -66,6 +88,11 @@ public static class ToolLocator
             "Routes the app's diagnostics port over adb; every profiling session goes through it.",
             InstallCommand: "dotnet tool install -g dotnet-dsrouter",
             "Install it as a global .NET tool: dotnet tool install -g dotnet-dsrouter"),
+        new ToolStatus(
+            "NapGui", FindGui(), Required: false,
+            "Shows a session, and draws its panels for whoever asks: the pictures in a report come from it.",
+            InstallCommand: null,
+            "It ships in the package's gui folder, beside bin. Point NETANDROIDPROFILER_NAPGUI at it if it lives elsewhere."),
         new ToolStatus(
             "dotnet", FindDotnet(), Required: false,
             "Builds and installs an app project from the GUI; not needed to profile an app that is already installed.",

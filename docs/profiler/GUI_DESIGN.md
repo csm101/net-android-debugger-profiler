@@ -445,6 +445,37 @@ call stack must not be read through a keyhole.
 - Saved layouts carry the toolbars as well as the panels: `<name>.ini` holds the
   docking layout, `<name>.bars.ini` the bar manager's.
 
+## The control channel: the window as a renderer (2026-09-08)
+
+`NapGui.exe --control` is the same window, driven by another program instead of a mouse:
+one JSON object per line on standard input, one per line on standard output
+(`gui/src/uGuiControl.pas`). It exists so that an agent can show what it found - a call
+graph, the growth between two heap snapshots, a hot method beside its source - instead of
+describing it in numbers.
+
+- **The window is not shown.** A control that has a handle paints itself into a bitmap
+  whether or not it is on screen, which a probe settled before any of this was written: a
+  skinned `TcxGrid` and a hand-drawn `TPaintBox` both render on a form that was never
+  shown, and one `PaintTo` of their container brings both. So a picture costs nothing on
+  the user's screen, works while the screen is locked, and cannot contain anything of
+  their desktop. `show` puts the window up when somebody asks for it.
+- **Commands**: `status`, `open` (a session.db, or the folder holding one), `view`
+  (panel, method to focus, filter, sort), `capture` (panel or whole window, size, an
+  optional file, base64 PNG in the answer), `show`, `hide`, `close`. Each answer carries
+  the id of its request and either `ok` with what was done, or `error` with what to do
+  instead. `uGuiControl.ExecuteCommand` knows nothing about the transport, so a pipe or a
+  socket can be put in front of it later without touching the commands.
+- **Every command runs on the main thread** (a render is a paint), which is what the
+  reader thread's `Synchronize` is for; the answer is written from the same block, so
+  answers keep the order of their requests.
+- **A driven window is not somebody's window**: it does not load the saved layout and does
+  not write it on exit (`GDrivenWindow`), so a picture does not depend on where a panel was
+  last dragged, and arranging panels for a capture never disturbs the arrangement a person
+  chose. `GiveRoomTo` gives the panel being captured the room to be readable.
+- **`--render=<panel>:<file.png>`** is the same rendering from the command line, for a
+  script with no channel; `gui/tests/smoke.ps1` checks it.
+- The other side is `src/NetAndroidProfiler.Core/Gui/GuiChannel.cs` (the process and the
+  protocol) and the `gui_*` MCP tools over it.
 ## Open questions
 
 - (decided) Call Graph: kept. The trees answer "where did the time go"; the graph

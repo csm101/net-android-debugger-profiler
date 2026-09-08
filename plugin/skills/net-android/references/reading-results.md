@@ -86,6 +86,14 @@ Run the same spec twice (before and after a change, or with and without the susp
 feature), then call the same read-only tool with each `sessionId`. Compare percentages and
 call counts rather than raw sample counts: durations never match exactly.
 
+## A picture of it
+
+Every view above is also a panel of the profiler's GUI, which draws it on request:
+`gui_open` (a session), `gui_view` (a panel, a method to focus), `gui_capture` (the PNG).
+The window is not shown while this happens, so it works when the person asking is not at
+that machine; `gui_show` puts it on their screen when they ask. Use it when the shape of
+the thing - a call graph, a growth between snapshots - says more than the numbers.
+
 ## The report
 
 `profile_report` summarizes a session in the words of its mode and names the database file.

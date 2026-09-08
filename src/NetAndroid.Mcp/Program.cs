@@ -22,6 +22,8 @@ builder.Services.AddSingleton<NetAndroidProfiler.Mcp.SessionHost>();
 builder.Services.AddSingleton<NetAndroidDebugger.Mcp.DebuggerTools>();
 builder.Services.AddSingleton<NetAndroidDebugger.Mcp.DeviceTools>();
 builder.Services.AddSingleton<NetAndroidProfiler.Mcp.ProfilerTools>();
+builder.Services.AddSingleton<NetAndroidProfiler.Mcp.GuiHost>();
+builder.Services.AddSingleton<NetAndroidProfiler.Mcp.GuiTools>();
 builder.Services.AddSingleton<SharedTools>();
 builder.Services.AddSingleton<DeviceArbiter>();
 builder.Services

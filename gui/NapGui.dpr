@@ -27,6 +27,8 @@ uses
   // otherwise the first connection fails with a missing object factory.
   FireDAC.VCLUI.Wait,
   uMainForm in 'src\uMainForm.pas',
+  uGuiControl in 'src\uGuiControl.pas',
+  uGuiRender in 'src\uGuiRender.pas',
   uSessionStore in 'src\uSessionStore.pas',
   uControlClient in 'src\uControlClient.pas',
   uSetupDialog in 'src\uSetupDialog.pas',
@@ -133,6 +135,32 @@ begin
   Result.Update;
 end;
 
+/// --control: the window is driven over standard input and output (uGuiControl) and,
+/// unless somebody asks for it, never shown. Nothing may be printed on stdout in that
+/// mode except the channel's own answers, which is why the splash is skipped too.
+function ControlMode: Boolean;
+var
+  LIndex: Integer;
+begin
+  for LIndex := 1 to ParamCount do
+    if SameText(ParamStr(LIndex), '--control') then
+      Exit(True);
+  Result := False;
+end;
+
+/// --render=<panel>:<file>: the same window, used once for one picture. Like --control
+/// it is a window nobody looks at, so it takes the same path: no splash, no saved
+/// layout, and the arrangement this code builds rather than the one somebody left.
+function RenderMode: Boolean;
+var
+  LIndex: Integer;
+begin
+  for LIndex := 1 to ParamCount do
+    if ParamStr(LIndex).StartsWith('--render=', True) then
+      Exit(True);
+  Result := False;
+end;
+
 var
   GSplash: TForm;
 begin
@@ -147,11 +175,22 @@ begin
     Application.OnException := GReporter.Handle;
     Application.MainFormOnTaskbar := True;
     Application.Title := '.NET for Android profiler';
-    GSplash := ShowSplash;
-    try
+    if ControlMode or RenderMode then
+    begin
+      Application.ShowMainForm := False;
+      GDrivenWindow := True;
       Application.CreateForm(TMainForm, MainForm);
-    finally
-      GSplash.Free;
+      if ControlMode then
+        StartControlChannel;
+    end
+    else
+    begin
+      GSplash := ShowSplash;
+      try
+        Application.CreateForm(TMainForm, MainForm);
+      finally
+        GSplash.Free;
+      end;
     end;
     Application.Run;
   except

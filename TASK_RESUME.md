@@ -1,5 +1,40 @@
 # Task resume (repository level)
 
+## Last repository-level task, done: the GUI as a renderer the server drives (2026-09-08)
+
+Asked for by the user after screen capture proved the wrong mechanism for README screenshots
+(it grabbed their desktop, and PrintWindow returns black on this skinned VCL window): give the
+GUI a control channel the MCP server can drive, able to render panels without showing a window,
+so that findings can be shown as pictures and reports can carry the profiler's own charts.
+Plan: `C:\Users\Carlo\.claude\plans\task-build-the-silly-rivest.md`; design: `docs/ARCHITECTURE.md`
+decision 4 and `docs/profiler/GUI_DESIGN.md`.
+
+Settled first by a probe (`C:\Athens\__ClaudeTools\GuiRenderProbe`): a skinned TcxGrid and a
+hand-drawn TPaintBox both render with PaintTo on a form that was never shown, and one PaintTo of
+their container brings both - so the headless path needed no offscreen window and no refactor of
+the paint routines.
+
+Delphi: `gui/src/uGuiRender.pas` (control -> PNG), `gui/src/uGuiControl.pas` (line-JSON commands
+over stdio, transport-free `ExecuteCommand`), `uMainForm` gained the control API (ActivatePanel,
+PanelControl, FocusMethodByName, FilterReport, SortReportBy, SetWindowVisible, ResizeClient,
+GiveRoomTo) plus `--render=<panel>:<file.png>`; a driven window (`GDrivenWindow`) neither loads nor
+saves the layout. Two fixes on the way: a session directory is accepted where a session.db was
+demanded (it used to kill the window with a crash dialog), and a session named on the command line
+that cannot be opened is a log line, not the end.
+
+C#: `ToolLocator.FindGui` (+ a prerequisite row), `Core/Gui/GuiChannel.cs` (the process and the
+protocol, modelled on DsRouterProcess), `Mcp/GuiHost.cs` (owns the window: a tool class is disposed
+after its call, which killed the window between tools until this was split out), `Mcp/GuiTools.cs`
+(`gui_open`, `gui_view`, `gui_capture`, `gui_show`, `gui_close`; the capture answers a text block
+plus an ImageContentBlock). Registered in both servers.
+
+Tests: `Device/GuiChannelTests` (4) and `Device/GuiMcpTests` (2) - no device, but they need the
+built NapGui.exe and skip without it; `gui/tests/smoke.ps1` checks `--render`. Green 6/6.
+The README's screenshots (`docs/images/`) were produced through this channel, which is what the
+whole thing was for.
+
+Not in this phase: driving a GUI a person opened by hand, and starting profiling runs from it.
+
 ## Last repository-level task, done: the operating skill and the installation package (2026-09-08)
 
 Follow-up 2b, decided with the user: one skill in English for anyone using the `net-android` server

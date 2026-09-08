@@ -180,6 +180,35 @@ one-word `BuildPurpose`) exists so that the skill never carries an msbuild comma
 Windows first: the server and the plugin registration are portable .NET, the GUI and the installer
 are Windows-only, other systems are untested.
 
+## Decision 4 (done 2026-09-08): the GUI as a renderer the server drives
+
+An agent that has found something often needs to show it: a call graph, the growth between
+two heap snapshots, a hot method beside its source. Capturing the screen is the wrong way -
+it takes whatever is on the user's desktop, needs the window in front, and `PrintWindow`
+returns black on this skinned VCL window. So the GUI draws its own panels instead.
+
+`NapGui.exe --control` speaks line-delimited JSON over its standard input and output
+(`gui/src/uGuiControl.pas`, the commands; `gui/src/uGuiRender.pas`, the drawing).
+`src/NetAndroidProfiler.Core/Gui/GuiChannel.cs` owns that process the way `DsRouterProcess`
+owns dsrouter, and the `gui_open` / `gui_view` / `gui_capture` / `gui_show` / `gui_close`
+tools (`src/NetAndroidProfiler.Mcp/GuiTools.cs`, over a `GuiHost` singleton because a tool
+class is disposed after its call) are the thin frontend. The unified server picks them up
+with no change, as it does every profiler tool.
+
+What this buys, and its rules:
+
+- **The window is not shown.** The picture comes back in the answer, which works when the
+  person asking is not at that machine, and nothing of their desktop can be in it. The
+  window goes on screen only through `gui_show`, when they ask.
+- **A driven window is not somebody's window**: it ignores the saved layout and never
+  writes one, so pictures are reproducible and nobody's arrangement is disturbed.
+- **The GUI is optional**: `ToolLocator.FindGui` reports it as a prerequisite that may be
+  missing, and every finding is still an answer in words without it.
+- Windows only, like the GUI itself.
+
+Not in this phase: driving a GUI the user opened by hand (the channel is per server-owned
+process; another transport can be put in front of the same commands), and starting
+profiling runs from the GUI, which the profiling tools already do.
 ## Conventions the products share
 
 - `NetAndroidDebuggerProfiler.slnx` builds everything; the per-product solutions are for

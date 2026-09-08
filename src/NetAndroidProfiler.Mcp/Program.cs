@@ -16,6 +16,7 @@ builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Logging.SetMinimumLevel(LogLevel.Information);
 
 builder.Services.AddSingleton<SessionHost>();
+builder.Services.AddSingleton<GuiHost>();
 builder.Services
     .AddMcpServer(o =>
     {
@@ -32,6 +33,7 @@ builder.Services
             "Instrumenting needs a callspec (e.g. N:My.Namespace) and restarts the app; keep hot leaf methods out of it.";
     })
     .WithStdioServerTransport()
-    .WithTools<ProfilerTools>();
+    .WithTools<ProfilerTools>()
+    .WithTools<GuiTools>();
 
 await builder.Build().RunAsync();

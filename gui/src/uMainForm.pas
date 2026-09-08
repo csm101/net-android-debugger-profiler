@@ -19,7 +19,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Menus,
   System.Variants, System.IOUtils, System.StrUtils, System.IniFiles, Data.DB, FireDAC.Comp.Client,
-  cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
+  dxCore, cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxGridExportLink, cxFindPanel, cxTLExportLink,
@@ -32,7 +32,7 @@ uses
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
   uSessionStore, uControlClient, uSetupDialog, uJobDialog, uTheme, uSettings, uSettingsDialog,
-  uLayouts, uLayoutDialog, uGlyphs;
+  uLayouts, uLayoutDialog, uGlyphs, uGuiRender;
 
 type
   TExplorerKind = (ekSession, ekCategory, ekArchive);
@@ -93,6 +93,9 @@ type
     FExplorerColumn: TcxTreeListColumn;
     FExplorerSplitter: TSplitter;
     FSessionsRoot: string;
+    FActivePanel: string;
+    FBuilt: Boolean;
+    FPendingRender: string;
     FDockManager: TdxDockingManager;
     FDockSite: TdxDockSite;
     FExplorerPanel: TdxDockPanel;
@@ -259,6 +262,14 @@ type
     procedure PaintChildrenPie(Sender: TObject);
     procedure PaintShares(ACanvas: TCanvas; const ARect: TRect; const AShares: TArray<Int64>);
     function FocusedMethodId: Integer;
+    function PanelByName(const AName: string): TdxDockPanel;
+    function ReportColumn(const AField: string): TcxGridDBColumn;
+    function ResolveSessionPath(const APath: string): string;
+    procedure RenderPanelToFile(const APanelAndFile: string);
+    procedure GiveRoomTo(const APanel: string);
+    function FocusFoundRow: Boolean;
+    procedure RenderPending;
+    procedure ReportRenderFailure(const AMessage: string);
     procedure UpdateInfo;
     function ValueCaption: string;
   protected
@@ -271,10 +282,29 @@ type
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+
+    { What the control channel (uGuiControl) drives: the same operations the mouse
+      performs, named, so that an agent can open a session, look at a panel and be
+      handed a picture of it without a window on screen. Main thread only. }
+    function ActivatePanel(const AName: string): Boolean;
+    function ActivePanelName: string;
+    function PanelNames: string;
+    function PanelControl(const AName: string): TControl;
+    procedure OpenSessionPath(const APath: string);
+    function FocusMethodByName(const AName: string): Boolean;
+    procedure FilterReport(const AText: string);
+    procedure SortReportBy(const AField: string; ADescending: Boolean);
+    procedure SetWindowVisible(AVisible: Boolean);
+    procedure ResizeClient(AWidth, AHeight: Integer);
+    function CurrentSessionPath: string;
+    function CurrentMethodName: string;
   end;
 
 var
   MainForm: TMainForm;
+  /// Set by the program in --control mode. A window that is being driven must not
+  /// write the layout it was given for a picture over the one its owner arranged.
+  GDrivenWindow: Boolean = False;
   /// Set by the program before anything else, so the log can say how long starting took.
   /// A number in the log beats an argument about whether it "feels" slow.
   GStartTicks: UInt64 = 0;
@@ -384,7 +414,10 @@ begin
       'net-android-profiler'), 'sessions');
   ReloadExplorer;
   ShowPreferencesInToolbar;
-  LoadLayout;
+  // A driven window renders from the arrangement this code just built, not from the one
+  // somebody left behind: a picture should not depend on where a panel was last dragged.
+  if not GDrivenWindow then
+    LoadLayout;
   ApplyTheme;
   ApplyCodeFont;
 
@@ -396,8 +429,15 @@ begin
   FBuildFinished := GetTickCount64;
   OnShow := ShowPendingDialog;
 
+  // A session that cannot be opened is a message, not the end of the window: the log
+  // panel says what was wrong and File > Open still works.
   if (ParamCount >= 1) and not ParamStr(1).StartsWith('--') then
-    LoadSession(ParamStr(1));
+    try
+      LoadSession(ParamStr(1));
+    except
+      on E: Exception do
+        LogLine(E.Message);
+    end;
   // --tab=<report|tree|source> selects the visible panel: handy for a screenshot or a
   // shortcut that always opens where you left off.
   // --dialog=<settings|layouts|setup> opens one straight away: it is how the dialogs
@@ -409,18 +449,18 @@ begin
     if ParamStr(LIndex).StartsWith('--tab=', True) then
     begin
       LTab := ParamStr(LIndex).Substring(6);
-      if SameText(LTab, 'tree') then FTreePanel.Activate
-      else if SameText(LTab, 'graph') then FGraphPanel.Activate
-      else if SameText(LTab, 'source') then FSourcePanel.Activate
-      else if SameText(LTab, 'summary') then FSummaryPanel.Activate
-      else if SameText(LTab, 'memory') then FMemoryPanel.Activate
-      else if SameText(LTab, 'monitor') then FMonitorPanel.Activate
-      else FReportPanel.Activate;
+      if not ActivatePanel(LTab) then
+        ActivatePanel('report');
     end;
   // --export=<file> writes the report of the session given on the command line and
   // quits: the same export the button performs, available to a build script. It runs
   // with the rest of the startup work, because it has nothing to export until the
   // session named on the command line has been read.
+  // --render=<panel>:<file.png> writes a picture of one panel and quits: the channel's
+  // rendering, available to a script that has no channel.
+  for LIndex := 1 to ParamCount do
+    if ParamStr(LIndex).StartsWith('--render=', True) then
+      FPendingRender := ParamStr(LIndex).Substring(9);
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--export=', True) then
     begin
@@ -429,6 +469,36 @@ begin
       PostMessage(Handle, WM_CLOSE, 0, 0);
     end;
   UpdateInfo;
+  FBuilt := True;
+  if FPendingRender <> '' then
+  begin
+    Application.ShowMainForm := False;
+    // Once the message loop is running the panels have their windows; rendering from
+    // inside the constructor is what fails, quietly and confusingly.
+    TThread.ForceQueue(nil, RenderPending);
+  end;
+end;
+
+/// The --render= command line, performed once the window is up: one picture, then out.
+procedure TMainForm.RenderPending;
+begin
+  try
+    RenderPanelToFile(FPendingRender);
+  except
+    on E: Exception do
+      ReportRenderFailure(E.Message);
+  end;
+  PostMessage(Handle, WM_CLOSE, 0, 0);
+end;
+
+/// A failed --render has nobody to tell: the window is not shown and stdout belongs to
+/// the channel. The log file beside the exe is where a script looks.
+procedure TMainForm.ReportRenderFailure(const AMessage: string);
+var
+  LFile: string;
+begin
+  LFile := TPath.ChangeExtension(ParamStr(0), '.render.log');
+  TFile.AppendAllText(LFile, Format('%s  %s' + sLineBreak, [DateTimeToStr(Now), AMessage]));
 end;
 
 destructor TMainForm.Destroy;
@@ -437,8 +507,11 @@ var
 begin
   FPendingLog.Free;
   FSummaryPending.Free;
-  SaveLayout;
-  uSettings.SaveSettings;
+  if not GDrivenWindow then
+  begin
+    SaveLayout;
+    uSettings.SaveSettings;
+  end;
   // Dock panels created at runtime must go before the form takes its own children down,
   // otherwise one of them is destroyed after the window it lives in and VCL complains
   // that it "has no parent window". This is what the DevExpress sample does too.
@@ -1876,16 +1949,281 @@ begin
   UpdateInfo;
 end;
 
-procedure TMainForm.LoadSession(const APath: string);
+/// A session is a folder with a session.db in it; both are accepted, because both are
+/// what people have at hand - a path from a tool, or the folder they were shown.
+function TMainForm.ResolveSessionPath(const APath: string): string;
 begin
-  FStore.Open(APath);
-  FSessionsRoot := TDirectory.GetParent(TDirectory.GetParent(APath));
+  Result := APath;
+  if TDirectory.Exists(Result) then
+    Result := TPath.Combine(Result, 'session.db');
+  if not TFile.Exists(Result) then
+    raise ESessionStore.CreateFmt(
+      'No session database at %s. Point at a session.db, or at the folder that holds one.', [APath]);
+end;
+
+procedure TMainForm.LoadSession(const APath: string);
+var
+  LPath: string;
+begin
+  LPath := ResolveSessionPath(APath);
+  FStore.Open(LPath);
+  FSessionsRoot := TDirectory.GetParent(TDirectory.GetParent(LPath));
   ReloadExplorer;
   LoadMemory;
   UpdateSummary;
   LoadReport;
   LoadTreeRoots;
   UpdateInfo;
+end;
+
+{ The control channel's window API. Nothing here is new behaviour: every one of these is
+  what a click already does, given a name so that it can be asked for from outside. }
+
+function TMainForm.PanelByName(const AName: string): TdxDockPanel;
+var
+  LNames: TArray<string>;
+  LPanels: TArray<TdxDockPanel>;
+  LIndex: Integer;
+begin
+  LNames := ['report', 'explorer', 'details', 'tree', 'graph', 'source', 'memory', 'monitor', 'summary', 'log'];
+  LPanels := [FReportPanel, FExplorerPanel, FDetailsDock, FTreePanel, FGraphPanel, FSourcePanel,
+              FMemoryPanel, FMonitorPanel, FSummaryPanel, FLogPanel];
+  for LIndex := 0 to High(LNames) do
+    if SameText(AName, LNames[LIndex]) then
+      Exit(LPanels[LIndex]);
+  Result := nil;
+end;
+
+function TMainForm.PanelNames: string;
+begin
+  Result := 'report, explorer, details, tree, graph, source, memory, monitor, summary, log';
+end;
+
+function TMainForm.ActivatePanel(const AName: string): Boolean;
+var
+  LPanel: TdxDockPanel;
+begin
+  LPanel := PanelByName(AName);
+  Result := LPanel <> nil;
+  if not Result then
+    Exit;
+  LPanel.Activate;
+  FActivePanel := LowerCase(AName);
+  GiveRoomTo(FActivePanel);
+end;
+
+function TMainForm.ActivePanelName: string;
+begin
+  if FActivePanel = '' then
+    Result := 'report'
+  else
+    Result := FActivePanel;
+end;
+
+function TMainForm.PanelControl(const AName: string): TControl;
+var
+  LPanel: TdxDockPanel;
+begin
+  if AName = '' then
+    LPanel := PanelByName(ActivePanelName)
+  else
+    LPanel := PanelByName(AName);
+  Result := LPanel;
+end;
+
+procedure TMainForm.OpenSessionPath(const APath: string);
+begin
+  LoadSession(APath);
+end;
+
+function TMainForm.CurrentSessionPath: string;
+begin
+  if FStore.IsOpen then
+    Result := FStore.Path
+  else
+    Result := '';
+end;
+
+function TMainForm.CurrentMethodName: string;
+begin
+  Result := '';
+  if (FReportQuery = nil) or not FReportQuery.Active then
+    Exit;
+  if FReportQuery.FindField('full_name') = nil then
+    Exit;
+  Result := FReportQuery.FieldByName('full_name').AsString;
+end;
+
+/// The report row for a method, and with it the Details, Call graph and Source panels,
+/// which follow the focused row exactly as they do when it is clicked. An exact name
+/// wins; failing that the first row that starts with what was asked for.
+function TMainForm.FocusMethodByName(const AName: string): Boolean;
+begin
+  Result := False;
+  if (FReportQuery = nil) or not FReportQuery.Active or (FReportQuery.FindField('full_name') = nil) then
+    Exit;
+  Result := FReportQuery.Locate('full_name', AName, [loCaseInsensitive]);
+  if not Result then
+    Result := FReportQuery.Locate('full_name', AName, [loCaseInsensitive, loPartialKey]);
+  if not Result then
+  begin
+    // Locate matches from the start; a method is far more often remembered by its own
+    // name than by the namespace in front of it, so the last resort is a plain search.
+    FReportQuery.First;
+    while not FReportQuery.Eof do
+    begin
+      if ContainsText(FReportQuery.FieldByName('full_name').AsString, AName) then
+        Exit(FocusFoundRow);
+      FReportQuery.Next;
+    end;
+    Exit(False);
+  end;
+  Result := FocusFoundRow;
+end;
+
+/// The panels that follow the focused row - Details, Call graph, Source - as they do when
+/// it is clicked. Always True: the row is already there.
+function TMainForm.FocusFoundRow: Boolean;
+begin
+  LoadDetails(FocusedMethodId);
+  ShowGraphOf(FocusedMethodId);
+  // A session without symbols has no source to show; that is not a failure of the focus.
+  try
+    ShowSourceOf(FocusedMethodId);
+  except
+    on E: Exception do
+      LogLine('source: ' + E.Message);
+  end;
+  Result := True;
+end;
+
+function TMainForm.ReportColumn(const AField: string): TcxGridDBColumn;
+var
+  LIndex: Integer;
+begin
+  for LIndex := 0 to FGridView.ColumnCount - 1 do
+    if SameText(FGridView.Columns[LIndex].DataBinding.FieldName, AField) then
+      Exit(FGridView.Columns[LIndex]);
+  Result := nil;
+end;
+
+/// Show only the methods whose name contains the text, the way typing in the column
+/// filter does. An empty text puts every row back.
+procedure TMainForm.FilterReport(const AText: string);
+var
+  LColumn: TcxGridDBColumn;
+begin
+  LColumn := ReportColumn('full_name');
+  if LColumn = nil then
+    Exit;
+  FGridView.DataController.Filter.Root.Clear;
+  if AText = '' then
+  begin
+    FGridView.DataController.Filter.Active := False;
+    Exit;
+  end;
+  FGridView.DataController.Filter.Root.AddItem(LColumn, foLike, '%' + AText + '%', AText);
+  FGridView.DataController.Filter.Active := True;
+end;
+
+procedure TMainForm.SortReportBy(const AField: string; ADescending: Boolean);
+var
+  LColumn: TcxGridDBColumn;
+begin
+  LColumn := ReportColumn(AField);
+  if LColumn = nil then
+    raise ESessionStore.CreateFmt('This session has no column called "%s".', [AField]);
+  if ADescending then
+    LColumn.SortOrder := soDescending
+  else
+    LColumn.SortOrder := soAscending;
+end;
+
+/// Put the window on the screen, or take it off it. The channel renders with the window
+/// hidden; showing it is a request of its own, because somebody has to be looking.
+procedure TMainForm.SetWindowVisible(AVisible: Boolean);
+begin
+  if AVisible then
+  begin
+    Application.ShowMainForm := True;
+    Show;
+    if WindowState = wsMinimized then
+      WindowState := wsNormal;
+    BringToFront;
+  end
+  else
+    Hide;
+end;
+
+/// Rendering happens at the size the window has, so this is how a caller asks for a
+/// larger picture. The docking layout re-lays itself out, hidden or not.
+procedure TMainForm.ResizeClient(AWidth, AHeight: Integer);
+begin
+  if (AWidth < 200) or (AHeight < 200) then
+    raise EArgumentException.Create('A window smaller than 200x200 has nothing readable on it.');
+  ClientWidth := AWidth;
+  ClientHeight := AHeight;
+  FDockSite.Realign;
+  Application.ProcessMessages;
+end;
+
+/// A picture is worth having only if the panel has room. The Report panel is the client
+/// zone and the rest are tabs at the bottom, so making one large means shrinking the
+/// other: the layout is restored from its file when the window is next opened by a person,
+/// and a driven window never saves it.
+procedure TMainForm.GiveRoomTo(const APanel: string);
+var
+  LDetails: TdxCustomDockControl;
+  LHeight: Integer;
+begin
+  // While the constructor is still running the panels have no parent window yet, and
+  // realigning them there is what "PanelReport has no parent window" means.
+  if not FBuilt then
+    Exit;
+  if FDetailsDock.ParentDockControl <> nil then
+    LDetails := FDetailsDock.ParentDockControl
+  else
+    LDetails := FDetailsDock;
+  FExplorerPanel.Width := 260;
+  if SameText(APanel, 'report') or SameText(APanel, 'explorer') then
+    LHeight := 120
+  else
+    LHeight := ClientHeight - 180;
+  // Asked for more than once on purpose: a zone that has to grow by hundreds of pixels
+  // lands part of the way on the first pass, because the docking library recomputes the
+  // siblings from the size it had. Asking again, after its messages have run, arrives.
+  for var LPass := 1 to 5 do
+  begin
+    LDetails.Height := Max(120, LHeight);
+    // The client zone keeps whatever size it was built with until it is told: a window
+    // that was never shown has never laid itself out.
+    FReportPanel.Height := Max(140, ClientHeight - LDetails.Height - 70);
+    FReportPanel.Width := Max(200, ClientWidth - FExplorerPanel.Width - 20);
+    FDockSite.Realign;
+    Application.ProcessMessages;
+    if Abs(LDetails.Height - Max(120, LHeight)) <= 4 then
+      Break;
+  end;
+end;
+
+/// --render=<panel>:<file.png>: one picture from the command line, no channel. What
+/// smoke tests and scripts use, and the same rendering the channel performs.
+procedure TMainForm.RenderPanelToFile(const APanelAndFile: string);
+var
+  LSeparator: Integer;
+  LPanel, LFile: string;
+  LControl: TControl;
+begin
+  LSeparator := Pos(':', APanelAndFile);
+  // A drive letter is not the separator we are looking for.
+  if (LSeparator = 0) or (LSeparator = 2) then
+    raise EArgumentException.Create('--render wants <panel>:<file.png>, e.g. --render=graph:C:\out\graph.png');
+  LPanel := Copy(APanelAndFile, 1, LSeparator - 1);
+  LFile := Copy(APanelAndFile, LSeparator + 1, MaxInt);
+  if not ActivatePanel(LPanel) then
+    raise EArgumentException.CreateFmt('Unknown panel "%s". One of: %s.', [LPanel, PanelNames]);
+  LControl := PanelControl(LPanel);
+  TFile.WriteAllBytes(LFile, ControlToPng(LControl, Color));
 end;
 
 procedure TMainForm.LoadReport;

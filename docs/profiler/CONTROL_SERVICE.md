@@ -153,6 +153,17 @@ Two things the GUI must show rather than hide:
 - **Clearing does not remove instrumentation**: woven methods stay woven, so the
   overhead remains while collection is paused or cleared.
 
+## Two channels, opposite directions
+
+There are two local channels in this product and they are easy to confuse:
+
+| Channel | Who starts whom | What travels |
+|---|---|---|
+| `nap serve` (this document) | the GUI starts `nap.exe serve` and is its client | devices, prerequisites, projects, builds, live session control - never results |
+| the GUI control channel (`NapGui.exe --control`, `docs/profiler/GUI_DESIGN.md`) | the MCP server starts the GUI and is its client | open a session, choose a panel, focus a method, and a rendered PNG back |
+
+Results never travel over either: both sides open the session database themselves. The
+picture is the deliberate exception, because a picture is not in the database.
 ## One Windows quirk worth knowing
 
 Windows' HTTP stack answers **411 Length Required** to a POST that carries

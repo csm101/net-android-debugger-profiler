@@ -15,7 +15,8 @@ namespace NetAndroid.Mcp;
 /// </summary>
 internal static class ToolCatalog
 {
-    private static readonly Type[] ProductToolTypes = [typeof(DebuggerTools), typeof(DeviceTools), typeof(ProfilerTools)];
+    private static readonly Type[] ProductToolTypes =
+        [typeof(DebuggerTools), typeof(DeviceTools), typeof(ProfilerTools), typeof(GuiTools)];
 
     public static IReadOnlyList<McpServerTool> All()
     {
