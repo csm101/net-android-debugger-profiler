@@ -213,10 +213,12 @@ that account is where this author's audience already is. GitHub keeps a permanen
 the old path, so older clones and links still work; a repository of the same name must never be
 created in the organization again, or that redirect breaks.
 
-Still naming the organization, on purpose: `LICENSE` and the copyright headers (the company holds
-the copyright wherever the code is hosted) and the VS Code extension's `publisher` field in
-`vscode/net-android-debugger/package.json`, which has to match a real Marketplace publisher the
-day the extension is published - a decision for that day.
+Still naming the organization, on purpose, and both are right: `LICENSE` and the copyright headers
+(the company holds the copyright wherever the code is hosted), and the VS Code extension's
+`publisher` field in `vscode/net-android-debugger/package.json`, which is the registered
+Marketplace publisher `mca-software` - the same one the Delphi debugger extension ships under.
+Where a repository lives and who publishes an extension are separate things: the code is the
+author's, the published artifacts carry the company's name.
 
 ### For the day the repository goes public (apply by hand; nothing was written into the old repositories)
 
