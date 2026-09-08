@@ -132,8 +132,12 @@ Cores, registered as `net-android` by `register-mcp.cmd` (publish folder
   profiling would wait for a debugger), `launch_app`, `launch_from_config` and `attach_to_app`
   while a profiling session holds it (`debug.mono.profile` and the app's override environment: an
   app launched for debugging would connect to the profiler as well). The refusal names the
-  session to stop. A call that names no device is refused whenever the other engine holds any,
-  since the tool would then pick one on its own. The decision is a pure function
+  session to stop. The one start let through is the profiler attaching to the very app the debugger
+  runs (`launch: attach`, the same package, an explicit device): it takes nothing device-global and
+  is how a debugged app gets profiled from a breakpoint on (verified 2026-09-08,
+  `DebugAndProfileTogetherTests`; the profiler's ANDROID_PROFILING_NOTES has the flow). A call that
+  names no device is refused whenever the other engine holds any, since the tool would then pick
+  one on its own. The decision is a pure function
   (`DeviceArbiter.Refusal`) with its own tests; the live state comes from the two session hosts.
   Decision 1 made the *noticing* of a foreign mark shared (`DevicePropertyOverride.ForeignValueWarning`,
   still in force for sessions started outside this process); this is the arbitration.

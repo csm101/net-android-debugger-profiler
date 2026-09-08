@@ -172,4 +172,5 @@ provider (constructor injection only); a tool whose name the other product also 
 added to the unified server's `SharedTools` instead of here, or the unified server refuses to
 start; and the device-global state the engine takes (the Mono debug properties, the app's
 override environment) is what the unified server's `DeviceArbiter` guards, so a new way of
-taking it needs a look there.
+taking it needs a look there (the profiler attaching to the app the debugger runs is the one
+start it lets through).

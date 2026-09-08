@@ -114,7 +114,9 @@ still run the same logic through the launcher.
 unified server and the two product servers as processes over stdio (no device);
 `DeviceArbitrationTests` (`Category=Device`) drive a real debug session through the unified
 server on the device `NAD_DEVICE_SERIAL` / `NAP_TEST_SERIAL` names (else the only one online)
-and need the debugger's TestTarget installed, as the debugger's suite leaves it.
+and need the debugger's TestTarget installed, as the debugger's suite leaves it;
+`DebugAndProfileTogetherTests` (`Category=Device`) needs the profiler's TestTarget, as the
+profiler's device suite leaves it. `Support.cs` holds what they share.
 
 - [x] Nothing held, nothing refused - `NothingHeld_NothingRefused`
 - [x] profile_run on the debugger's device is refused, naming stop_debugging and the property
@@ -129,6 +131,14 @@ and need the debugger's TestTarget installed, as the debugger's suite leaves it.
 - [x] launch_app on another device proceeds while a profiling session runs -
       `LaunchApp_OnAnotherDevice_Proceeds_WhileAProfilingSessionRuns`
 - [x] Tools that start nothing are never refused - `ToolsThatStartNothing_AreNeverRefused`
+- [x] profile_start / profile_run attaching to the debugged package on the debugger's device proceed -
+      `ProfileStart_AttachingToTheDebuggedApp_Proceeds`
+- [x] Attaching to another package on the debugger's device is refused -
+      `ProfileStart_AttachingToAnotherApp_OnTheDebuggersDevice_IsRefused`
+- [x] Attaching without naming a device is refused even for the debugged package -
+      `ProfileStart_AttachingWithoutADevice_IsRefused_EvenForTheDebuggedApp`
+- [x] The refusal of a restart says how to attach instead (launch, package, remove_all_breakpoints) -
+      `Refusal_OfARestart_TellsHowToAttachInstead`
 - [x] The handshake names `net-android` and the instructions cover both flows -
       `Handshake_NamesTheUnifiedServer`
 - [x] The tool list is the union of both product servers, the shared three once and nothing
@@ -142,6 +152,11 @@ and need the debugger's TestTarget installed, as the debugger's suite leaves it.
 - [x] On a device: profile_run is refused while a debug session launched through the unified
       server holds it, and no longer after stop_debugging -
       `ProfileRun_WhileTheDebuggerHoldsTheDevice_IsRefused_AndNotAfterStopDebugging`
+- [x] On a device: the app launched by the debugger, stopped at a breakpoint, is sampled in attach
+      mode after the breakpoints and exception filters are cleared; the hotspots hold the workload,
+      the pid is the same, the debug session survives and a later breakpoint hits (whether the
+      runtime connects while stopped is printed, not asserted; it did) -
+      `SamplingAttach_ToTheAppUnderTheDebugger_ProfilesWhatRunsAfterTheBreakpoint`
 
 The two product MCP suites also run against the unified server when `NAD_MCP_SERVER_DLL` /
 `NAP_MCP_SERVER_DLL` name it (the profiler's server-name assertion is skipped then).

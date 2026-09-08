@@ -1,4 +1,3 @@
-using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using NetAndroid.Mcp;
 
@@ -11,38 +10,9 @@ namespace NetAndroid.Mcp.Tests;
 /// </summary>
 public sealed class UnifiedServerTests
 {
-    private const string BuildConfiguration =
-#if DEBUG
-        "Debug";
-#else
-        "Release";
-#endif
-
-    private static string RepoRoot
-    {
-        get
-        {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NetAndroidDebuggerProfiler.slnx")))
-                dir = dir.Parent;
-            return dir?.FullName ?? throw new InvalidOperationException("repository root not found above " + AppContext.BaseDirectory);
-        }
-    }
-
-    private static string ServerDll(string project) =>
-        Path.Combine(RepoRoot, "src", project, "bin", BuildConfiguration, "net10.0", project + ".dll");
-
-    private static async Task<McpClient> ConnectAsync(string project, CancellationToken ct)
-    {
-        var dll = ServerDll(project);
-        Assert.True(File.Exists(dll), $"server not built: {dll}");
-        var transport = new StdioClientTransport(new StdioClientTransportOptions { Name = project, Command = "dotnet", Arguments = [dll] });
-        return await McpClient.CreateAsync(transport, cancellationToken: ct);
-    }
-
     private static async Task<List<string>> ToolNamesAsync(string project, CancellationToken ct)
     {
-        await using var client = await ConnectAsync(project, ct);
+        await using var client = await Support.ConnectAsync(project, ct);
         return (await client.ListToolsAsync(cancellationToken: ct)).Select(t => t.Name).ToList();
     }
 
@@ -50,7 +20,7 @@ public sealed class UnifiedServerTests
     public async Task Handshake_NamesTheUnifiedServer()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        await using var client = await ConnectAsync("NetAndroid.Mcp", cts.Token);
+        await using var client = await Support.ConnectAsync("NetAndroid.Mcp", cts.Token);
         Assert.Equal(UnifiedServer.Name, client.ServerInfo.Name);
         Assert.Contains("profile_run", client.ServerInstructions ?? "");
         Assert.Contains("launch_app", client.ServerInstructions ?? "");
@@ -73,33 +43,31 @@ public sealed class UnifiedServerTests
     public async Task ListAppProjects_ReadsTheProfilerTestTarget()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        await using var client = await ConnectAsync("NetAndroid.Mcp", cts.Token);
-        var result = await client.CallToolAsync("list_app_projects",
-            new Dictionary<string, object?> { ["path"] = Path.Combine(RepoRoot, "TestTarget", "Profiler") }, cancellationToken: cts.Token);
-        var text = string.Join("\n", result.Content.OfType<TextContentBlock>().Select(c => c.Text));
-        Assert.False(result.IsError == true, text);
-        Assert.Contains("com.mcasoftware.testtarget", text);
-        Assert.Contains("symbolsDir", text);
+        await using var client = await Support.ConnectAsync("NetAndroid.Mcp", cts.Token);
+        var result = await Support.CallAsync(client, "list_app_projects",
+            new() { ["path"] = Path.Combine(Support.RepoRoot, "TestTarget", "Profiler") }, cts.Token);
+        Assert.False(result.IsError, result.Text);
+        Assert.Contains("com.mcasoftware.testtarget", result.Text);
+        Assert.Contains("symbolsDir", result.Text);
     }
 
     [Fact]
     public async Task GetAppOutput_WithoutADebugSession_AsksForDeviceAndPackage()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
-        await using var client = await ConnectAsync("NetAndroid.Mcp", cts.Token);
-        var result = await client.CallToolAsync("get_app_output", new Dictionary<string, object?>(), cancellationToken: cts.Token);
-        var text = string.Join("\n", result.Content.OfType<TextContentBlock>().Select(c => c.Text));
-        Assert.True(result.IsError == true, text);
-        Assert.Contains("deviceSerial", text);
-        Assert.Contains("packageName", text);
+        await using var client = await Support.ConnectAsync("NetAndroid.Mcp", cts.Token);
+        var result = await Support.CallAsync(client, "get_app_output", new(), cts.Token);
+        Assert.True(result.IsError, result.Text);
+        Assert.Contains("deviceSerial", result.Text);
+        Assert.Contains("packageName", result.Text);
     }
 
     [Fact]
     public void Ships_NoAssembly_TheTwoProductServersDoNot()
     {
-        var unified = Path.GetDirectoryName(ServerDll("NetAndroid.Mcp"))!;
+        var unified = Path.GetDirectoryName(Support.ServerDll("NetAndroid.Mcp"))!;
         var products = new[] { "NetAndroidDebugger.Mcp", "NetAndroidProfiler.Mcp" }
-            .Select(p => Path.GetDirectoryName(ServerDll(p))!)
+            .Select(p => Path.GetDirectoryName(Support.ServerDll(p))!)
             .SelectMany(d => Directory.GetFiles(d, "*.dll"))
             .Select(Path.GetFileName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);

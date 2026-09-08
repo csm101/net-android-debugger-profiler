@@ -13,8 +13,10 @@ namespace NetAndroid.Mcp;
 /// session <see cref="DeviceGlobals.DebugMonoProfile"/> and the app's override environment; an app
 /// started under both would wait for a debugger and connect to a profiler at once, which neither
 /// engine supports. So a call that would start one engine on a device the other holds is refused
-/// before it reaches the tool, with the session to stop named in the answer. Everything else
-/// passes through untouched.
+/// before it reaches the tool, with the session to stop named in the answer. The one start that
+/// touches nothing device-global is the profiler attaching to the process the debugger already
+/// runs: that is allowed, it is how a debugged app gets profiled from a breakpoint on. Everything
+/// else passes through untouched.
 /// </summary>
 public sealed class DeviceArbiter(NetAndroidDebugger.Mcp.SessionHost debugger, NetAndroidProfiler.Mcp.SessionHost profiler)
 {
@@ -29,16 +31,27 @@ public sealed class DeviceArbiter(NetAndroidDebugger.Mcp.SessionHost debugger, N
     /// <summary>A profiling session that still holds device state.</summary>
     public readonly record struct Holder(string Id, string DeviceSerial);
 
+    /// <summary>The device and package a debug session holds.</summary>
+    public readonly record struct DebugHold(string DeviceSerial, string? PackageName);
+
     /// <summary>
     /// The decision itself, free of any live object: null when the call may proceed, otherwise
-    /// the text refusing it. A call that names no device is refused whenever the other engine
-    /// holds any device, because the tool would then pick one on its own.
+    /// the text refusing it. <paramref name="attachTo"/> is the package a profiler start attaches
+    /// to without restarting it, null when it would restart the app. A call that names no device
+    /// is refused whenever the other engine holds any device, because the tool would then pick
+    /// one on its own.
     /// </summary>
-    public static string? Refusal(string tool, string? requestedSerial, string? debuggerSerial, IReadOnlyCollection<Holder> profiling)
+    public static string? Refusal(string tool, string? requestedSerial, string? attachTo, DebugHold? debugging, IReadOnlyCollection<Holder> profiling)
     {
-        if (ProfilerStarts.Contains(tool) && debuggerSerial is not null && Matches(requestedSerial, debuggerSerial))
-            return $"A debug session is active on {debuggerSerial} and holds {DeviceGlobals.DebugMonoExtra} there: an app started " +
-                   "for profiling would wait for a debugger instead. Call stop_debugging first, or profile on another device.";
+        if (ProfilerStarts.Contains(tool) && debugging is { } debug && Matches(requestedSerial, debug.DeviceSerial))
+        {
+            if (requestedSerial is not null && attachTo is not null && string.Equals(attachTo, debug.PackageName, StringComparison.Ordinal))
+                return null;
+            return $"A debug session is active on {debug.DeviceSerial} and holds {DeviceGlobals.DebugMonoExtra} there: an app started " +
+                   "for profiling would wait for a debugger instead. Call stop_debugging first, or profile on another device, or " +
+                   $"profile the debugged app itself in place (launch: attach, packageName: {debug.PackageName}) after " +
+                   "remove_all_breakpoints and clearing the exception rules, so that nothing stops it while it is sampled.";
+        }
         if (DebuggerStarts.Contains(tool))
         {
             var holder = profiling.FirstOrDefault(h => Matches(requestedSerial, h.DeviceSerial));
@@ -51,15 +64,17 @@ public sealed class DeviceArbiter(NetAndroidDebugger.Mcp.SessionHost debugger, N
     }
 
     /// <summary>The decision for the live state of both engines, read at call time.</summary>
-    public string? Decide(string tool, string? requestedSerial)
+    public string? Decide(string tool, string? requestedSerial, string? attachTo)
     {
         var debug = debugger.Current;
-        var debuggerSerial = debug is { State: not (DebugState.NotStarted or DebugState.Exited) } ? debug.GetStatus().DeviceSerial : null;
+        DebugHold? debugging = null;
+        if (debug is { State: not (DebugState.NotStarted or DebugState.Exited) } && debug.GetStatus() is { DeviceSerial: { } serial } status)
+            debugging = new DebugHold(serial, status.PackageName);
         var profiling = profiler.LiveSessions
             .Where(live => live.Session.State is ProfileState.Preparing or ProfileState.WaitingForApp or ProfileState.Collecting or ProfileState.Analyzing)
             .Select(live => new Holder(live.Session.Id, live.Session.Spec.DeviceSerial))
             .ToList();
-        return Refusal(tool, requestedSerial, debuggerSerial, profiling);
+        return Refusal(tool, requestedSerial, attachTo, debugging, profiling);
     }
 
     /// <summary>The call filter: the start tools consult the arbiter, everything else passes through.</summary>
@@ -70,7 +85,7 @@ public sealed class DeviceArbiter(NetAndroidDebugger.Mcp.SessionHost debugger, N
             if (tool is not null && (DebuggerStarts.Contains(tool) || ProfilerStarts.Contains(tool)))
             {
                 var arbiter = context.Services!.GetRequiredService<DeviceArbiter>();
-                if (arbiter.Decide(tool, RequestedSerial(context.Params)) is { } refusal)
+                if (arbiter.Decide(tool, Argument(context.Params, "deviceSerial"), AttachTarget(context.Params)) is { } refusal)
                     return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = refusal }] };
             }
             return await next(context, ct).ConfigureAwait(false);
@@ -79,9 +94,12 @@ public sealed class DeviceArbiter(NetAndroidDebugger.Mcp.SessionHost debugger, N
     private static bool Matches(string? requested, string held) =>
         requested is null || string.Equals(requested, held, StringComparison.Ordinal);
 
-    private static string? RequestedSerial(CallToolRequestParams? parameters)
+    private static string? AttachTarget(CallToolRequestParams? parameters) =>
+        string.Equals(Argument(parameters, "launch"), "attach", StringComparison.OrdinalIgnoreCase) ? Argument(parameters, "packageName") : null;
+
+    private static string? Argument(CallToolRequestParams? parameters, string name)
     {
-        if (parameters?.Arguments is null || !parameters.Arguments.TryGetValue("deviceSerial", out var value)) return null;
+        if (parameters?.Arguments is null || !parameters.Arguments.TryGetValue(name, out var value)) return null;
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 }

@@ -129,6 +129,32 @@ snapshots of a running Debug app work without restarting it, same pid before
 and after (device test `Sampling_attach_to_running_debug_app_without_restart`).
 Instrumenting still needs a restart (JIT-time instrumentation). **[verified]**
 
+### Profiling the app the debugger runs
+
+The soft debugger (`debug.mono.extra`) and the diagnostics port are separate parts of the
+runtime and work together in one process: an app launched by the debugger and stopped at a
+breakpoint accepts a sampling session in attach mode. The runtime connected to dsrouter *while
+stopped at the breakpoint* (the diagnostic server thread is not one the debugger suspends), so
+the session is Collecting before the app resumes and the first samples after `continue_and_wait`
+belong to the code that follows the breakpoint. Same pid throughout; the debug session survives
+and a breakpoint set afterwards is hit. The agent's part: `remove_all_breakpoints` and clear the
+exception rules first, so nothing suspends the app while it is sampled; the profile measures code
+compiled with the debugger attached (reduced optimizations, as in any Debug build). The unified
+server's `DeviceArbiter` lets exactly this start through (attach, the same package, an explicit
+device) and refuses every other profiler start on a device the debugger holds. Detaching is not
+an option: Mono ends the app when the debugger disconnects. Instrumenting through the weaver is
+not covered: the weaver session launches the app itself, and an app the debugger launched has no
+`NAP_PROFILER_OUT` and nobody to pull its files. **[verified 2026-09-08 -
+`DebugAndProfileTogetherTests.SamplingAttach_ToTheAppUnderTheDebugger_ProfilesWhatRunsAfterTheBreakpoint`,
+emulator-5554, 22 s]**
+
+Trap found on the way: a weaver session killed half-way leaves `<assembly>.pdb.naporig` in the
+override directory. `WeaveDeployer` restores a leftover `.dll.naporig` before weaving again, not
+the pdb beside it, so the app runs without symbols from then on: the debugger binds no breakpoint
+and `get_source_files` reports no file. Remedy until the engine restores it too:
+`run-as <pkg> mv files/.__override__/<abi>/<assembly>.pdb.naporig <assembly>.pdb`. **[seen
+2026-09-08 on emulator-5554, left by a session killed on 2026-09-06]**
+
 ### Engine collection path (Core)
 
 Core does not spawn dotnet-trace/dotnet-gcdump: it starts dotnet-dsrouter and

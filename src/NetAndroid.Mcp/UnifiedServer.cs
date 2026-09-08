@@ -22,8 +22,10 @@ public static class UnifiedServer
         "any tool accepts sessionId, default = the last session). Sampling counts are samples (~1 ms each); *_cpu columns " +
         "exclude samples of threads blocked in Sleep/Wait; a method's exclusive samples include its very short callees. " +
         "Instrumenting needs a callspec (e.g. N:My.Namespace) and restarts the app. " +
-        "The two engines hold device-global Mono state (debug.mono.extra, debug.mono.profile): debugging and profiling never " +
-        "run on the same device at the same time, and a call that would start the second one is refused with the session to " +
-        "stop named in the answer. get_app_output reads the debug session while one is active, otherwise the device's logcat " +
+        "The two engines hold device-global Mono state (debug.mono.extra, debug.mono.profile): a call that would start the " +
+        "second engine on a device the first holds is refused, with the session to stop named in the answer. The one " +
+        "combination that works is profiling the app the debugger runs: stop at a breakpoint, remove_all_breakpoints and " +
+        "clear the exception rules, profile_start with launch=attach on the same package and device, continue_and_wait, " +
+        "profile_stop; the debug session survives and breakpoints can be set again afterwards. get_app_output reads the debug session while one is active, otherwise the device's logcat " +
         "for the deviceSerial and packageName given.";
 }
