@@ -138,7 +138,7 @@ finished 2026-09-06) is below.
 | 2 restructure | `5f2beb2` | Target layout, merged root files, path fixes; 321 tracked files, every one of the 328 source files accounted for (12 merged duplicates, 5 new root files). |
 | 3 verify | no commit needed | Builds, suites, GUI, register scripts (below). |
 | 4 documents | `1f33a95` | Root README, `docs/ARCHITECTURE.md`, `docs/KNOWN_UNKNOWNS.md`, the per-component documents. Rewritten once before anyone had pulled it, to drop three deletions the step 1 script had staged. |
-| 5 publish | (push) | `gh repo create mca-software/net-android-debugger-profiler --private --source . --push`; owner `mca-software`, visibility PRIVATE, no description, no topics. |
+| 5 publish | (push) | `gh repo create mca-software/net-android-debugger-profiler --private --source . --push`; owner `mca-software`, visibility PRIVATE, no description, no topics. Transferred to `csm101` on 2026-09-08 (below). |
 | 6.1 | `28b205b` | `NetAndroid.Device` with `ProcessRunner` and `AdbLocator`; `AdbException` becomes a `ToolException`; `AdbLocatorTests` move. |
 | 6.2 | `12d7945` | One `AdbClient`, one `DeviceInfo`, one `AdbResult`/`AdbException`; both Cores switched; adb-level logcat test and client tests in the library. |
 | 6.3 | `260a3e8` | `DeviceControl` and `UiHierarchy` move; `UiHierarchyTests` whole, `DeviceControlTests` split (adb-only half in the library, the two session-bound tests stay). |
@@ -203,6 +203,21 @@ Final state: 168 commits, 334 tracked files, `examples/` intact (49 files), subm
 - Step 4: the debugger keeps clearing `debug.mono.extra` at shutdown (its tests' specification);
   only the profiler restores its property.
 
+### Owner (2026-09-08)
+
+The repository lives at `csm101/net-android-debugger-profiler`. It was created under the
+`mca-software` organization and moved to the personal account once it was clear it would not
+become a product with a licence holder and customers behind it: the organization is for what is
+sold or supported, the personal account for what is published because it may help somebody - and
+that account is where this author's audience already is. GitHub keeps a permanent redirect from
+the old path, so older clones and links still work; a repository of the same name must never be
+created in the organization again, or that redirect breaks.
+
+Still naming the organization, on purpose: `LICENSE` and the copyright headers (the company holds
+the copyright wherever the code is hosted) and the VS Code extension's `publisher` field in
+`vscode/net-android-debugger/package.json`, which has to match a real Marketplace publisher the
+day the extension is published - a decision for that day.
+
 ### For the day the repository goes public (apply by hand; nothing was written into the old repositories)
 
 Description:
@@ -211,11 +226,11 @@ Description:
 Topics: `dotnet, android, dotnet-android, maui, xamarin-android, debugger, profiler, mcp, mcp-server, model-context-protocol, debug-adapter-protocol, eventpipe, mono`
 
 README for `csm101/net-android-debugger`:
-> This repository has moved: the debugger now lives in [mca-software/net-android-debugger-profiler](https://github.com/mca-software/net-android-debugger-profiler), together with the profiler and the device layer they share.
+> This repository has moved: the debugger now lives in [csm101/net-android-debugger-profiler](https://github.com/csm101/net-android-debugger-profiler), together with the profiler and the device layer they share.
 > Sources are under `src/NetAndroidDebugger.*`, the documents under `docs/debugger/`; the full history came along.
 
 README for `csm101/net-android-profiler`:
-> This repository has moved: the profiler now lives in [mca-software/net-android-debugger-profiler](https://github.com/mca-software/net-android-debugger-profiler), together with the debugger and the device layer they share.
+> This repository has moved: the profiler now lives in [csm101/net-android-debugger-profiler](https://github.com/csm101/net-android-debugger-profiler), together with the debugger and the device layer they share.
 > Sources are under `src/NetAndroidProfiler.*`, the documents under `docs/profiler/`, the ProfileMeExample tutorial app under `examples/`; the full history came along.
 
 Both old repositories are private today (checked with `gh repo view`), so nothing about them changes until then.

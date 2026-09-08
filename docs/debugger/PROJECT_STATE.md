@@ -3,7 +3,7 @@
 High-level permanent state. Transient task state lives in TASK_RESUME.md.
 
 This project now lives in the `net-android-debugger-profiler` monorepo
-(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `mca-software/net-android-debugger-profiler`,
+(`C:\Athens\GitHub\net-android-debugger-profiler`, GitHub `csm101/net-android-debugger-profiler`,
 private) as its debugger component: sources under `src/NetAndroidDebugger.*`, this document
 under `docs/debugger/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
 rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidDebugger.Core/CLAUDE.md`.

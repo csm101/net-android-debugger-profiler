@@ -98,7 +98,7 @@ the unified server are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Build from source
 
 ```powershell
-git clone --recurse-submodules git@github.com:mca-software/net-android-debugger-profiler.git
+git clone --recurse-submodules git@github.com:csm101/net-android-debugger-profiler.git
 cd net-android-debugger-profiler
 dotnet build NetAndroidDebuggerProfiler.slnx     # everything, the example app included
 dotnet build NetAndroidDebugger.slnx             # the debugger only
