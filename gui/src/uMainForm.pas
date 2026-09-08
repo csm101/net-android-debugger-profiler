@@ -19,7 +19,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Menus,
   System.Variants, System.IOUtils, System.StrUtils, System.IniFiles, Data.DB, FireDAC.Comp.Client,
-  dxCore, cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses,
+  dxCore, cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses, cxScrollBar,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxGridExportLink, cxFindPanel, cxTLExportLink,
@@ -127,6 +127,11 @@ type
     FEditor: TSynEdit;
     FEditorHeader: TcxLabel;
     FEditorHighlighter: TSynCSSyn;
+    FEditorScrollV: TcxScrollBar;
+    FEditorScrollH: TcxScrollBar;
+    FEditorScrollHost: TPanel;
+    FEditorScrollCorner: TPanel;
+    FUpdatingEditorScrollBars: Boolean;
     FEditorFile: string;
     FEditorStart: Integer;
     FEditorEnd: Integer;
@@ -225,6 +230,12 @@ type
     function DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
       AValue: Int64; AIsCentre: Boolean): TRect;
     procedure BuildEditorTab;
+    procedure EditorStatusChanged(Sender: TObject; Changes: TSynStatusChanges);
+    procedure EditorScrollBarScrolled(Sender: TObject; AScrollCode: TScrollCode; var AScrollPos: Integer);
+    procedure UpdateEditorScrollBars;
+    procedure EditorResized(Sender: TObject);
+    procedure DockLayoutChanged(Sender: TdxCustomDockControl);
+    function EditorLongestLine: Integer;
     procedure ShowSourceOf(AMethodId: Integer);
     procedure EditorSpecialLineColors(Sender: TObject; Line: TSynNativeInt;
       var Special: Boolean; var FG, BG: TColor);
@@ -348,6 +359,7 @@ begin
   // Docking, like AQTime: every panel can be moved, tabbed with another, floated or
   // closed, and the arrangement is remembered between runs.
   FDockManager := TdxDockingManager.Create(Self);
+  FDockManager.OnLayoutChanged := DockLayoutChanged;
   FDockSite := TdxDockSite.Create(Self);
   FDockSite.Name := 'MainDockSite';
   FDockSite.Parent := Self;
@@ -428,6 +440,7 @@ begin
   FPoll.OnTimer := PollTimer;
   FBuildFinished := GetTickCount64;
   OnShow := ShowPendingDialog;
+  OnResize := EditorResized;
 
   // A session that cannot be opened is a message, not the end of the window: the log
   // panel says what was wrong and File > Open still works.
@@ -1224,18 +1237,188 @@ begin
   FEditorHeader.Align := alTop;
   FEditorHeader.Caption := ' Pick a method in the Report to see its source.';
 
+  // SynEdit scrolls with the window's own non-client bars, which no skin touches: on the
+  // dark theme they stay bright grey beside a dark editor. They are turned off and driven
+  // from DevExpress ones, which the skin paints like every other bar here. The arrangement
+  // - a host at the bottom holding the horizontal bar and a square corner - is the one that
+  // works in CVSTreeGraph, where this was solved first.
+  FEditorScrollHost := TPanel.Create(Self);
+  FEditorScrollHost.Parent := FSourcePanel;
+  FEditorScrollHost.Align := alBottom;
+  FEditorScrollHost.BevelOuter := bvNone;
+  FEditorScrollHost.Caption := '';
+  FEditorScrollHost.Visible := False;
+
+  FEditorScrollCorner := TPanel.Create(Self);
+  FEditorScrollCorner.Parent := FEditorScrollHost;
+  FEditorScrollCorner.Align := alRight;
+  FEditorScrollCorner.BevelOuter := bvNone;
+  FEditorScrollCorner.Caption := '';
+  FEditorScrollCorner.Visible := False;
+
+  FEditorScrollH := TcxScrollBar.Create(Self);
+  FEditorScrollH.Parent := FEditorScrollHost;
+  FEditorScrollH.Align := alClient;
+  FEditorScrollH.Kind := sbHorizontal;
+  FEditorScrollH.UnlimitedTracking := True;
+  FEditorScrollH.OnScroll := EditorScrollBarScrolled;
+
+  FEditorScrollV := TcxScrollBar.Create(Self);
+  FEditorScrollV.Parent := FSourcePanel;
+  FEditorScrollV.Align := alRight;
+  FEditorScrollV.Kind := sbVertical;
+  FEditorScrollV.UnlimitedTracking := True;
+  FEditorScrollV.Visible := False;
+  FEditorScrollV.OnScroll := EditorScrollBarScrolled;
+
   FEditor := TSynEdit.Create(Self);
   FEditor.Parent := FSourcePanel;
   FEditor.Align := alClient;
+  FEditor.ScrollBars := ssNone;
   FEditor.ReadOnly := True;
   FEditor.Gutter.ShowLineNumbers := True;
   FEditor.Font.Name := 'Consolas';
   FEditor.Font.Size := 10;
   FEditor.OnSpecialLineColors := EditorSpecialLineColors;
+  FEditor.OnStatusChange := EditorStatusChanged;
+
   FEditorHighlighter := TSynCSSyn.Create(Self);
   FEditor.Highlighter := FEditorHighlighter;
 end;
 
+/// A resize changes how much is on screen without moving the caret, so the editor raises no
+/// status change of its own and the bars would keep the size the panel had before. What
+/// changes that room is the window and the docking layout, so both say so here. SynEdit does
+/// not publish OnResize, or this would hang off the editor itself.
+procedure TMainForm.EditorResized(Sender: TObject);
+begin
+  UpdateEditorScrollBars;
+end;
+
+procedure TMainForm.DockLayoutChanged(Sender: TdxCustomDockControl);
+begin
+  UpdateEditorScrollBars;
+end;
+
+/// The editor moved, or was given another file: the bars follow it. Everything that scrolls
+/// - the wheel, the caret, a new source, a resize - passes through here.
+procedure TMainForm.EditorStatusChanged(Sender: TObject; Changes: TSynStatusChanges);
+begin
+  UpdateEditorScrollBars;
+end;
+
+/// A bar moved: the editor follows it, and the bar is told where it ended up.
+procedure TMainForm.EditorScrollBarScrolled(Sender: TObject; AScrollCode: TScrollCode;
+  var AScrollPos: Integer);
+begin
+  if FUpdatingEditorScrollBars then
+    Exit;
+  if Sender = FEditorScrollV then
+    FEditor.TopLine := AScrollPos
+  else if Sender = FEditorScrollH then
+    FEditor.LeftChar := AScrollPos;
+  UpdateEditorScrollBars;
+  if Sender is TcxScrollBar then
+    AScrollPos := TcxScrollBar(Sender).Position;
+end;
+
+/// How wide the widest line is: what there is to scroll sideways. A source file is short
+/// enough for this to cost nothing.
+function TMainForm.EditorLongestLine: Integer;
+var
+  LLine: string;
+begin
+  Result := 1;
+  if FEditor = nil then
+    Exit;
+  for LLine in FEditor.Lines do
+    if Length(LLine) > Result then
+      Result := Length(LLine);
+end;
+
+/// What the bars say about the editor. The values are 1-based, as the editor's own TopLine
+/// and LeftChar are, and the maximum is never smaller than a page: a scroll bar refuses a
+/// page as large as its range, and the four values are only valid together.
+procedure TMainForm.UpdateEditorScrollBars;
+var
+  LBarSize, LBaseHeight, LWidth, LHeight: Integer;
+  LNeedH, LNeedV, LWasH, LWasV: Boolean;
+  LLines, LColumns, LVisibleLines, LVisibleColumns, LVertMax, LHorzMax: Integer;
+begin
+  // While the constructor is still running the panels have no parent window yet, and
+  // sizing them there is what "PanelSource has no parent window" means. The same holds
+  // later, for the moment the window is first shown: the dock panel is creating its own
+  // window just then, and showing or hiding a bar inside it re-enters that.
+  if not FBuilt then
+    Exit;
+  // A window that is not shown has panels without handles and that is fine - it is how the
+  // driven window renders. What must be left alone is the moment of showing, when the panel
+  // is creating its window and has none yet.
+  if (FSourcePanel = nil) or (Visible and not FSourcePanel.HandleAllocated) then
+    Exit;
+  if FUpdatingEditorScrollBars or (FEditor = nil) or (FEditorScrollV = nil) then
+    Exit;
+  FUpdatingEditorScrollBars := True;
+  try
+    LBarSize := GetSystemMetrics(SM_CXVSCROLL);
+    if LBarSize <= 0 then
+      LBarSize := 17;
+    LBaseHeight := FSourcePanel.ClientHeight;
+    if FEditorHeader <> nil then
+      Dec(LBaseHeight, FEditorHeader.Height);
+
+    // Whether a bar is needed depends on the room the other one leaves, so the two answers
+    // are settled together rather than one after the other.
+    LNeedH := False;
+    LNeedV := False;
+    repeat
+      LWasH := LNeedH;
+      LWasV := LNeedV;
+      LWidth := FSourcePanel.ClientWidth;
+      if LNeedV then
+        Dec(LWidth, LBarSize);
+      LHeight := LBaseHeight;
+      if LNeedH then
+        Dec(LHeight, LBarSize);
+      LVisibleColumns := Max(1, (Max(1, LWidth) - FEditor.Gutter.RealGutterWidth) div Max(1, FEditor.CharWidth));
+      LVisibleLines := Max(1, Max(1, LHeight) div Max(1, FEditor.LineHeight));
+      LLines := Max(1, FEditor.Lines.Count);
+      LColumns := EditorLongestLine;
+      LNeedH := LColumns > LVisibleColumns;
+      LNeedV := LLines > LVisibleLines;
+    until (LNeedH = LWasH) and (LNeedV = LWasV);
+
+    FEditorScrollHost.Height := LBarSize;
+    FEditorScrollV.Width := LBarSize;
+    FEditorScrollCorner.Width := LBarSize;
+    FEditorScrollHost.Visible := LNeedH;
+    FEditorScrollV.Visible := LNeedV;
+    FEditorScrollCorner.Visible := LNeedH and LNeedV;
+
+    LVisibleLines := Max(1, FEditor.LinesInWindow);
+    LVisibleColumns := Max(1, (FEditor.ClientWidth - FEditor.Gutter.RealGutterWidth) div Max(1, FEditor.CharWidth));
+    LLines := Max(1, FEditor.Lines.Count);
+    LColumns := EditorLongestLine;
+    LVertMax := Max(LLines, LVisibleLines + 1);
+    LHorzMax := Max(LColumns, LVisibleColumns + 1);
+
+    if not LNeedV then
+      FEditor.TopLine := 1
+    else if FEditor.TopLine > Max(1, LVertMax - LVisibleLines + 1) then
+      FEditor.TopLine := Max(1, LVertMax - LVisibleLines + 1);
+    if not LNeedH then
+      FEditor.LeftChar := 1
+    else if FEditor.LeftChar > Max(1, LHorzMax - LVisibleColumns + 1) then
+      FEditor.LeftChar := Max(1, LHorzMax - LVisibleColumns + 1);
+
+    FEditorScrollV.SetScrollParams(1, LVertMax, FEditor.TopLine, LVisibleLines, True);
+    FEditorScrollH.SetScrollParams(1, LHorzMax, FEditor.LeftChar, LVisibleColumns, True);
+    FEditorScrollV.LargeChange := LVisibleLines;
+    FEditorScrollH.LargeChange := LVisibleColumns;
+  finally
+    FUpdatingEditorScrollBars := False;
+  end;
+end;
 /// The profiled range is painted rather than annotated per line: MonoVM gives no per-line
 /// samples, so the honest thing to show is "this method, these figures, these lines".
 procedure TMainForm.EditorSpecialLineColors(Sender: TObject; Line: TSynNativeInt;
@@ -1287,6 +1470,7 @@ begin
     [FStore.MethodName(AMethodId), LSource.FileName, LSource.StartLine, LSource.EndLine]);
   FEditor.CaretY := LSource.StartLine;
   FEditor.TopLine := Max(1, LSource.StartLine - 5);
+  UpdateEditorScrollBars;
   FEditor.Invalidate;
 end;
 
@@ -2013,6 +2197,7 @@ begin
   LPanel.Activate;
   FActivePanel := LowerCase(AName);
   GiveRoomTo(FActivePanel);
+  UpdateEditorScrollBars;
 end;
 
 function TMainForm.ActivePanelName: string;

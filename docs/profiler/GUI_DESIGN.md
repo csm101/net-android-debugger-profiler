@@ -521,6 +521,26 @@ stays as insurance and no longer fires: a window nobody can see is a window nobo
 by hand, and nothing is lost by it - a driven window writes neither layout nor settings, and
 the session database is the profiler's, not the window's.
 
+## The Source panel scrolls with skinned bars (2026-09-08)
+
+SynEdit scrolls with the window's own non-client scroll bars, which no skin touches: on the
+dark theme they stayed bright grey beside a dark editor. They are turned off
+(`ScrollBars := ssNone`) and driven from two `TcxScrollBar`s, which the skin paints like every
+other bar. The arrangement is the one that already works in CVSTreeGraph's annotate pane, and
+it was copied rather than reinvented: a host panel at the bottom holding the horizontal bar and
+a square corner, the vertical bar to the right, `SetScrollParams(1, Max, Position, PageSize)`
+with 1-based values as the editor's own `TopLine` and `LeftChar` are, `Max` never smaller than
+a page (a scroll bar refuses a page as large as its range), `UnlimitedTracking`, and a two-pass
+loop for whether each bar is needed, because one bar appearing changes the room the other has.
+
+What raises an update: the editor's `OnStatusChange` (the wheel, the caret, a new file), the
+window's resize and the docking layout - SynEdit does not publish `OnResize`, and a resize
+moves nothing the editor would report. Two guards, both learned the hard way: nothing runs
+while the constructor is still building the panels, and nothing runs at the moment a visible
+window is first shown, when the dock panel is creating its own window and has no handle yet.
+A hidden window has no handles at all and is exactly the case that must still work, which is
+why the second guard asks about `Visible` and not only about the handle.
+
 ## Open questions
 
 - (decided) Call Graph: kept. The trees answer "where did the time go"; the graph
