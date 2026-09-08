@@ -19,6 +19,9 @@
 *.inc text eol=crlf
 
 *.png binary
+*.ico binary
+*.res binary
+*.RES binary
 *.apk binary
 *.nettrace binary
 *.gcdump binary

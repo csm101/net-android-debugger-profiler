@@ -6,6 +6,12 @@ setlocal
 pushd "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0make-cfg.ps1" || goto :error
 call rsvars.bat || goto :error
+
+rem The icon and the version block live in NapGui.rc; the program includes the compiled
+rem resource with {$R *.res}. Drawn by make-icon.ps1 rather than downloaded, so the
+rem repository owns it outright.
+if not exist "%~dp0NapGui.ico" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0make-icon.ps1" || goto :error
+cgrc NapGui.rc -foNapGui.RES || goto :error
 dcc64 -B NapGui.dpr || goto :error
 
 rem The crash report is only useful when it resolves to a unit and a line. The detailed

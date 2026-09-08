@@ -500,12 +500,26 @@ it, holding files for the rest of the day. Found exactly that way: a killed test
 window whose `nap serve` blocked a build hours later. The ready line reports the owner it was
 given, so a client can see its own pid come back and know the guard is on.
 
-It asks politely and then insists: a `WM_CLOSE` posted when the owner dies does not reliably
-close this never-shown window, although the identical message closes it when the channel's
-input ends (measured, both ways, 2026-09-08). So the guard posts it and, three seconds later,
-ends the process. Nothing is lost by that: a driven window writes neither layout nor settings,
-and the session database is the profiler's, not the window's. A window nobody can see is a
-window nobody will close by hand, which is the whole reason for the guard.
+Ending it took two findings, both measured under the Delphi debugger on 2026-09-08, and both
+worth keeping because they are true of any hidden VCL application:
+
+- **A form that is never shown has no window.** Enumerating the process's windows finds only
+  its `TApplication`, a GDI+ hook window and a handful of `TPUtilWindow`s - no `TMainForm` at
+  all. So `PostMessage(MainForm.Handle, WM_CLOSE, ...)` reached nobody; worse, reading
+  `MainForm.Handle` from a service thread would have *created* the window on that thread,
+  whose message queue nobody pumps. `PostThreadMessage(MainThreadID, WM_QUIT, ...)` did not
+  end it either. What does is `Application.Terminate` on the main thread, reached through the
+  same `TThread.Synchronize` the channel already uses for every command.
+- **The wait that actually held the process open was in the shutdown, not in the window.** The
+  unit's finalization freed the reader thread, which blocks on standard input: freeing it
+  waits for input that may never come. It is only terminated now, and the thread goes with the
+  process.
+
+With both in place the window ends about fifty milliseconds after its owner does, by any of the
+three routes (owner killed, owner already gone, input closed). The hard exit two seconds later
+stays as insurance and no longer fires: a window nobody can see is a window nobody will close
+by hand, and nothing is lost by it - a driven window writes neither layout nor settings, and
+the session database is the profiler's, not the window's.
 
 ## Open questions
 

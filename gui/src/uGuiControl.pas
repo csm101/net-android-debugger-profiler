@@ -53,6 +53,8 @@ uses
   System.NetEncoding, System.IOUtils, Winapi.Windows, Winapi.Messages, Vcl.Forms, Vcl.Controls, Vcl.Graphics,
   uMainForm, uGuiRender, uSessionStore;
 
+procedure EndThisProcess; forward;
+
 type
   /// Reads command lines and has them executed on the main thread.
   TChannelThread = class(TThread)
@@ -341,8 +343,8 @@ begin
       // End of input: the process that owns this window has gone, so the window goes too.
       if FReader.EndOfStream then
       begin
-        if MainForm <> nil then
-          PostMessage(MainForm.Handle, WM_CLOSE, 0, 0);
+        // The owner has gone away without saying so: same ending.
+        EndThisProcess;
         Break;
       end;
       Continue;
@@ -350,8 +352,6 @@ begin
     HandleLine(LLine);
   end;
 end;
-
-procedure EndBecauseTheOwnerIsGone; forward;
 
 type
   /// Waits on the owner's handle and closes the window when it is signalled.
@@ -376,20 +376,41 @@ begin
   NameThreadForDebugging('nap-gui-parent-watch');
   WaitForSingleObject(FParent, INFINITE);
   CloseHandle(FParent);
-  EndBecauseTheOwnerIsGone;
+  EndThisProcess;
 end;
 
-/// The owner is gone, so this window has to go. It is asked politely first; measured on
-/// this window, a WM_CLOSE that closes it perfectly well when it came from the channel's
-/// end of input does not always take here, and a window nobody can see is a window nobody
-/// will ever close by hand - so the process ends itself if the polite way has not worked
-/// within a few seconds. Nothing is lost: a driven window writes neither layout nor
-/// settings, and its session database belongs to the profiler, not to it.
-procedure EndBecauseTheOwnerIsGone;
+/// Ends this process, from whichever thread notices that it should.
+///
+/// Not by closing the window: a driven window is never shown, and a VCL form that is never
+/// shown has no window handle at all - the process enumerates only its TApplication and a
+/// handful of utility windows (measured under the debugger, 2026-09-08). Reading
+/// MainForm.Handle would not just fail to reach anybody, it would create a window on the
+/// calling thread, whose message queue nobody pumps. WM_QUIT goes to the main thread's own
+/// queue instead, which is exactly what Application.Run is waiting on, so the message loop
+/// ends and the usual shutdown runs.
+///
+/// The hard exit behind it is insurance, not the plan: a window nobody can see is a window
+/// nobody will ever close by hand. Nothing is lost by it - a driven window writes neither
+/// layout nor settings, and the session database belongs to the profiler, not to it.
+procedure EndThisProcess;
 begin
-  if MainForm <> nil then
-    PostMessage(MainForm.Handle, WM_CLOSE, 0, 0);
-  Sleep(3000);
+  // Through the same door the commands come in: Synchronize wakes the main thread the way
+  // the VCL does it, and that is measurably the only thing this window answers to. Posting
+  // WM_QUIT to the main thread, or WM_CLOSE to the form, does not end it - a form that is
+  // never shown has no window at all (the process enumerates only its TApplication and a
+  // few utility windows), and a message to a window that does not exist reaches nobody.
+  if GetCurrentThreadId = MainThreadID then
+    Application.Terminate
+  else
+    TThread.Synchronize(nil,
+      procedure
+      begin
+        Application.Terminate;
+      end);
+  // Insurance, not the plan: a window nobody can see is a window nobody will close by hand.
+  // Nothing is lost by it - a driven window writes neither layout nor settings, and the
+  // session database belongs to the profiler, not to it.
+  Sleep(2000);
   ExitProcess(0);
 end;
 
@@ -405,7 +426,7 @@ begin
   // on this thread - the caller is still setting the window up.
   if LParent = 0 then
   begin
-    TThread.CreateAnonymousThread(EndBecauseTheOwnerIsGone).Start;
+    TThread.CreateAnonymousThread(EndThisProcess).Start;
     Exit;
   end;
   TParentWatchThread.Create(LParent);
@@ -427,11 +448,12 @@ end;
 initialization
 
 finalization
+  // The reader is not waited for. It sits in a blocking read of standard input, so freeing
+  // it here means waiting for input that may never come - and that wait, not the window, is
+  // what used to hold the process open until the guard's hard exit. The process is on its
+  // way out; the thread goes with it.
   if GChannel <> nil then
-  begin
     GChannel.Terminate;
-    GChannel.Free;
-  end;
   GOutput.Free;
   GWriteLock.Free;
 

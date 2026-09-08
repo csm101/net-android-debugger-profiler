@@ -4,20 +4,66 @@ A **debugger** and a **profiler** for .NET for Android applications — C# on Mo
 apps included — driven by AI agents through MCP, by editors through the Debug Adapter Protocol,
 and by people through a desktop GUI and a command line.
 
-They answer the questions a real app raises on a real device:
+## What is in the package
 
-| The question | What answers it |
-|---|---|
-| This screen takes four seconds to open. Where does the time go? | CPU sampling: hottest methods, call tree, callers and callees |
-| Which of these calls is slow, and how often is it made? | Instrumenting: exact call counts and times per method, async and iterator bodies included |
-| Memory keeps growing. What is holding it? | Heap snapshots and the growth between two of them, by type |
-| Why does it allocate so much? | Allocations by type and by allocating method |
-| Why does it crash, or return that value? | Breakpoints, stepping, locals, expression evaluation, ordered exception rules |
-| What happens after this exact line? | Both at once: stop at a breakpoint, then profile the same process from there on |
+Three separate things over one engine.
+
+### 1. An MCP server, with the skill that drives it
+
+For Claude Code and any other agent that speaks MCP. Through it an agent can:
+
+- **take the device**: launch and stop the app, tap, swipe, type, press keys, and read what is
+  on screen - a screenshot and the view hierarchy with the ids, texts and bounds of what is
+  there, so it acts on what the app actually shows rather than on coordinates it guessed;
+- **debug**: run the app under the Mono soft debugger, set breakpoints (conditional, by hit
+  count, or logpoints that never stop the app), step, read locals, evaluate expressions, walk
+  call stacks and threads, and catch exceptions **first-chance** - by type or by ordered rules
+  that ignore the noisy ones and break on the rest - not only when they go unhandled;
+- **read what the app says**: logcat and the app's own debug stream in one place -
+  `Debug.WriteLine`, `Console`, stdout and stderr all arrive as app output;
+- **find memory leaks and GC pressure**: live heap by type, the growth between two snapshots,
+  and allocations by type and by allocating method;
+- **find bottlenecks**: CPU sampling for where the time goes, deterministic instrumenting for
+  how often and how long, on the same installed app.
+
+The skill ships with the server: it is the operating guide that tells the agent which mode
+answers which question, how to read the numbers, and the traps to avoid
+([plugin/skills/net-android/SKILL.md](plugin/skills/net-android/SKILL.md)). With it, Claude Code
+debugs and profiles a .NET Android application on its own - on a headless emulator, without a
+window on anybody's screen and without a human driving the app. When a finding is easier seen
+than told, it has the GUI draw the panel and shows the picture.
+
+### 2. A DAP debugger for C#, written from scratch
+
+Installable in VS Code beside, or instead of, the official extension. It is an offshoot of what
+the MCP server needed rather than a rival: it does not aspire to replace the official C# Dev Kit
+debugger. Two things make it worth having anyway:
+
+- it is MIT, so it carries none of the licence restrictions the official one comes with;
+- it debugs **every process the app starts**, not only the one that owns the main window -
+  services, crash reporters and anything with its own `android:process` are attached as they
+  appear, each with its own breakpoints and stacks.
+
+### 3. A standalone GUI for the profiler (Windows)
+
+For running sessions by hand, with no agent and no editor. It builds and instruments the
+application itself - point it at a solution, a project or a folder of sources and it fills in
+the package, the build output and the callspec, installs the app and runs the session - so it
+needs no development environment beside it. It opens any session any frontend recorded.
+
+### The profiling modes, and what each costs
+
+| Mode | What it gives | What it costs |
+|---|---|---|
+| **CPU sampling** | Where the time goes: hottest methods, call tree, callers and callees, per thread, CPU time apart from blocked time | Nothing to the app: no rewriting, and it can attach to an app that is already running. ~1 ms samples, so short calls are statistical; no per-line figures on MonoVM, and very short callees are folded into their caller |
+| **Instrumenting, call tree** (default) | Exact call counts and times per method, with the call tree kept in the app: callers, callees, critical path, min and max | The app keeps a tree instead of a log, so it is the cheapest instrumenting; the order of calls and each single duration are not kept. Needs a narrow callspec and a restart |
+| **Instrumenting, every call** | Every call recorded: their order and each duration, plus allocations attributed to the allocating method | Larger traces and more overhead than the tree; same callspec and restart |
+| **Instrumenting, runtime provider** | The runtime's own enter/leave, with no assembly rewritten | Crashes .NET 9 runtimes and degrades on a device that has been profiled for a long time: the rewriting engines are the default for good reason |
+| **Heap snapshots** | Live objects by type, and the growth between two snapshots - the leak candidates at the top | Seconds of pause per snapshot on a large heap; no rewriting and no restart |
+| **Allocations** | What is allocated, by type, and by the method that allocated it | Recorded during an instrumenting session, so it carries that session's cost |
 
 Everything runs against an app installed on an emulator or an attached device; nothing is
 simulated, and no source is required beyond what the app was built with.
-
 ## Install
 
 A release is one folder. Unpack it and run, on Windows:
@@ -50,37 +96,27 @@ folder installable — including the skill in `skills/net-android/`. Building a 
 `gui\build-gui.cmd` (RAD Studio) then `powershell -File build\package.ps1`; the details are in
 [docs/profiler/PACKAGING.md](docs/profiler/PACKAGING.md).
 
-## Use it
+## What it looks like
 
-**With an agent.** Ask Claude Code to profile or debug the app. The plugin's skill is the
-operating guide: it starts with `list_devices`, `list_app_projects` and `check_app`, builds the
-app for the right purpose with `build_app`, chooses the profiling mode the question needs,
-reads the numbers correctly and knows the traps. When a finding is easier seen than told, it
-has the GUI draw the panel and shows the picture. Read it at
-[plugin/skills/net-android/SKILL.md](plugin/skills/net-android/SKILL.md).
-
-**With the GUI.** `gui\NapGui.exe`: point it at a solution, a project or a source folder, and it
-fills in the package, the build output and the callspec from the project files, builds and
-installs the app, runs the session and shows the results. Every session is a SQLite database
-that any frontend — or any SQLite client — reads.
-
-The report names the hot methods and shows their share; the call graph puts one of them
-between its callers and its callees. Both pictures below are of the example app's "slow
-search" screen, and both were drawn by the GUI itself on request — the agent asks for a
-panel and gets the image back, with no window on anyone's screen:
+The report names the hot methods and shows their share; the call graph puts one of them between
+its callers and its callees. Both pictures are of the example app's "slow search" screen, and
+both were drawn by the GUI itself on request - the agent asks for a panel and gets the image
+back, with no window on anyone's screen:
 
 ![The report panel: hottest methods of a sampling session, with their share of the samples](docs/images/gui-report.png)
 
 ![The call graph around the hot method, with its callers above and its sample counts](docs/images/gui-call-graph.png)
 
-**With the command line.** `nap doctor` says what the machine offers, `nap devices` lists them,
+## The other two ways in
+
+**The command line.** `nap doctor` says what the machine offers, `nap devices` lists them,
 `nap run --package <id> --mode sampling --duration 20` profiles and prints where the result
-database is.
+database is. Every session is a SQLite database that any frontend - or any SQLite client - reads.
 
-**With VS Code.** The debugger also speaks the Debug Adapter Protocol; its extension lives in
-`vscode/` and is installed from this repository with
-`vscode\install-vscode-extension.cmd`.
-
+**VS Code.** The DAP extension lives in `vscode/` and is installed from this repository with
+`vscode\install-vscode-extension.cmd`; `.vscode/launch.json` holds the launch configuration, and
+the same file is what `launch_from_config` reads, so how an app is launched lives with its
+sources rather than being restated per tool.
 ## The two products
 
 | Product | What it is | Sources | Read first |
