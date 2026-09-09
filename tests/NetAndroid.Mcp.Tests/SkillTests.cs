@@ -22,6 +22,22 @@ public sealed class SkillTests
         Directory.GetFiles(PluginRoot, "*.*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".json", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// The names that may appear nowhere: the application the products were developed
+    /// against, the company that owns it, its modules, its internal host, its source drive.
+    /// They are assembled from pieces rather than written, because this file would otherwise
+    /// be the one place in the repository where they do appear - and a scrub of the history
+    /// would then rewrite the very list that keeps them out.
+    /// </summary>
+    private static string[] CustomerNames =>
+    [
+        Word("Ven", "dix"), Word("V7", ".Droid"), Word("V7", ".Core"), Word("Digi", "soft"),
+        Word("Ri", "leva"), Word("Sync", "Palmari"), Word("digi", "soft.local"),
+        Word("com.ri", "leva"), Word(@"C:\VS", "Work"),
+    ];
+
+    private static string Word(params string[] parts) => string.Concat(parts);
+
     /// <summary>Backticked snake_case tokens: the shape of a tool name in the skill's prose.</summary>
     private static readonly Regex ToolShaped = new(@"`([a-z]+(?:_[a-z]+)+)`", RegexOptions.Compiled);
 
@@ -86,10 +102,10 @@ public sealed class SkillTests
         // developed against, the company's tooling, or the machine it was written on.
         var forbidden = new[]
         {
-            "the reference application", "App.Droid", "App", "GitLab", "MCA-", "C:\\Athens", "C:\\Work", "X:\\Temp",
+            "GitLab", "MCA-", @"C:\Athens", @"X:\Temp",
             "emulator-5554", "emulator-5556", "TestTarget", "ProfileMeExample", "com.mcasoftware",
             "net.androiddebugger", "register-mcp", "NAD_", "NAP_TEST", "Redmi", "MIUI",
-        };
+        }.Concat(CustomerNames).ToArray();
         var hits = new List<string>();
         foreach (var file in PluginTextFiles())
         {
@@ -111,11 +127,7 @@ public sealed class SkillTests
     [Fact]
     public void The_repository_names_no_customer_product()
     {
-        var forbidden = new[]
-        {
-            "the reference application", "App.Droid", "App.Core", "App", "the background service", "Sync",
-            "an internal host", "the app's background service", @"C:\Work",
-        };
+        var forbidden = CustomerNames;
         var skipped = new[] { ".git", "bin", "obj", "dist", "node_modules", "ThirdParty", "packages" };
         var extensions = new[] { ".cs", ".md", ".pas", ".dpr", ".dfm", ".txt", ".json", ".ps1", ".cmd", ".sh", ".targets", ".csproj", ".slnx", ".yml" };
 
@@ -124,8 +136,6 @@ public sealed class SkillTests
         {
             string relative = Path.GetRelativePath(Support.RepoRoot, file);
             if (skipped.Any(part => relative.Split(Path.DirectorySeparatorChar).Contains(part))) continue;
-            // This file lists the words: it is the one place they are allowed to appear.
-            if (Path.GetFileName(file) == "SkillTests.cs") continue;
             if (!extensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
             var text = File.ReadAllText(file);
             foreach (var word in forbidden)
