@@ -1,3 +1,4 @@
+using NetAndroidProfiler.Core.Sessions;
 using NetAndroidProfiler.Core.Weaving;
 
 namespace NetAndroidProfiler.Tests.Fast;
@@ -68,5 +69,18 @@ public class WeaveMapModeTests : IDisposable
         File.WriteAllLines(odd, ["#something else entirely", "1\tA.dll\t0x06000001\tA.B.C"]);
 
         Assert.Equal("trace", CecilWeaver.ReadMapMode(odd));
+    }
+    /// <summary>
+    /// An app that carries its assemblies inside the APK cannot be woven on the device, but a
+    /// build-time weave map means it was woven already - and engine=auto used to fall back to the
+    /// runtime provider anyway, which such an app then refuses, ending the session with advice to
+    /// "use a build-time weave map" that had just been given.
+    /// </summary>
+    [Fact]
+    public void Auto_picks_the_weaver_when_the_build_already_wove_the_app()
+    {
+        Assert.Equal(InstrumentingEngine.WeaverTree, ProfilerSession.ChooseEngine(isDebuggable: true, hasAssemblyStore: true, "nap-weave.map"));
+        Assert.Equal(InstrumentingEngine.WeaverTree, ProfilerSession.ChooseEngine(isDebuggable: true, hasAssemblyStore: false, null));
+        Assert.Equal(InstrumentingEngine.RuntimeProvider, ProfilerSession.ChooseEngine(isDebuggable: true, hasAssemblyStore: true, null));
     }
 }

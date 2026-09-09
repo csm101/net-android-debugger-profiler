@@ -379,11 +379,12 @@ public sealed class ProfilerSession : IAsyncDisposable
             // APK. When it is possible it is the better engine - it does not depend on the
             // runtime instrumenting anything, it works on net9 (U20), and it survives a
             // device that has stopped instrumenting (U23).
-            bool canWeave = prereq.IsDebuggable && !prereq.HasAssemblyStore;
-            Spec = Spec with { Engine = canWeave ? InstrumentingEngine.WeaverTree : InstrumentingEngine.RuntimeProvider };
-            Log(canWeave
-                ? "engine: weaver-tree (the app is fast-deployed, so its assemblies can be woven)"
-                : "engine: provider (the app carries its assemblies inside the APK, so nothing can be rewritten on the device)");
+            Spec = Spec with { Engine = ChooseEngine(prereq.IsDebuggable, prereq.HasAssemblyStore, Spec.WeaveMapPath) };
+            Log("engine: " + (Spec.Engine == InstrumentingEngine.WeaverTree
+                ? string.IsNullOrWhiteSpace(Spec.WeaveMapPath)
+                    ? "weaver-tree (the app is fast-deployed, so its assemblies can be woven)"
+                    : "weaver-tree (the build already wove the app: nothing has to be rewritten on the device)"
+                : "provider (the app carries its assemblies inside the APK, so nothing can be rewritten on the device)"));
         }
 
         if (Spec.Mode == ProfilingMode.Instrumenting && Spec.Engine.Weaves())
@@ -461,6 +462,18 @@ public sealed class ProfilerSession : IAsyncDisposable
             await EnsureAttachableAsync(device, prereq, ct).ConfigureAwait(false);
             Log($"attaching to pid {pid}");
         }
+    }
+
+    /// <summary>
+    /// Which engine <see cref="InstrumentingEngine.Auto"/> means for this app. The weaver needs
+    /// the app's assemblies to be replaceable in its fast-deployment directory - or already woven
+    /// by its build, in which case nothing has to be rewritten on the device at all and an app
+    /// that embeds its assemblies is weavable too.
+    /// </summary>
+    public static InstrumentingEngine ChooseEngine(bool isDebuggable, bool hasAssemblyStore, string? weaveMapPath)
+    {
+        if (!string.IsNullOrWhiteSpace(weaveMapPath)) return InstrumentingEngine.WeaverTree;
+        return isDebuggable && !hasAssemblyStore ? InstrumentingEngine.WeaverTree : InstrumentingEngine.RuntimeProvider;
     }
 
     /// <summary>
