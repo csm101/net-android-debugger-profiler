@@ -148,6 +148,18 @@ not covered: the weaver session launches the app itself, and an app the debugger
 `DebugAndProfileTogetherTests.SamplingAttach_ToTheAppUnderTheDebugger_ProfilesWhatRunsAfterTheBreakpoint`,
 emulator-5554, 22 s]**
 
+A woven assembly has no symbols for the debugger. The weaver reads and writes assemblies with
+`ReadSymbols = false` / `WriteSymbols = false`, so the rewritten assembly no longer matches the
+pdb built beside it: the runtime reports it as `NO SYMBOLS`, `get_source_files` finds none of its
+files and every breakpoint in it stays pending. Method tokens survive the rewrite, which is why
+the profiler still resolves its own figures to source through the original pdb - what is lost is
+the debugger's view, not the profiler's. It applies to build-time weaving too, and there the app
+stays woven until it is rebuilt: an app installed from a `-p:NapWeave=true` build is not
+line-debuggable in its woven assemblies. Debug that build's un-woven assemblies, or reinstall a
+normal build to debug. **[verified 2026-09-09 on a physical device: in an app
+installed from a build-time weave, the woven application assembly reported NO SYMBOLS while every
+untouched assembly beside it reported symbols]**
+
 Trap found on the way: a weaver session killed half-way leaves `<assembly>.pdb.naporig` in the
 override directory, and `WeaveDeployer` used to restore only a leftover `.dll.naporig` before
 weaving again, not the pdb beside it, so the app ran without symbols from then on: the debugger
