@@ -315,7 +315,9 @@ public sealed class ProfilerTools(SessionHost host)
         if (list.Count == 0) return $"No sessions under {host.SessionsRoot}.";
         var sb = new StringBuilder($"sessions root: {host.SessionsRoot}\n");
         foreach (var s in list)
-            sb.AppendLine($"{s.id}  {(s.ready ? "ready" : "incomplete")}  mode={s.spec?.Mode}  package={s.spec?.Package}  device={s.spec?.DeviceSerial}");
+            sb.AppendLine(
+                $"{s.id}  {(s.ready ? "ready" : "incomplete")}  mode={s.spec?.Mode}  package={s.spec?.Package}  device={s.spec?.DeviceSerial}" +
+                (string.IsNullOrWhiteSpace(s.spec?.Name) ? "" : $"  name=\"{s.spec!.Name}\""));
         return sb.ToString().TrimEnd();
     }
 
