@@ -46,7 +46,7 @@ needs a different wire protocol and a different debug-property mechanism (`src/n
 in dotnet/android). The repository-level view and the order of decisions are in
 `docs/KNOWN_UNKNOWNS.md` R2. Not a near-term concern for the reference application.
 
-## U9 - Physical palmari over WiFi adb
+## U9 - Physical handhelds over WiFi adb
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
 
@@ -116,7 +116,7 @@ test, but for an unrelated reason: the broadcast receiver driving it hung (60 s
 `BroadcastQueue` timeout) with the app otherwise healthy and ticking, and the
 cause was not found. The scaffolding was reverted rather than left in place
 hanging the debuggee.
-What is still unknown: which property of the V7 frame (async state machine in a
+What is still unknown: which property of the the reference application frame (async state machine in a
 symbol-less third-party assembly, rethrow through a continuation, or something
 else) makes `GetException()` return nothing. The fallback covers it either way.
 

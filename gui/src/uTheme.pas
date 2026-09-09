@@ -8,7 +8,7 @@ unit uTheme;
     - SynEdit and the plain VCL bits (log, summary), which take explicit colours;
     - the panels we draw ourselves (pies, call graph, monitor), which read this palette.
 
-  The palette follows the one used by CVSTreeGraph (C:\Athens\DelphiTools\CVSTreeGraph),
+  The palette follows the one used by CVSTreeGraph, another Delphi tool of ours,
   so the tools on this desk look like they belong together.
 }
 

@@ -318,8 +318,8 @@ var
     Result.Values[0] := LOwn;
     if LParent <> nil then
       LParent.CheckGroupType := ncgCheckGroup;
-    // A namespace that only holds other namespaces is still a legitimate choice - N:V7
-    // covers everything under V7 - so it gets an entry of its own even when the app
+    // A namespace that only holds other namespaces is still a legitimate choice - N:App
+    // covers everything under the reference application - so it gets an entry of its own even when the app
     // declares no type directly in it.
     LSynthetic := Default(TCallspecCandidate);
     LSynthetic.Callspec := 'N:' + ANamespace;

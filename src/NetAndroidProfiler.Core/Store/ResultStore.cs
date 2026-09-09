@@ -545,8 +545,16 @@ public sealed class ResultStore : IDisposable
             FROM method m
             LEFT JOIN sample_stat s ON s.method_id = m.id
             LEFT JOIN timing_stat t ON t.method_id = m.id
-            WHERE lower(m.module) = lower($mod) AND m.token <> 0
+            WHERE (lower(m.module) = lower($mod)
+                   OR lower(m.module) = lower($mod) || '.dll'
+                   OR lower(m.module) = lower($mod) || '.exe')
+              AND m.token <> 0
             """;
+        // A module is named both ways: a sampling trace says "MyApp", a weave map records the
+        // file it rewrote, "MyApp.dll", and the pdbs are keyed by assembly name. Asking with
+        // one and storing the other found nothing and showed a source file with no figures on
+        // it - the same four characters that had already cost every instrumenting session its
+        // source locations.
         cmd.Parameters.AddWithValue("$mod", module);
         using var rd = cmd.ExecuteReader();
         var list = new List<MethodFigures>();

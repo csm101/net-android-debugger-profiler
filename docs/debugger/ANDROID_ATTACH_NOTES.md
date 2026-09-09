@@ -430,10 +430,10 @@ clear is still issued; it just is not trusted.
 - Companion projects: App.Core, App.Shared, App.Sync, App.App.DroidLibs, …
 - Old checkout at `C:\Work\legacy-checkout` is classic Xamarin (2022) — ignore it.
 - **Multi-process (verified in source 2026-08-20):**
-  - `App.Droid/Services/ForegroundService/CrashReportSender.cs`:
+  - `App.Droid/Services/ForegroundService/CrashReporter.cs`:
     `[Service(Name="the app's crash reporting service", Process=":crash_report_process")]`
     → process `App.Droid:crash_report_process`. Started by
-    `AppApplication.InizializzaApplicazione()` right at app init (main process
+    `AppApplication.InitializeApp()` right at app init (main process
     only, guarded by `IsMainProcess()`), by `BootReceiver`, and after a bug
     report is prepared. Runs `SendPendingCrashReports()` (loop with 1-minute
     `Task.Delay`), then `StopSelf()`; `Sticky`. So the helper process is
@@ -550,7 +550,7 @@ clear is still issued; it just is not trusted.
   agent) works on the installed Debug build (fast deployment, assemblies in
   `.__override__/x86_64`); PDB paths are the `C:\Work\ReferenceApp\...` sources,
   so breakpoints on those absolute paths bind. Verified: breakpoint on startup
-  code in the main process (`AppApplication.InizializzaApplicazione`, set
+  code in the main process (`AppApplication.InitializeApp`, set
   before launch), breakpoint in another assembly (`App.Core.dll`, pending until
   loaded, then hit on the main thread id 1), helper `:crash_report_process`
   auto-attached on the next port, expansion of `this` with Unity container /

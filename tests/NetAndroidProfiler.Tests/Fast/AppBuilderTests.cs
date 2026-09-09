@@ -108,7 +108,7 @@ public class AppBuilderTests : IDisposable
         File.WriteAllText(targets, "<Project />");
 
         var args = AppBuilder.ArgumentsFor(new AppBuildRequest(
-            _project, Weave: true, Callspec: "N:V7", WeavingTargets: targets,
+            _project, Weave: true, Callspec: "N:App", WeavingTargets: targets,
             WeaveAssemblies: ["App.Core", "App.GeoLocation"]));
 
         // Escaped, because msbuild splits properties on a semicolon: unescaped, the second name
@@ -130,7 +130,7 @@ public class AppBuilderTests : IDisposable
         File.WriteAllText(targets, "<Project />");
 
         var args = AppBuilder.ArgumentsFor(new AppBuildRequest(
-            _project, Weave: true, Callspec: "N:V7", WeavingTargets: targets));
+            _project, Weave: true, Callspec: "N:App", WeavingTargets: targets));
 
         var weaver = args.FirstOrDefault(a => a.StartsWith("-p:NapWeaveTool="));
         var collector = args.FirstOrDefault(a => a.StartsWith("-p:NapCollectorAssembly="));

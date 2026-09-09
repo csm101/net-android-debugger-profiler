@@ -166,7 +166,7 @@ The repository carries the code, the docs and the tests. It does not carry:
   `Constraints.Min*` so nothing can overlap. Verified by resizing to 1000x760 and by trying
   to shrink below the minimum.
 - (fixed 2026-08-28) The "callspec outside the app" rule never fired: it looked for the
-  callspec among the candidates by exact name, and `N:V7` is a prefix, not a name. It now
+  callspec among the candidates by exact name, and `N:App` is a prefix, not a name. It now
   asks what an entry *reaches*, with the same prefix rule the engine's filter uses - and on
   the reference application it refuses `N:App` with the assembly that would be missed.
 - (done 2026-08-28) **A crash opens a dialog with the stack in it** (`gui/src/uCrashDialog.pas`,
@@ -187,7 +187,7 @@ appends them to the same map; the GUI sends its Assemblies field, and the rule n
 with App.Core named collects what a session then reads.)
 
 **Build-time weaving reached only the application's own assembly.** The targets weave
-`@(IntermediateAssembly)`, so a callspec covering a referenced library (the reference application: `N:V7` and
+`@(IntermediateAssembly)`, so a callspec covering a referenced library (the reference application: `N:App` and
 `N:App` live in App.Core, 19 MB of it) instruments nothing of what the app actually
 spends its time in - 6655 methods of the Android shell were woven, they run at startup and
 then the session collects a few hundred bytes and nothing more. The GUI now refuses that
@@ -283,7 +283,7 @@ Two observations from fixing those, worth keeping:
 - **A clean machine** - the package has not been run where there is no .NET SDK
   and no repository.
 - **the reference application** - U4b (suspend against its watchdogs) and U20 (provider
-  instrumenting unusable on net9; it unblocks when V7 moves to net10).
+  instrumenting unusable on net9; it unblocks when the reference application moves to net10).
 - **U23** - the device stops instrumenting after prolonged profiling; cause
   unknown, restart clears it, three provider tests skip while it lasts.
 - **CI** - nothing is automated; the GUI checks, the control path and the device

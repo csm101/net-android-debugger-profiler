@@ -85,7 +85,34 @@ public class ResultStoreTests
         Assert.Contains(w.Segments(), x => x.kind == "clear"); // and so does the history
     }
 
+    /// <summary>
+    /// The pdbs are keyed by assembly name ("MyApp"), while a weave map records the file it
+    /// rewrote ("MyApp.dll"): asking for one and storing the other found nothing, and the
+    /// annotated source came out with no figures on it at all.
+    /// </summary>
     [Fact]
+    public void Figures_are_found_whichever_way_the_module_is_named()
+    {
+        var r = new MonoProfilerAnalyzer().Analyze(Recorded.MonoProfiler4s);
+        string db = Recorded.TempDb("modulename");
+        using (var w = ResultStore.Create(db, "test"))
+        {
+            w.WriteSession(new SessionRow("s3", "Instrumenting", "Ready", null, null, null, null, null, null, null, null, null));
+            w.WriteInstrumenting(r with
+            {
+                Methods = r.Methods.Select(m => m with { Module = m.Module + ".dll" }).ToList(),
+            });
+        }
+        using var s = ResultStore.Open(db);
+
+        var asFile = s.MethodFiguresByModule("TestTarget.dll");
+        var asAssembly = s.MethodFiguresByModule("TestTarget");
+
+        Assert.NotEmpty(asFile);
+        Assert.Equal(asFile.Count, asAssembly.Count);
+    }
+
+    [Fact]
     public void Instrumenting_round_trip_timings_and_allocations()
     {
         var r = new MonoProfilerAnalyzer().Analyze(Recorded.MonoProfiler4s);

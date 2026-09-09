@@ -155,7 +155,7 @@ already defines a `Profiling` configuration in App.Droid.csproj; extend it:
 may contain spaces):
 
 ```
-MONO_DIAGNOSTICS=--diagnostic-mono-profiler=enable --diagnostic-mono-profiler=alloc --diagnostic-mono-profiler-callspec=N:V7
+MONO_DIAGNOSTICS=--diagnostic-mono-profiler=enable --diagnostic-mono-profiler=alloc --diagnostic-mono-profiler-callspec=N:App
 ```
 
 Build, deploy and run it as you do with Debug:
@@ -221,9 +221,9 @@ Callspec grammar (comma separated; `-` prefix excludes): `all`, `none`,
 `M:Full.Type.Name:Method`. Examples:
 
 ```
-N:V7                                   # every namespace starting with V7 (App.Droid, App.Core, ...)
+N:App                                   # every namespace starting with App (App.Droid, App.Core, ...)
 N:App.Core,T:App.Droid.MainActivity
-N:V7,-T:App.Core.Utils.FastHash         # exclude a hot leaf type (exclusion syntax still to validate - P3)
+N:App,-T:App.Core.Utils.FastHash         # exclude a hot leaf type (exclusion syntax still to validate - P3)
 ```
 
 Sizing rule from the spike: each enter/leave/allocation event costs about

@@ -115,6 +115,12 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Iterator state machine: one resumption per item plus the terminating one - `Iterator_state_machine_records_every_produced_item`
 
 ## E. ResultStore / SQLite (Fast/ResultStoreTests)
+
+- `Figures_are_found_whichever_way_the_module_is_named` - a session that recorded its
+  modules as file names ("MyApp.dll", which is what a weave map carries) answers a lookup by
+  assembly name ("MyApp", which is what the pdbs are keyed by) with the same rows. Without
+  it `profile_annotate_source` printed a source file with no figures beside any method.
+
 - [x] Schema version stamped and checked on open - `Open_rejects_wrong_schema_version`
 - [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
 - [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
@@ -302,7 +308,7 @@ and assert that what the results hold begins where recording did.
 - [x] `nap serve` prints its port and ends itself when the process that owns it exits - `Serve_ends_itself_when_the_process_that_owns_it_exits`
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
-- [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the_reference_app_resolves_app_methods`
+- [x] Sampling restart session resolves the startup hot path - `Sampling_restart_session_on_the_reference_app_resolves_app_methods`
 - [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the_reference_app` (on-device weaving; opt-in with NAP_REFAPP_ONDEVICE=1 and a fast-deployment build, since the reference application ships with embedded assemblies)
 - [x] Build-time weaving on the shipped configuration - `Build_time_weaving_session_on_the_reference_app`
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`

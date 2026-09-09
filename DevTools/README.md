@@ -45,7 +45,7 @@ For example, against the reference application:
 
 ```
 dotnet run --project DevTools/DapSmoke -- emulator-5554 App.Droid \
-  "C:\Work\ReferenceApp\App.Sync\Threads\BaseSyncPalmThread.cs" 112 --keep-fresh
+  "C:\Work\ReferenceApp\App.Sync\Threads\SyncThread.cs" 112 --keep-fresh
 ```
 
 Exit code 0 when every step answered.

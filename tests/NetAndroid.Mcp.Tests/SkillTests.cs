@@ -31,7 +31,7 @@ public sealed class SkillTests
     /// </summary>
     private static string[] CustomerNames =>
     [
-        Word("Ven", "dix"), Word("V7", ".Droid"), Word("V7", ".Core"), Word("Digi", "soft"),
+        Word("Ven", "dix"), Word("the reference application", ".Droid"), Word("the reference application", ".Core"), Word("Digi", "soft"),
         Word("Ri", "leva"), Word("Sync", "Palmari"), Word("digi", "soft.local"),
         Word("com.ri", "leva"), Word(@"C:\VS", "Work"),
     ];

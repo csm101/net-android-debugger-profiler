@@ -42,8 +42,8 @@ public class ReferenceAppTests
         Assert.True(row.TotalSamples > 200, $"samples={row.TotalSamples}");
         var hot = s.Results.Hotspots(40, exclusive: false, cpuOnly: true);
         Console.WriteLine(string.Join(Environment.NewLine, hot.Select(h => $"{h.Inclusive,7} {h.Exclusive,7} {h.FullName}")));
-        Assert.Contains(hot, h => h.FullName.StartsWith("V7.", StringComparison.Ordinal) || h.Module.StartsWith("V7", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(s.Results.Modules(), m => m.StartsWith("V7", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(hot, h => h.FullName.StartsWith("the reference application.", StringComparison.Ordinal) || h.Module.StartsWith("the reference application", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(s.Results.Modules(), m => m.StartsWith("the reference application", StringComparison.OrdinalIgnoreCase));
     }
 
     [SkippableFact(Skip = "TODO-RED: U20 - net9 MonoVM crashes at init when a profiler callspec is set (SIGSEGV registering the instrumentation filter callback); retest when the reference application targets net10. Weaver (P3) is the instrumenting path for net9.")]
@@ -62,7 +62,7 @@ public class ReferenceAppTests
     }
 
     /// <summary>
-    /// On-device weaving needs V7 installed from a fast-deployment build
+    /// On-device weaving needs the reference application installed from a fast-deployment build
     /// (-p:EmbedAssembliesIntoApk=false), which is not how the reference application ships: the shipped
     /// shape is covered by <see cref="Build_time_weaving_session_on_the_reference_app"/>. Opt in
     /// with NAP_REFAPP_ONDEVICE=1 after installing such a build, and narrow the callspec
@@ -72,7 +72,7 @@ public class ReferenceAppTests
     public async Task Weaver_instrumenting_session_on_the_reference_app()
     {
         Skip.IfNot(Enabled && Environment.GetEnvironmentVariable("NAP_REFAPP_ONDEVICE") == "1",
-            "set NAP_REFAPP=1 and NAP_REFAPP_ONDEVICE=1, with V7 installed from a fast-deployment build");
+            "set NAP_REFAPP=1 and NAP_REFAPP_ONDEVICE=1, with the reference application installed from a fast-deployment build");
         string callspec = Environment.GetEnvironmentVariable("NAP_REFAPP_CALLSPEC") ?? "T:App.Droid.AppApplication";
         var asms = (Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_ASMS") ?? "App.Droid").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting,

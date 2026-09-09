@@ -85,9 +85,9 @@ Beyond the shared rules: prefer records and immutable data for analysis
 snapshots; profiling data paths are hot - measure before optimizing, but avoid
 obvious per-event allocations in parsers.
 
-Delphi GUI (`gui/`): follows the coding standards of the VendingService
-workspace (`C:\Athens\VendingService\AGENTS.md`) - DevExpress VCL, no `with`,
-typed exceptions, 2-space indent, CRLF sources.
+Delphi GUI (`gui/`): DevExpress VCL, no `with`, typed exceptions, guard clauses
+rather than nesting, inline `var` declared next to their use, 2-space indent,
+CRLF sources, and names that explain themselves instead of a comment that does.
 
 **Never a stock VCL control where DevExpress has the equivalent (blocking).** The
 window is skinned, and a native control is a hole in it: it paints the system's

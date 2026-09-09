@@ -463,9 +463,24 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   `-p:CustomAfterMicrosoftCommonTargets=...`, no csproj edit) wove 13 methods,
   skipped 2 property accessors, flagged 3 async stubs, and produced real
   timings in a 12 s session that deployed nothing: IsMainProcess 173 ms
-  (2 calls), InizializzaApplicazione 135 ms (30.9 ms self), ..ctor 133 ms,
-  OnCreate 95.6 ms, AttendiTermineInizializzazione 3.4 ms.
+  (2 calls), InitializeApp 135 ms (30.9 ms self), ..ctor 133 ms,
+  OnCreate 95.6 ms, and a wait-for-initialization method 3.4 ms.
   **[verified - Build_time_weaving_session_on_the_reference_app]**
+- **Source locations, end to end on the real app [verified 2026-09-09]**: a 25 s session
+  reusing the build-time weave map (nothing woven or deployed, the installed APK already
+  carries the instrumentation) resolved **5,381 of 6,695 methods** to a file and a line
+  range. The ones without are compiler-generated: they carry no sequence points.
+  Two lookups had to agree on how a module is named before this worked - see the trap below.
+- **The module name is written two ways, and both lookups must accept both**: a sampling
+  trace says `MyApp`, the pdbs are keyed `MyApp` (file name without extension), and a weave
+  map records the file it rewrote, `MyApp.dll`. Until 2026-09-09 `PortablePdbSymbols.Find`
+  missed on the second, which silently gave **every** instrumenting session no source
+  locations at all, and `ResultStore.MethodFiguresByModule` missed on the first, which
+  printed an annotated source file with no figures on it. Both accept either spelling now
+  (`A_module_named_with_its_file_extension_finds_the_same_pdb`,
+  `Figures_are_found_whichever_way_the_module_is_named`). The lesson is worth more than the
+  fix: nothing in the fast suite could see it, because both halves were only ever exercised
+  together on a real app.
 - **Async bodies are woven by default and work on the real app**: for a matching
   async method the weaver instruments both the synchronous stub and the
   compiler-generated `MoveNext`, the second reported as
@@ -528,9 +543,9 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   the app stops starting (no crash in logcat). Build-time weaving therefore
   bakes `NAP_PROFILER_OUT` / `NAP_PROFILER_MARKER_DIR` into the app through
   an `@(AndroidEnvironment)` file, and the session injects nothing.
-  **[verified - V7 build-time session green only after this change]**
+  **[verified - the reference application build-time session green only after this change]**
 - **Switching an app between fast deployment and embedded assemblies leaves a
-  stale `files/.__override__/<abi>/` behind** (441 files observed on V7 after
+  stale `files/.__override__/<abi>/` behind** (441 files observed on the reference application after
   moving back to `EmbedAssembliesIntoApk=true`): the runtime keeps preferring
   those copies and the app can stop starting entirely, with no crash in
   logcat. Clear the directory (`run-as <pkg> rm -rf files/.__override__`) or
@@ -710,9 +725,9 @@ class's session marker]**
   auto-resolved); APK 24.7 MB, diagnostics component present, no libaot-*,
   21 portable pdbs. **[verified 2026-08-20]**
 - **Sampling works end-to-end**: 25 s restart session -> 12,120 samples,
-  4,373 methods, V7 startup hot path resolved (AppApplication.
-  InizializzaApplicazione -> IoCContainerDroid.Register ->
-  EnumRegistration.Register, Unity container). trace.nettrace ~38 MB for
+  4,373 methods, and the startup hot path came out readable three frames deep:
+  the application's own initialization calling its dependency-injection container
+  calling the registration of one more type. trace.nettrace ~38 MB for
   25 s (vs 0.7 MB for TestTarget: real app has far more managed activity).
   **[verified]**
 - **Instrumenting is unavailable on net9 apps**: any

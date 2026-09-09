@@ -110,9 +110,9 @@ to see what still works.
 Update 2026-09-06: `net11.0-android` drops Mono entirely, so the provider engine and the
 `debug.mono.*` mechanics end with .NET 10 apps (supported until November 2028); sampling over
 EventPipe and the IL weaver are what survives. Repository-level view: `docs/KNOWN_UNKNOWNS.md` R2.
-## U10 - Physical devices and palmari
+## U10 - Physical devices and handhelds
 adb reverse flow on real handhelds; WiFi adb and SSH-tunneled adb for remote
-palmari; port collisions with the debugger project's ports.
+handhelds; port collisions with the debugger project's ports.
 
 ## U11 - CLOSED: shared device layer with net-android-debugger
 Done 2026-09-06: `src/NetAndroid.Device` holds the process runner, the adb locator, one adb
