@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Mono.Cecil;
+using NetAndroidProfiler.Core.Weaving;
 
 namespace NetAndroidProfiler.Tests.Fast;
 
@@ -147,5 +148,26 @@ public class WeaveToolBackupTests : IDisposable
 
         Assert.NotEqual(0, again.exit);
         Assert.Contains("already instrumented", again.output);
+    }
+    /// <summary>
+    /// Clear Results deleted the pulled per-call files and left the pulled call trees, which the
+    /// next Get Results imported again: on a real app the cleared session came back with every
+    /// figure it had before the clear, plus the new ones.
+    /// </summary>
+    [Fact]
+    public void Clearing_deletes_the_pulled_trees_as_well_as_the_pulled_events()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "nap-clear-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (string name in new[] { "p1-t2-g0.napw", "p1-t2-g0.napt", "keep.txt" })
+                File.WriteAllText(Path.Combine(dir, name), "x");
+
+            WeaveDeployer.DeletePulledEvents(dir);
+
+            Assert.Equal(new[] { "keep.txt" }, Directory.GetFiles(dir).Select(Path.GetFileName).ToArray());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
     }
 }

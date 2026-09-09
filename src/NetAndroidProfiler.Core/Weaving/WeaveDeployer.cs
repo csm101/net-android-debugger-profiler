@@ -216,6 +216,21 @@ public sealed class WeaveDeployer
     /// first: a collector that kept writing to its old handles would be filling files that
     /// no longer have a name, so every thread has to start a new one.
     /// </summary>
+    /// <summary>
+    /// The event files pulled from the device: the per-call log (<c>.napw</c>) and, in tree mode,
+    /// each thread's call tree (<c>.napt</c>). Clearing has to remove both - a clear that left the
+    /// trees behind was undone by the next Get Results, which re-imported them.
+    /// </summary>
+    public static void DeletePulledEvents(string directory)
+    {
+        if (!Directory.Exists(directory)) return;
+        foreach (string pattern in new[] { "*.napw", "*.napt" })
+            foreach (string f in Directory.GetFiles(directory, pattern))
+            {
+                try { File.Delete(f); } catch { /* a file still being written is gone next time */ }
+            }
+    }
+
     public async Task ClearEventsAsync(CancellationToken ct)
     {
         // Delete first, bump second. The other order deletes the fresh files the collector

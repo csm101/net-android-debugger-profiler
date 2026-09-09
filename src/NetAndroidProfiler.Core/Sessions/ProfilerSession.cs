@@ -1072,8 +1072,8 @@ public sealed class ProfilerSession : IAsyncDisposable
     {
         RequireLiveWeaverSession("clear");
         await _weaveDeployer!.ClearEventsAsync(ct).ConfigureAwait(false);
-        if (_weaveEventsDir is not null && System.IO.Directory.Exists(_weaveEventsDir))
-            foreach (string f in System.IO.Directory.GetFiles(_weaveEventsDir, "*.napw")) { try { File.Delete(f); } catch { } }
+        if (_weaveEventsDir is not null)
+            WeaveDeployer.DeletePulledEvents(_weaveEventsDir);
         if (File.Exists(DatabasePath))
         {
             _writeStore ??= ResultStore.Open(DatabasePath, readOnly: false);

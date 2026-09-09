@@ -71,7 +71,10 @@ internal static class TextFormat
 
     public static string AllocTypes(IReadOnlyList<AllocTypeRow> rows)
     {
-        if (rows.Count == 0) return "No allocation events (instrumenting session with trackAllocations=true needed).";
+        if (rows.Count == 0)
+            return "No allocation events. A session woven at runtime records them with trackAllocations=true; " +
+                   "one that uses a build-time weave map records what the build wove, so allocations need " +
+                   "the weaver's --allocations in that build (-p:NapWeaveArgs=--allocations).";
         var sb = new StringBuilder();
         sb.AppendLine($"{"type",5} {"count",10} {"bytes",12} {"avg",7}  type name");
         foreach (var r in rows) sb.AppendLine($"{r.TypeId,5} {r.Count,10} {r.Bytes,12} {(r.Count == 0 ? 0 : r.Bytes / r.Count),7}  {r.TypeName}");

@@ -542,7 +542,8 @@ public sealed class ProfilerTools(SessionHost host)
         using var s = host.OpenResults(id, out _);
         var row = s.ReadSession();
         var sb = new StringBuilder();
-        sb.AppendLine($"session={id} mode={row?.Mode} state={row?.State} package={row?.Package} device={row?.DeviceSerial} duration={row?.DurationMs / 1000.0:F1}s");
+        string duration = row?.DurationMs is { } ms ? $"{ms / 1000.0:F1}s" : "(still running)";
+        sb.AppendLine($"session={id} mode={row?.Mode} state={row?.State} package={row?.Package} device={row?.DeviceSerial} duration={duration}");
         sb.AppendLine($"database={s.DataSource}");
         if (row?.Mode == ProfilingMode.Sampling.ToString())
         {
