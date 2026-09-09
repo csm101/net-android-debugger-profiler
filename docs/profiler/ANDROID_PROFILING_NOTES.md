@@ -658,8 +658,18 @@ The port is also taken by things that have nothing to do with profiling. Seen on
 (`docker ps` shows the mapping; `Get-NetTCPConnection -LocalPort 9000` names
 `com.docker.backend`). The engine refuses to start with the "port 9000 is already in
 use" message; until dsrouter can be told another port (U12b) the only remedy is to
-stop whatever listens there. 9001 matters too: it is the device-side port of the
-`adb reverse` flow for physical devices.
+stop whatever listens there.
+
+**Both ports are checked, since 2026-09-09.** 9001 is not a footnote: on a physical
+device it is the port the trace is read from, and the guard only looked at 9000. A
+verification run on a real phone failed three times with dsrouter's own "only one
+usage of each socket address is normally permitted" - which names neither port nor
+purpose - while 9000 was demonstrably free; it was Docker Desktop sitting on 9001,
+the same neighbour as on 2026-09-05, one port along. The check now covers both and
+the message says which port, what it is for, that a container runtime is a common
+holder, and the command that names the process
+(`netstat -ano | findstr :9001`). Pinned by
+`DsRouterTests.Either_busy_port_is_reported_with_the_port_and_what_it_is_for`.
 
 A device serves one profiling session at a time. The diagnostics port
 (`DOTNET_DiagnosticPorts`, host side 9000 through dsrouter) is reachable by every

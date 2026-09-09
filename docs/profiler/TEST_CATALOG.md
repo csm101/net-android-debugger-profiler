@@ -62,6 +62,9 @@ Conventions (mirroring the debugger project's discipline):
 - [x] A pdb left aside as `.pdb.naporig` by a killed weaver session is put back by the next deploy of that assembly, as the dll already was (without it the debugger binds no breakpoint) - `WeaveDeployerTests.Deployer_restores_a_pdb_left_aside_by_a_killed_session`
 - [x] Attach tests configure the app's diagnostics port themselves (they used to rely on leftovers of earlier sessions) - `Sampling_attach_to_running_debug_app_without_restart`, `Heap_snapshot_of_running_app_shows_retained_records`, `Two_heap_snapshots_support_a_growth_diff`
 - [x] A port already in use is detected before spawning dsrouter - `Fast/DsRouterTests`
+- [x] **Both** ports dsrouter needs are checked, and the refusal names the port, its purpose
+  and how to find the holder - `Either_busy_port_is_reported_with_the_port_and_what_it_is_for`
+  (9001 was unchecked until a real run lost three attempts to Docker sitting on it)
 
 ## B. Sampling analysis (Fast/SamplingAnalyzerTests, recorded testtarget-sampling-jit-20s)
 - [x] Busy method appears in top exclusive CPU hotspots - `Busy_method_is_among_top_exclusive_cpu_hotspots`

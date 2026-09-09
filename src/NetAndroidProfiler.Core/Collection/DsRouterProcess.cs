@@ -46,13 +46,20 @@ public sealed class DsRouterProcess : IAsyncDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
         };
-        // dsrouter has no port option, so a second one cannot run, and the one already
-        // holding the port may be a leftover of an interrupted session. Say that here
-        // instead of letting the session fail much later with nothing ever connecting.
-        if (IsPortInUse(AppPort))
-            throw new ToolException(
-                $"Port {AppPort} is already in use, so dotnet-dsrouter cannot start. Another profiling session is running, " +
-                "or a dotnet-dsrouter left over from an interrupted one is still alive - stop it and retry.");
+// dsrouter has no port option, so a second one cannot run, and whatever holds a
+        // port it needs may be a leftover of an interrupted session - or something else
+        // entirely. Both ports are checked: it listens on AppPort for the app and on
+        // DeviceHostPort for the tracer, and until this looked at the second one a busy
+        // 9001 surfaced as dsrouter's own "only one usage of each socket address is
+        // normally permitted", which names neither the port nor who holds it.
+        foreach (int port in new[] { AppPort, DeviceHostPort })
+            if (IsPortInUse(port))
+                throw new ToolException(
+                    $"Port {port} is already in use, so dotnet-dsrouter cannot start ({PortPurpose(port)}). " +
+                    $"{HolderOf(port)}It may be another profiling session, a dotnet-dsrouter left over from an " +
+                    "interrupted one, or a program with nothing to do with profiling - a container runtime " +
+                    $"publishing the same port, for instance. Find it with `netstat -ano | findstr :{port}` on " +
+                    $"Windows or `lsof -i :{port}` elsewhere, stop it, and retry.");
 
         psi.ArgumentList.Add(isEmulator ? "android-emu" : "android");
         psi.ArgumentList.Add("-v");
@@ -107,6 +114,31 @@ public sealed class DsRouterProcess : IAsyncDisposable
     }
 
     /// <summary>True when something already listens on <paramref name="port"/>.</summary>
+    private static string PortPurpose(int port) => port == AppPort
+        ? "the port the app connects to"
+        : "the port the trace is read from";
+
+    /// <summary>
+    /// "Process X (pid N) holds it. " when the holder can be named, empty otherwise. Naming
+    /// it is most of the answer: the port is rarely taken by us.
+    /// </summary>
+    private static string HolderOf(int port)
+    {
+        try
+        {
+            foreach (var p in Process.GetProcesses())
+            {
+                // A process is only asked about its ports on Windows through netstat-like
+                // APIs that .NET does not expose; the cheap, portable half is to name the
+                // dsrouter processes we might have left behind.
+                if (!p.ProcessName.Contains("dsrouter", StringComparison.OrdinalIgnoreCase)) continue;
+                return $"A dotnet-dsrouter (pid {p.Id}) is still running and is the likely holder. ";
+            }
+        }
+        catch { /* naming the holder is a courtesy, never a reason to fail */ }
+        return string.Empty;
+    }
+
     public static bool IsPortInUse(int port)
     {
         foreach (var endpoint in IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners())

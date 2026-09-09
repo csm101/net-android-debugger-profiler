@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using NetAndroidProfiler.Core.Collection;
+using NetAndroid.Device;
 
 namespace NetAndroidProfiler.Tests.Fast;
 
@@ -11,7 +12,33 @@ namespace NetAndroidProfiler.Tests.Fast;
 /// </summary>
 public class DsRouterTests
 {
+    /// <summary>
+    /// dsrouter needs two ports on a physical device - the one the app connects to and the
+    /// one the trace is read from - and until 2026-09-09 only the first was checked. A busy
+    /// second one surfaced as dsrouter's own "only one usage of each socket address is
+    /// normally permitted", which names neither the port nor its purpose; it cost a
+    /// verification run to work out that Docker was sitting on 9001.
+    /// </summary>
     [Fact]
+    public async Task Either_busy_port_is_reported_with_the_port_and_what_it_is_for()
+    {
+        // Hold the port ourselves when it is free; when something else already holds it -
+        // which is the very situation this guards against - that does just as well.
+        TcpListener? listener = new(IPAddress.Loopback, DsRouterProcess.DeviceHostPort);
+        try { listener.Start(); }
+        catch (SocketException) { listener = null; }
+        try
+        {
+            var e = await Assert.ThrowsAsync<ToolException>(
+                () => DsRouterProcess.StartAsync(isEmulator: false, CancellationToken.None));
+
+            Assert.Contains(DsRouterProcess.DeviceHostPort.ToString(), e.Message);
+            Assert.Contains("the trace is read from", e.Message);
+        }
+        finally { listener?.Stop(); }
+    }
+
+    [Fact]
     public void A_listening_port_is_detected()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
