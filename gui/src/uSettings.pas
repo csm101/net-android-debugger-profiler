@@ -11,7 +11,7 @@ unit uSettings;
 interface
 
 uses
-  System.SysUtils, System.IOUtils, System.IniFiles,
+  System.SysUtils, System.Classes, System.IOUtils, System.IniFiles,
   uTheme, uSessionStore;
 
 type
@@ -23,6 +23,13 @@ type
     CodeFontSize: Integer;
     /// Where sessions are stored and listed; empty means the service's own default.
     SessionsRoot: string;
+    /// Folders a session was deliberately saved in besides that root. A session kept
+    /// beside the product it measures would otherwise disappear from the Explorer the
+    /// moment it was created, which is the fastest way to make "save it where I want"
+    /// useless.
+    SessionFolders: TArray<string>;
+    /// The folder the last new session was saved in, offered again by the setup dialog.
+    LastSessionFolder: string;
     /// Explicit path to nap.exe; empty means "look next to this application".
     NapExePath: string;
     /// Panel layout loaded at start, from the named layouts. Empty means the last one used.
@@ -53,6 +60,9 @@ function SettingsFileName: string;
 function LayoutsDirectory: string;
 procedure LoadSettings;
 procedure SaveSettings;
+/// Keep a folder in the list the Explorer browses. The standard sessions root is always
+/// browsed and is never added; a folder already known is not added twice.
+procedure RememberSessionFolder(const AFolder: string);
 
 implementation
 
@@ -81,6 +91,55 @@ begin
   Result := TPath.Combine(TPath.GetDirectoryName(ParamStr(0)), 'layouts');
 end;
 
+{ The folders sessions were saved in live in a section of their own: a list has no
+  natural key, and numbering them in the App section would make it unreadable. }
+procedure ReadSessionFolders(AIni: TIniFile);
+var
+  LNames: TStringList;
+  LFolder: string;
+  I: Integer;
+begin
+  GSettings.SessionFolders := nil;
+  LNames := TStringList.Create;
+  try
+    AIni.ReadSection('SessionFolders', LNames);
+    for I := 0 to LNames.Count - 1 do
+    begin
+      LFolder := AIni.ReadString('SessionFolders', LNames[I], '');
+      if LFolder <> '' then
+        GSettings.SessionFolders := GSettings.SessionFolders + [LFolder];
+    end;
+  finally
+    LNames.Free;
+  end;
+end;
+
+procedure WriteSessionFolders(AIni: TIniFile);
+var
+  I: Integer;
+begin
+  AIni.EraseSection('SessionFolders');
+  for I := 0 to High(GSettings.SessionFolders) do
+    AIni.WriteString('SessionFolders', 'Folder' + IntToStr(I), GSettings.SessionFolders[I]);
+end;
+
+procedure RememberSessionFolder(const AFolder: string);
+var
+  LFolder: string;
+begin
+  LFolder := Trim(AFolder);
+  if LFolder = '' then
+    Exit;
+  LFolder := ExcludeTrailingPathDelimiter(LFolder);
+  if SameText(LFolder, ExcludeTrailingPathDelimiter(GSettings.SessionsRoot)) then
+    Exit;
+  for var LKnown in GSettings.SessionFolders do
+    if SameText(LKnown, LFolder) then
+      Exit;
+  GSettings.SessionFolders := GSettings.SessionFolders + [LFolder];
+  SaveSettings;
+end;
+
 procedure LoadSettings;
 var
   LIni: TIniFile;
@@ -91,6 +150,8 @@ begin
   GSettings.CodeFontName := CDefaultFontName;
   GSettings.CodeFontSize := CDefaultFontSize;
   GSettings.SessionsRoot := '';
+  GSettings.SessionFolders := nil;
+  GSettings.LastSessionFolder := '';
   GSettings.NapExePath := '';
   GSettings.DefaultLayout := '';
   GSettings.LastSolution := '';
@@ -114,6 +175,8 @@ begin
     GSettings.CodeFontName := LIni.ReadString('App', 'CodeFontName', GSettings.CodeFontName);
     GSettings.CodeFontSize := LIni.ReadInteger('App', 'CodeFontSize', GSettings.CodeFontSize);
     GSettings.SessionsRoot := LIni.ReadString('App', 'SessionsRoot', '');
+    GSettings.LastSessionFolder := LIni.ReadString('App', 'LastSessionFolder', '');
+    ReadSessionFolders(LIni);
     GSettings.NapExePath := LIni.ReadString('App', 'NapExePath', '');
     GSettings.DefaultLayout := LIni.ReadString('App', 'DefaultLayout', '');
     GSettings.LastSolution := LIni.ReadString('App', 'LastSolution', '');
@@ -152,6 +215,8 @@ begin
       LIni.WriteString('App', 'CodeFontName', GSettings.CodeFontName);
       LIni.WriteInteger('App', 'CodeFontSize', GSettings.CodeFontSize);
       LIni.WriteString('App', 'SessionsRoot', GSettings.SessionsRoot);
+      LIni.WriteString('App', 'LastSessionFolder', GSettings.LastSessionFolder);
+      WriteSessionFolders(LIni);
       LIni.WriteString('App', 'NapExePath', GSettings.NapExePath);
       LIni.WriteString('App', 'DefaultLayout', GSettings.DefaultLayout);
       LIni.WriteString('App', 'LastSolution', GSettings.LastSolution);

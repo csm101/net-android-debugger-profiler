@@ -365,6 +365,104 @@ Point `NAP_JCLDEBUG` at the tool if it lives elsewhere; without it the build sti
 and says what is lost. The first frames, which belong to the hook that captures the
 exception, are trimmed so the line that matters is the first one.
 
+## The toolbars do not come apart (2026-09-09)
+
+`BarManager.NotDocking` holds every docking style, `dsNone` - which is what dxBar calls
+floating - included: `TdxBar.CanMoving` is then false, so the bars cannot be dragged along
+their row, moved to another edge, or torn off into a window of their own. Each bar also has
+`AllowClose`, `AllowCustomizing` and `AllowQuickCustomizing` off. A toolbar that floats is a
+way for a window to be broken by accident with nothing on the other side of the trade; the
+dockable *panels* are where arrangement belongs.
+
+Because of that, a saved layout is the panels and nothing else - there is no longer anything
+about the bars to remember (an older layout's `<name>.bars.ini` is ignored).
+
+## File, and the run controls (2026-09-09)
+
+Starting a session and opening one are File commands - that is how work begins, not how a
+run is controlled - so the Session bar leads with a **File** menu (New session Ctrl+N, Open
+session Ctrl+O, "Add a sessions folder...", Exit) and keeps as buttons only what acts on the
+session in progress: Refresh, Record, Snapshot, Archive, Pause, Clear, Stop.
+
+The **Theme** combo is gone from the toolbar: a theme is chosen once, and Settings is where
+a choice made once belongs. The unit times are shown in stays, because it is not a
+preference - "is that 12 ms or 12 us" is a question about the row under the cursor, asked
+while reading a result, and a dialog for it is the sort of friction that makes people stop
+asking.
+
+## Sessions in the Explorer (2026-09-09)
+
+The Explorer groups sessions by the solution they came from, falling back to the project and
+then to the package for sessions taken before a session recorded its origin. A profiler used
+on more than one product otherwise shows a wall of timestamps in which yesterday's run of
+the thing you care about is indistinguishable from a test run of something else.
+
+A session is shown by its **name** when it has one. The New session dialog asks for one, and
+for where to keep it: a session can live beside the product it measures instead of in the
+profiler's own folder, and that folder joins the ones the Explorer browses - otherwise
+"keep it where I want" would make the session disappear the moment it was created. The
+folders are remembered in the settings (`[SessionFolders]`), and "Add a sessions folder..."
+points the Explorer at somebody else's recordings.
+
+The context menu on a session is Open, Rename..., Delete..., Show in folder, plus Add a
+sessions folder and Refresh; a right-click first selects the node under the pointer, which a
+tree list does not do on its own. Rename and Delete go through the control service rather
+than rewriting `session.json` from Delphi: what a name is, and that a running session is not
+deleted under its own collector, are the engine's rules.
+
+## Recording on demand (2026-09-09)
+
+"Start recording only when I say" in the New session dialog, and a **Record** button that is
+enabled exactly while the session is `WaitingToRecord`. The app starts and runs normally, the
+status bar says nothing is being measured, and what the results hold begins where the person
+pressed Record. This is AQTime's "start with profiling disabled", and the reason for it is
+that the part worth measuring is rarely the startup.
+
+## When the Source panel has nothing to show
+
+It now says which of three things is true, because they need different answers: the session
+was recorded without a symbols directory (nothing can repair that afterwards - the pdbs of
+that build are what source locations are read from); the session is still collecting and the
+method has not been resolved yet (Snapshot does it); or that method's pdb genuinely carries
+no line, which is ordinary for compiler-generated methods. When the file is simply not on
+this machine, it names the solution the session came from.
+
+## Run again (2026-09-09)
+
+A session records everything it was started with, so asking the same question twice is not
+a matter of remembering what was typed: **Run again...** - in a session's context menu, and
+in the toolbar for the session whose results are open - opens the setup dialog on that
+session's own spec, with a name that counts on from it (`Prova1` -> `Prova2`, `startup` ->
+`startup 2`, never one already used in that folder). `uSessionSpec` reads the spec back
+into a `TSessionRequest`, the same record the dialog fills in and the service is asked
+with; `session.json` first, the copy in the database when the file is gone.
+
+What a session does not record keeps coming from the settings: the build options describe
+the app, not the run. The configuration is read out of the symbols path, because that is
+where it is visible - a session whose symbols came from `bin\Release\...` was a Release
+session. A build-time weave map comes back only when the build that produced it is still
+there; otherwise the new run weaves on the device.
+
+The toolbar's Run again is on only while nothing is collecting: two sessions on one device
+would fight over the diagnostic port.
+
+## The trap that emptied the window: a form with no Name (2026-09-09)
+
+A saved docking layout stores each control's form as `ParentForm=<the form's Name>`, and
+`TdxDockingController.LoadLayoutFromIniFile` **skips every dock site whose ParentForm it
+cannot resolve** - after having cleared the layout. The main window is built with
+`CreateNew` and had no `Name`, so every layout was written with `ParentForm=` empty and
+none of them was ever loaded back: the window came up bare, and the bare state was then
+saved over the good one. `Name := 'MainForm'` in the constructor is the whole fix; the two
+guards below are what keep any future version of this from being permanent.
+
+- A load counts as failed when it raises **or** when it leaves the dock site with no
+  children; either way the built-in arrangement is applied (`ApplyBuiltInLayout`), because
+  an empty grey rectangle is not something a person can fix from inside the window.
+- An arrangement with no panels is never saved: the last good file stays where it is.
+- The reason goes to `NapGui.layout.log` beside the executable, because when this happens
+  there is no window to say it in.
+
 ## Settings and layouts
 
 A Settings window (theme, the unit times are shown in, the font code and logs are read
@@ -372,10 +470,26 @@ in with a live preview, the sessions folder, and which nap.exe the GUI starts) w
 `NapGui.settings.ini` beside the executable - preferences travel with the folder rather
 than living in the registry.
 
-Panel arrangements are saved by name under `layouts\`, and the Saved layouts window
-loads, renames, deletes, saves the current one, and marks the one to open with. The
-docking controller writes a whole ini per layout, so a layout is a file and its name is
-the file name. With no default chosen, the window comes back the way it was closed.
+Panel arrangements are saved by name under `layouts\`. The docking controller writes a
+whole ini per layout, so a layout is a file and its name is the file name; `<name>.ini`
+holds the panels, `<name>.bars.ini` the toolbars.
+
+**Layouts is a menu, not a button.** It drops down the saved arrangements - the one the
+window opens with marked `[default]` - and, below them, *Save this arrangement as...*,
+*Open the window with* (the arrangement you left, or any saved layout, ticked), *Manage
+layouts...* for renaming and deleting, and *Back to the built-in arrangement*. The items
+are rebuilt on every popup rather than kept in step with the folder, so a layout saved,
+renamed or deleted meanwhile is in the list without a restart. With no default chosen,
+the window comes back the way it was closed.
+
+**Only a window that was on screen writes its arrangement back.** The exit path used to
+save whatever the form was holding, so a run that never showed a window - `--export`,
+`--render`, the control channel - wrote an arrangement built for a picture over the one
+the user had arranged, and the next window opened empty. The rule is not "which switch is
+this": a window that was never shown has no arrangement of its own. `DoShow` records that
+it was, and that flag, not the switch, is what allows the save. *Back to the built-in
+arrangement* sets the same flag the other way for the rest of the run, until panels are
+moved again.
 
 `--dialog=settings` and `--dialog=layouts` open one straight away, which is how the
 dialogs get exercised without a hand on the mouse (the same reason `--tab=` exists).
@@ -473,10 +587,10 @@ describing it in numbers.
 - **Every command runs on the main thread** (a render is a paint), which is what the
   reader thread's `Synchronize` is for; the answer is written from the same block, so
   answers keep the order of their requests.
-- **A driven window is not somebody's window**: it does not load the saved layout and does
-  not write it on exit (`GDrivenWindow`), so a picture does not depend on where a panel was
-  last dragged, and arranging panels for a capture never disturbs the arrangement a person
-  chose. `GiveRoomTo` gives the panel being captured the room to be readable.
+- **A driven window is not somebody's window**: it does not load the saved layout
+  (`GDrivenWindow`) and, never having been shown, does not write one either, so a picture
+  does not depend on where a panel was last dragged, and arranging panels for a capture
+  never disturbs the arrangement a person chose. `GiveRoomTo` gives the panel being captured the room to be readable.
 - **`--render=<panel>:<file.png>`** is the same rendering from the command line, for a
   script with no channel; `gui/tests/smoke.ps1` checks it.
 - The other side is `src/NetAndroidProfiler.Core/Gui/GuiChannel.cs` (the process and the

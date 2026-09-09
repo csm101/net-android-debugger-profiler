@@ -105,8 +105,8 @@ begin
 
   // Naming the assembly matters: inference reads the callspec's first two segments, and
   // TestTarget.Workloads is a namespace inside TestTarget.dll, not an assembly.
-  LStatus := AClient.StartSession(ASerial, APackage, 'instrumenting', 'weaver',
-    CCallspec, 0, '', ['TestTarget']);
+  LStatus := AClient.StartSession(SessionRequest(ASerial, APackage, 'instrumenting', 'weaver',
+    CCallspec, 0, ['TestTarget']));
   Check(LStatus.Id <> '', 'instrumenting session started: ' + LStatus.Id);
   if LStatus.Id = '' then
     Exit;
@@ -251,7 +251,7 @@ begin
     if Length(LProblems) > 0 then
       Exit;
 
-    LStatus := LClient.StartSession(LSerial, APackage, 'sampling', '', '', CDurationSeconds);
+    LStatus := LClient.StartSession(SessionRequest(LSerial, APackage, 'sampling', '', '', CDurationSeconds));
     Check(LStatus.Id <> '', 'sampling session started: ' + LStatus.Id);
     if LStatus.Id = '' then
       Exit;

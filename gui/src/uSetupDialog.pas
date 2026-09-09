@@ -26,20 +26,9 @@ uses
   uControlClient;
 
 type
-  TSetupResult = record
-    DeviceSerial: string;
-    Package: string;
-    Mode: string;
-    Engine: string;
-    Callspec: string;
-    DurationSeconds: Integer;
-    SymbolsDir: string;
-    /// Assemblies to weave; empty lets the service infer them from the callspec.
-    Assemblies: TArray<string>;
-    /// Set when the app was woven during its build: the session reads that map and
-    /// changes nothing on the device.
-    WeaveMapPath: string;
-  end;
+  /// What the dialog produces is exactly what the service is asked for: one shape, so a
+  /// field added to a session does not have to be copied from a record into arguments.
+  TSetupResult = TSessionRequest;
 
   TSetupDialog = class(TForm)
   private
@@ -60,6 +49,9 @@ type
     FAssemblies: TcxTextEdit;
     FDuration: TcxTextEdit;
     FSymbols: TcxTextEdit;
+    FName: TcxTextEdit;
+    FStartPaused: TcxCheckBox;
+    FFolder: TcxComboBox;
     FCheckLabel: TcxLabel;
     FBuild: TcxButton;
     FClearDeployed: TcxCheckBox;
@@ -80,6 +72,10 @@ type
     FDeferred: TTimer;
     FDeferredSolution: string;
     FDeferredProject: string;
+    /// Filled in from an existing session: the dialog then answers with these instead of
+    /// with what the last session happened to leave in the settings.
+    FPrefill: TSessionRequest;
+    FPrefilled: Boolean;
     procedure Build_;
     procedure ProfilerChanged(Sender: TObject);
     procedure OptionChanged(Sender: TObject);
@@ -87,6 +83,9 @@ type
     procedure CheckClick(Sender: TObject);
     procedure BrowseFileClick(Sender: TObject);
     procedure BrowseFolderClick(Sender: TObject);
+    procedure BrowseSessionFolderClick(Sender: TObject);
+    /// Where this session is to be kept; empty means the standard sessions folder.
+    function ChosenSessionFolder: string;
     procedure ScanClick(Sender: TObject);
     procedure ProjectChanged(Sender: TObject);
     procedure CallspecChanged(Sender: TObject);
@@ -95,6 +94,7 @@ type
     procedure DeferredScan(Sender: TObject);
     procedure BuildClick(Sender: TObject);
     procedure Scan(const APreferredProject: string);
+    procedure ApplyPrefill;
     function SelectedProject(out AProject: TAppProject): Boolean;
     function SelectedSerial: string;
     function SelectedMode: string;
@@ -106,13 +106,17 @@ type
   public
     constructor Create(AOwner: TComponent; AClient: TControlClient); reintroduce;
     function Execute(out AResult: TSetupResult): Boolean;
+    /// Open on a session that already exists: every field as that session was started
+    /// with. Running the same measurement again is the commonest thing anybody does with
+    /// a profiler, and it must not cost filling this form a second time.
+    procedure PrefillFrom(const ARequest: TSessionRequest);
   end;
 
 implementation
 
 uses
-  System.UITypes, System.IOUtils,
-  uJobDialog, uCallspecDialog, uSettings, uTheme;
+  System.UITypes, System.IOUtils, System.StrUtils,
+  uJobDialog, uCallspecDialog, uSettings, uTheme, uSessionSpec;
 
 const
   CLabelLeft = 16;
@@ -183,9 +187,9 @@ begin
   BorderStyle := bsSizeable;
   Position := poOwnerFormCenter;
   ClientWidth := 620;
-  ClientHeight := 648;
+  ClientHeight := 712;
   Constraints.MinWidth := 636;
-  Constraints.MinHeight := 640;
+  Constraints.MinHeight := 704;
 
   // ---- the sources
   Label_('Solution', 16);
@@ -304,10 +308,39 @@ begin
   with Label_('0 = until you stop it', 428) do
     Left := 232;
 
+  // What needs measuring is rarely the startup: it is what happens when somebody presses
+  // a certain button. Started this way the app runs unmeasured until Record is pressed,
+  // and the results hold that and nothing else.
+  FStartPaused := TcxCheckBox.Create(Self);
+  FStartPaused.Parent := Self;
+  FStartPaused.SetBounds(360, 428, 246, 20);
+  FStartPaused.Anchors := [akTop, akRight];
+  FStartPaused.Transparent := True;
+  FStartPaused.Caption := 'Start recording only when I say';
+  FStartPaused.Hint := 'The app starts and runs normally; nothing is measured until you press Record. '
+    + 'Drive it to what you want to look at first.';
+  FStartPaused.ShowHint := True;
+
   Label_('Build output', 460);
   FSymbols := Edit(460, CFieldLeft, CFieldRight - CFieldLeft,
     'bin\Debug\net9.0-android35.0 - the pdbs, so results carry source locations');
   FSymbols.Properties.OnChange := OptionChanged;
+
+  // ---- the session as something somebody keeps
+  // A recording only ever called 20260908-174233-com.acme.app-sampling is a recording
+  // nobody finds again: a name, and a folder for the sessions that belong beside the
+  // product they measure rather than in the profiler's own pile.
+  Label_('Name', 492);
+  FName := Edit(492, CFieldLeft, CFieldRight - CFieldLeft,
+    'what this run is about - "startup after the cache change"; optional');
+
+  Label_('Keep it in', 524);
+  FFolder := Combo(524, CFieldRight - CFieldLeft - 90, False);
+  FFolder.TextHint := 'the profiler''s own sessions folder';
+  for var LFolder in GSettings.SessionFolders do
+    FFolder.Properties.Items.Add(LFolder);
+  FFolder.Text := GSettings.LastSessionFolder;
+  Button('Folder...', CFieldRight - 84, 524, 84, BrowseSessionFolderClick);
 
   // Why Start is off, where the eye goes when it is: red, and never a surprise at the
   // moment of clicking.
@@ -315,7 +348,7 @@ begin
   FValidation.Transparent := True;
   FValidation.Parent := Self;
   FValidation.AutoSize := False;
-  FValidation.SetBounds(CLabelLeft, 492, CFieldRight - CLabelLeft, 60);
+  FValidation.SetBounds(CLabelLeft, 556, CFieldRight - CLabelLeft, 60);
   FValidation.Anchors := [akLeft, akRight, akBottom];
   FValidation.Properties.WordWrap := True;
   FValidation.Properties.ShowAccelChar := False;
@@ -325,7 +358,7 @@ begin
   FCheckLabel := TcxLabel.Create(Self);
   FCheckLabel.Transparent := True;
   FCheckLabel.Parent := Self;
-  FCheckLabel.SetBounds(CLabelLeft, 556, CFieldRight - CLabelLeft, 44);
+  FCheckLabel.SetBounds(CLabelLeft, 620, CFieldRight - CLabelLeft, 44);
   FCheckLabel.Anchors := [akLeft, akRight, akBottom];
   FCheckLabel.AutoSize := False;
   FCheckLabel.Properties.WordWrap := True;
@@ -333,7 +366,7 @@ begin
   FCheckLabel.ShowHint := True;
   FCheckLabel.Caption := '';
 
-  with Button('Check app', CLabelLeft, 606, 120, CheckClick) do
+  with Button('Check app', CLabelLeft, 670, 120, CheckClick) do
   begin
     Height := 28;
     Anchors := [akLeft, akBottom];
@@ -341,7 +374,7 @@ begin
 
   FOk := TcxButton.Create(Self);
   FOk.Parent := Self;
-  FOk.SetBounds(416, 606, 90, 28);
+  FOk.SetBounds(416, 670, 90, 28);
   FOk.Anchors := [akRight, akBottom];
   FOk.Caption := 'Start';
   FOk.ModalResult := mrOk;
@@ -349,7 +382,7 @@ begin
 
   LCancel := TcxButton.Create(Self);
   LCancel.Parent := Self;
-  LCancel.SetBounds(516, 606, 90, 28);
+  LCancel.SetBounds(516, 670, 90, 28);
   LCancel.Anchors := [akRight, akBottom];
   LCancel.Caption := 'Cancel';
   LCancel.ModalResult := mrCancel;
@@ -388,6 +421,21 @@ begin
     Exit;
   FSource.Text := LFolder;
   Scan('');
+end;
+
+procedure TSetupDialog.BrowseSessionFolderClick(Sender: TObject);
+var
+  LFolder: string;
+begin
+  LFolder := ChosenSessionFolder;
+  if not SelectDirectory('Folder to keep this session in', '', LFolder) then
+    Exit;
+  FFolder.Text := LFolder;
+end;
+
+function TSetupDialog.ChosenSessionFolder: string;
+begin
+  Result := Trim(FFolder.Text);
 end;
 
 procedure TSetupDialog.ScanClick(Sender: TObject);
@@ -795,7 +843,7 @@ const
 
     'No rewriting: the Mono runtime instruments while it compiles, reading the callspec, and '
     + 'reports allocations with their exact sizes. It needs .NET 10 - on a .NET 9 app it '
-    + 'crashes the runtime - and its results only resolve when the session ends, so Snapshot, '
+    + 'crashes the runtime - and its results only resolve when the session ends, so Get Results, '
     + 'Pause and Clear stay unavailable.',
 
     'Looks at the app and decides: the in-app call tree when its assemblies can be rewritten '
@@ -918,6 +966,62 @@ begin
   end;
 end;
 
+{ The dialog opened on a session that already exists. Everything the session recorded is
+  put back where it was typed; what a session does not record - the build options, which
+  describe the app and not the run - keeps coming from the settings. The configuration is
+  read out of the build output path, because that is where it is visible: a session that
+  read its symbols from bin\Release\... was a Release session. }
+procedure TSetupDialog.ApplyPrefill;
+
+  function ConfigurationOf(const ASymbolsDir: string): string;
+  var
+    LParent: string;
+  begin
+    // bin\<Configuration>\<tfm> - the configuration is the folder above the framework one.
+    Result := '';
+    if ASymbolsDir = '' then
+      Exit;
+    LParent := TPath.GetDirectoryName(ExcludeTrailingPathDelimiter(ASymbolsDir));
+    if SameText(TPath.GetFileName(TPath.GetDirectoryName(LParent)), 'bin') then
+      Result := TPath.GetFileName(LParent);
+  end;
+
+var
+  LConfiguration: string;
+  I: Integer;
+begin
+  FDeferredSolution := FPrefill.SolutionPath;
+  FDeferredProject := FPrefill.ProjectPath;
+  LConfiguration := ConfigurationOf(FPrefill.SymbolsDir);
+  if LConfiguration <> '' then
+    FConfiguration.Text := LConfiguration;
+  for I := 0 to High(FDevices_) do
+    if SameText(FDevices_[I].Serial, FPrefill.DeviceSerial) then
+      FDevices.ItemIndex := I;
+  FPackage.Text := FPrefill.Package;
+  FProfiler.ItemIndex := ProfilerIndexOf(FPrefill);
+  FCallspec.Text := FPrefill.Callspec;
+  FAssemblies.Text := string.Join(', ', FPrefill.Assemblies);
+  FDuration.Text := IntToStr(FPrefill.DurationSeconds);
+  FSymbols.Text := FPrefill.SymbolsDir;
+  FStartPaused.Checked := FPrefill.StartPaused;
+  FFolder.Text := FPrefill.SessionsRoot;
+  // A run of the same measurement is the next one, not the same one: the name moves on so
+  // that two runs never answer to the same thing.
+  FName.Text := NextRunName(FPrefill.Name, FPrefill.Package, FPrefill.SessionsRoot);
+  // A map from a build-time weave belongs to the build that produced it, so it comes back
+  // only when that build is still there; otherwise this run weaves on the device.
+  FBuildWeaving.Checked := (FPrefill.WeaveMapPath <> '') and TFile.Exists(FPrefill.WeaveMapPath);
+  Caption := 'Run again: ' + IfThen(FPrefill.Name <> '', FPrefill.Name, FPrefill.Package);
+  FOk.Caption := 'Start';
+end;
+
+procedure TSetupDialog.PrefillFrom(const ARequest: TSessionRequest);
+begin
+  FPrefill := ARequest;
+  FPrefilled := True;
+end;
+
 function TSetupDialog.Execute(out AResult: TSetupResult): Boolean;
 var
   LDevices: TDeviceInfos;
@@ -946,8 +1050,11 @@ begin
     FDevices.ItemIndex := 0;
 
   // Running the same app with a different profiler should cost one dropdown and Start,
-  // not filling the form again: the last session's choices come back.
-  if (GSettings.LastMode >= 0) and (GSettings.LastMode < FProfiler.Properties.Items.Count) then
+  // not filling the form again: the last session's choices come back - or, when the dialog
+  // was opened on an existing session, that session's.
+  if FPrefilled then
+    ApplyPrefill
+  else if (GSettings.LastMode >= 0) and (GSettings.LastMode < FProfiler.Properties.Items.Count) then
     FProfiler.ItemIndex := GSettings.LastMode;
   FNoFastDeployment.Checked := GSettings.LastNoFastDeployment;
   FBuildWeaving.Checked := GSettings.LastBuildWeaving;
@@ -959,12 +1066,15 @@ begin
   // Come back where the last session started from: the same solution, the same project.
   // Reading a real solution takes seconds, so it happens after the window is on screen -
   // otherwise clicking New session looks like nothing happening at all.
-  if GSettings.LastSolution <> '' then
+  if FDeferredSolution = '' then
   begin
-    FSource.Text := GSettings.LastSolution;
     FDeferredSolution := GSettings.LastSolution;
     FDeferredProject := GSettings.LastProject;
-    FProjectHint.Caption := 'Reading ' + GSettings.LastSolution + ' ...';
+  end;
+  if FDeferredSolution <> '' then
+  begin
+    FSource.Text := FDeferredSolution;
+    FProjectHint.Caption := 'Reading ' + FDeferredSolution + ' ...';
     FDeferred := TTimer.Create(Self);
     FDeferred.Interval := 1;
     FDeferred.OnTimer := DeferredScan;
@@ -992,8 +1102,17 @@ begin
   end;
   AResult.DurationSeconds := StrToIntDef(Trim(FDuration.Text), 0);
   AResult.SymbolsDir := Trim(FSymbols.Text);
+  AResult.Name := Trim(FName.Text);
+  AResult.StartPaused := FStartPaused.Checked;
+  AResult.SessionsRoot := ChosenSessionFolder;
+  // Where the app came from travels with the session, so tomorrow's list reads as "my
+  // runs of this product" instead of a wall of timestamps.
+  AResult.SolutionPath := Trim(FSource.Text);
+  if SelectedProject(LProject) then
+    AResult.ProjectPath := LProject.ProjectPath;
 
   GSettings.LastSolution := Trim(FSource.Text);
+  GSettings.LastSessionFolder := AResult.SessionsRoot;
   if SelectedProject(LProject) then
     GSettings.LastProject := LProject.ProjectPath;
   GSettings.LastMode := FProfiler.ItemIndex;

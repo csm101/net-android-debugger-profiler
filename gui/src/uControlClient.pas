@@ -63,6 +63,34 @@ type
     InSolution: Boolean;
   end;
 
+  /// Everything a new session is: what to profile, how, what to call it and where to
+  /// keep it. A record rather than fifteen arguments - the setup dialog fills one in and
+  /// hands it over, and adding a field does not renumber a call.
+  TSessionRequest = record
+    DeviceSerial: string;
+    Package: string;
+    Mode: string;
+    Engine: string;
+    Callspec: string;
+    DurationSeconds: Integer;
+    SymbolsDir: string;
+    /// Assemblies to weave; empty lets the service infer them from the callspec.
+    Assemblies: TArray<string>;
+    /// Set when the app was woven during its build: the session reads that map and
+    /// changes nothing on the device.
+    WeaveMapPath: string;
+    /// What to call this session. Empty leaves it named after the package.
+    Name: string;
+    /// Where to keep it; empty means the service's own sessions folder.
+    SessionsRoot: string;
+    /// Where the app came from, so sessions can be listed by product rather than by time.
+    SolutionPath: string;
+    ProjectPath: string;
+    /// Set everything up but measure nothing until Resume: what needs profiling is rarely
+    /// the startup, and everything recorded on the way to the screen that matters is noise.
+    StartPaused: Boolean;
+  end;
+
   /// A callspec the app's own assemblies offer, with how many methods it covers.
   TCallspecCandidate = record
     Callspec: string;
@@ -151,10 +179,12 @@ type
     /// State of a job, with the log lines from AFrom on.
     function Job(const AId: string; AFrom: Integer = 0): TJobStatus;
     function CancelJob(const AId: string): TJobStatus;
-    function StartSession(const ASerial, APackage, AMode, AEngine, ACallspec: string;
-      ADurationSeconds: Integer; const ASymbolsDir: string = '';
-      const AAssemblies: TArray<string> = nil;
-      const AWeaveMapPath: string = ''): TSessionStatus;
+    function StartSession(const ARequest: TSessionRequest): TSessionStatus;
+    /// Names a stored session, or takes its name away with an empty one. Works on a
+    /// session this service never ran: it is a question about a directory.
+    procedure RenameSession(const AId, AName: string);
+    /// Deletes a stored session and everything it recorded. Not recoverable.
+    procedure DeleteSession(const AId: string);
     function Status(const AId: string): TSessionStatus;
     function Counters(const AId: string): TSessionCounters;
     function Snapshot(const AId: string): Integer;
@@ -170,10 +200,28 @@ type
     property BaseUrl: string read FBaseUrl;
   end;
 
+/// The few fields a session needs when nobody is filling a dialog: what a check, a
+/// script or a one-off run says. Everything else keeps its default.
+function SessionRequest(const ASerial, APackage, AMode, AEngine, ACallspec: string;
+  ADurationSeconds: Integer = 0; const AAssemblies: TArray<string> = nil): TSessionRequest;
+
 implementation
 
 uses
   System.IOUtils, System.NetEncoding, System.Net.HttpClientComponent;
+
+function SessionRequest(const ASerial, APackage, AMode, AEngine, ACallspec: string;
+  ADurationSeconds: Integer; const AAssemblies: TArray<string>): TSessionRequest;
+begin
+  Result := Default(TSessionRequest);
+  Result.DeviceSerial := ASerial;
+  Result.Package := APackage;
+  Result.Mode := AMode;
+  Result.Engine := AEngine;
+  Result.Callspec := ACallspec;
+  Result.DurationSeconds := ADurationSeconds;
+  Result.Assemblies := AAssemblies;
+end;
 
 function TDeviceInfo.Display: string;
 var
@@ -744,9 +792,14 @@ begin
   end;
 end;
 
-function TControlClient.StartSession(const ASerial, APackage, AMode, AEngine, ACallspec: string;
-  ADurationSeconds: Integer; const ASymbolsDir: string; const AAssemblies: TArray<string>;
-  const AWeaveMapPath: string): TSessionStatus;
+function TControlClient.StartSession(const ARequest: TSessionRequest): TSessionStatus;
+
+  procedure AddIfAny(ABody: TJSONObject; const AName, AValue: string);
+  begin
+    if AValue <> '' then
+      ABody.AddPair(AName, AValue);
+  end;
+
 var
   LBody: TJSONObject;
   LValue: TJSONValue;
@@ -755,29 +808,31 @@ var
 begin
   LBody := TJSONObject.Create;
   try
-    LBody.AddPair('deviceSerial', ASerial);
-    LBody.AddPair('packageName', APackage);
-    LBody.AddPair('mode', AMode);
-    if AEngine <> '' then
-      LBody.AddPair('engine', AEngine);
-    if ACallspec <> '' then
-      LBody.AddPair('callspec', ACallspec);
-    if ADurationSeconds > 0 then
-      LBody.AddPair('durationSeconds', TJSONNumber.Create(ADurationSeconds));
-    if ASymbolsDir <> '' then
-      LBody.AddPair('symbolsDir', ASymbolsDir);
+    LBody.AddPair('deviceSerial', ARequest.DeviceSerial);
+    LBody.AddPair('packageName', ARequest.Package);
+    LBody.AddPair('mode', ARequest.Mode);
+    AddIfAny(LBody, 'engine', ARequest.Engine);
+    AddIfAny(LBody, 'callspec', ARequest.Callspec);
+    if ARequest.DurationSeconds > 0 then
+      LBody.AddPair('durationSeconds', TJSONNumber.Create(ARequest.DurationSeconds));
+    AddIfAny(LBody, 'symbolsDir', ARequest.SymbolsDir);
+    AddIfAny(LBody, 'name', ARequest.Name);
+    AddIfAny(LBody, 'sessionsRoot', ARequest.SessionsRoot);
+    AddIfAny(LBody, 'solutionPath', ARequest.SolutionPath);
+    AddIfAny(LBody, 'projectPath', ARequest.ProjectPath);
     // With a map from a build-time weave the session weaves nothing: the installed app
     // already carries the instrumentation.
-    if AWeaveMapPath <> '' then
-      LBody.AddPair('weaveMapPath', AWeaveMapPath);
+    AddIfAny(LBody, 'weaveMapPath', ARequest.WeaveMapPath);
+    if ARequest.StartPaused then
+      LBody.AddPair('startPaused', TJSONBool.Create(True));
     // Which assemblies to weave. Left out, the service infers them from the callspec,
     // which is right when the namespace and the assembly share a name and wrong when
     // they do not (N:TestTarget.Workloads lives in TestTarget.dll).
-    if Length(AAssemblies) > 0 then
+    if Length(ARequest.Assemblies) > 0 then
     begin
       LArray := TJSONArray.Create;
-      for I := 0 to High(AAssemblies) do
-        LArray.Add(AAssemblies[I]);
+      for I := 0 to High(ARequest.Assemblies) do
+        LArray.Add(ARequest.Assemblies[I]);
       LBody.AddPair('weaveAssemblies', LArray);
     end;
     LValue := Post('sessions', LBody.ToJSON);
@@ -788,6 +843,35 @@ begin
     Result := ReadStatus(LValue);
   finally
     LValue.Free;
+  end;
+end;
+
+{ Naming and deleting travel in the body rather than in the path: a session can be a
+  directory somewhere else, and a Windows path is not a URL segment. }
+procedure TControlClient.RenameSession(const AId, AName: string);
+var
+  LBody: TJSONObject;
+begin
+  LBody := TJSONObject.Create;
+  try
+    LBody.AddPair('id', AId);
+    LBody.AddPair('name', AName);
+    Post('sessions/rename', LBody.ToJSON).Free;
+  finally
+    LBody.Free;
+  end;
+end;
+
+procedure TControlClient.DeleteSession(const AId: string);
+var
+  LBody: TJSONObject;
+begin
+  LBody := TJSONObject.Create;
+  try
+    LBody.AddPair('id', AId);
+    Post('sessions/delete', LBody.ToJSON).Free;
+  finally
+    LBody.Free;
   end;
 end;
 

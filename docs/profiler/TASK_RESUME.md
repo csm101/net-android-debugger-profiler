@@ -296,6 +296,63 @@ src/NetAndroidProfiler.Cli/{ControlService.cs, JobRegistry.cs};
 gui/src/{uSetupDialog.pas, uJobDialog.pas, uControlClient.pas, uMainForm.pas};
 tests/NetAndroidProfiler.Tests/Fast/{AppProjectFinderTests.cs, AppBuilderTests.cs, ControlServiceTests.cs}.
 
+## Done 2026-09-09, built and green, not yet committed: the GUI as a tool somebody uses
+
+One block, from the user's own testing of the GUI. Fast pass 156 passed / 0 failed
+(24 device-library + 132 profiler); `gui\build-gui.cmd` clean; headless `--render=explorer:`
+shows the grouped tree and writes no layout file.
+
+- **Toolbars cannot float or be dragged** (`BarManager.NotDocking` = every style; per-bar
+  AllowClose / AllowCustomizing / AllowQuickCustomizing off). Permanent user rule, in the
+  agent's memory. Saved layouts therefore hold panels only - `uLayouts` no longer touches
+  the bar manager.
+- **Layouts menu** (TdxBarSubItem rebuilt on popup) with the saved layouts, the default
+  marked, Save as, "Open the window with" (ticked list), Manage, and a **Back to the
+  built-in arrangement** that re-docks the panels *now* (`ApplyBuiltInLayout` /
+  `ApplyBuiltInSizes`), not at the next start.
+- **A window never shown does not save its arrangement** (`DoShow` -> `FWasShown`): that was
+  the empty main window.
+- **File menu** (New Ctrl+N, Open Ctrl+O, Add a sessions folder, Exit); Theme combo dropped
+  from the toolbar; **Record** button for sessions started paused.
+- **Sessions as documents**: `Name`, `ProjectPath`, `SolutionPath` in the spec; a session can
+  be kept in another folder (`sessionsRoot`), and those folders are browsed by the Explorer
+  (`[SessionFolders]` in the settings); rename/delete in Core, over `POST /sessions/rename`
+  and `/sessions/delete`, as MCP tools, and in the Explorer's context menu; the Explorer
+  groups by solution.
+- **StartPaused** (AQTime's start-with-profiling-disabled): new state `WaitingToRecord`,
+  `StartRecordingAsync`, `ResumeAsync` doubles as "begin". Weaver waits with the device
+  control file at `pause`; EventPipe simply opens no session yet.
+- **Symbols found rather than demanded** (symbolsDir -> project output -> weaver reference
+  dir), a warning when a session has none, and **snapshots now resolve source locations**
+  (pdbs read once per session). That was the "no source location" the user hit on a running
+  the reference application session that had its symbols all along; the Source panel's message now tells the
+  three cases apart.
+
+Next: commit this block; then the device test that is still missing - record on demand end
+to end (start paused, drive the app, record, assert the results begin where recording did).
+
+## Done 2026-09-08 evening, the layout menu and where the weaver is
+Both built and green (`gui\build-gui.cmd`; `dotnet build NetAndroidProfiler.slnx`;
+fast pass 144 passed, 0 failed). A headless `--render=report:` run writes no
+`NapGui.layout.ini` any more, which is the bug below:
+
+1. `gui/src/uMainForm.pas` - Layouts is now a `TdxBarSubItem` menu (`BuildLayoutMenu` /
+   `UpdateLayoutMenu`, rebuilt on `OnPopup`): the saved layouts, the default marked
+   `[default]`, then Save as / Open the window with (ticked list) / Manage / Back to the
+   built-in arrangement. Same shape as CVSTreeGraph's `MainFormU.BuildLayoutMenu`.
+   `FLayoutButton` is gone; `ResetLayoutClick` became `LayoutBuiltInClick`.
+   In the same change: `DoShow` sets `FWasShown`, and the destructor saves the
+   arrangement only when the window was actually on screen - that is the bug that left
+   `gui/NapGui.layout.ini` with `ChildCount=0` and opened an empty main window, written
+   by a `--render` / `--export` run; that stale ini has been deleted.
+2. `ToolLocator.FindWeaveTool` / `FindCollectorAssembly` (+ `AppBuilder` passing
+   `-p:NapWeaveTool=` and `-p:NapCollectorAssembly=`, + the new test
+   `AppBuilderTests.The_build_is_told_where_the_weaver_and_the_collector_are`), so an
+   instrumenting build from a source tree finds the weaver without a packaging step.
+
+Next: open the menu by hand once (the only path not exercised by a build is the
+`OnPopup` rebuild, which frees the previous popup's items), then commit both.
+
 ## Next action if interrupted right now
 Free port 9000 (stop the `sal-minio` container), then verify the example app's screens
 against the profiler as listed under "Current task". A Redmi Note 8 Pro (arm64, API 30) is

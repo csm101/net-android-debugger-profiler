@@ -82,7 +82,11 @@ type
     FStartedUtc: string;
     FTotalSamples: Int64;
     FSchemaVersion: Integer;
+    FSymbolsDir: string;
+    FSolution: string;
+    FSpecJson: string;
     function CreateQuery(const ASql: string): TFDQuery;
+    procedure ReadSpec(const AJson: string);
     function TableExists(const ATable: string): Boolean;
     procedure ReadSessionRow;
   public
@@ -118,6 +122,10 @@ type
     function MethodName(AMethodId: Integer): string;
     /// Source location of a method, when the session was told where the build output is.
     function MethodSource(AMethodId: Integer): TMethodSource;
+    /// Whether this session resolved any source location at all. None, on a session that
+    /// had symbols, is a different thing from one method having none: it means the results
+    /// were written by a build that could not read them, and only a new run repairs it.
+    function HasAnySourceLocations: Boolean;
     /// The method's headline figure: time with children, or inclusive samples.
     function MethodInclusive(AMethodId: Integer): Int64;
     function CountOf(const ATable: string): Int64;
@@ -129,6 +137,14 @@ type
     property State: string read FState;
     property StartedUtc: string read FStartedUtc;
     property TotalSamples: Int64 read FTotalSamples;
+    /// The build output the session read its symbols from, and the solution it came from,
+    /// as the session recorded them. Empty means the session was taken without them - which
+    /// is the difference between "this method has no source" and "this session has none".
+    property SymbolsDir: string read FSymbolsDir;
+    property Solution: string read FSolution;
+    /// The whole spec the session was started with, as it was written. What lets the same
+    /// measurement be run again without anybody retyping it.
+    property SpecJson: string read FSpecJson;
     /// Schema version of the open database; older sessions lack the newer tables.
     property SchemaVersion: Integer read FSchemaVersion;
   end;
@@ -141,6 +157,14 @@ type
     Mode: string;
     Package: string;
     StartedUtc: string;
+    /// What the user called it when starting it, or renamed it to later. Empty means the
+    /// session is known by its id, which is what sessions started without a name are.
+    Name: string;
+    /// The solution and project the app was built from, when the session recorded them:
+    /// what lets a list of sessions be read as "my runs of this product" instead of a
+    /// wall of timestamps. Sessions taken before this existed have neither.
+    Solution: string;
+    Project: string;
   end;
 
   TSessionEntries = TArray<TSessionEntry>;
@@ -224,6 +248,9 @@ begin
     else
       AEntry.Mode := LMode;
     AEntry.Package := LObject.GetValue<string>('Package', LObject.GetValue<string>('package', ''));
+    AEntry.Name := LObject.GetValue<string>('Name', LObject.GetValue<string>('name', ''));
+    AEntry.Solution := LObject.GetValue<string>('SolutionPath', LObject.GetValue<string>('solutionPath', ''));
+    AEntry.Project := LObject.GetValue<string>('ProjectPath', LObject.GetValue<string>('projectPath', ''));
     Result := True;
   finally
     LJson.Free;
@@ -426,6 +453,9 @@ begin
   FPath := '';
   FMode := smUnknown;
   FPackage := '';
+  FSymbolsDir := '';
+  FSolution := '';
+  FSpecJson := '';
   FDevice := '';
   FState := '';
   FStartedUtc := '';
@@ -482,7 +512,7 @@ begin
   finally
     LQuery.Free;
   end;
-  LQuery := CreateQuery('SELECT mode, state, package, device_serial, started_utc, total_samples FROM session LIMIT 1');
+  LQuery := CreateQuery('SELECT mode, state, package, device_serial, started_utc, total_samples, spec_json FROM session LIMIT 1');
   try
     LQuery.Open;
     if LQuery.Eof then
@@ -504,8 +534,32 @@ begin
     FDevice := LQuery.FieldByName('device_serial').AsString;
     FStartedUtc := LQuery.FieldByName('started_utc').AsString;
     FTotalSamples := LQuery.FieldByName('total_samples').AsLargeInt;
+    ReadSpec(LQuery.FieldByName('spec_json').AsString);
   finally
     LQuery.Free;
+  end;
+end;
+
+{ The session keeps its whole spec in the database, which is what lets a result opened
+  months later still say what it was taken with. Only the two things a reader needs are
+  pulled out of it here. }
+procedure TSessionStore.ReadSpec(const AJson: string);
+var
+  LValue: TJSONValue;
+begin
+  FSymbolsDir := '';
+  FSolution := '';
+  FSpecJson := AJson;
+  if Trim(AJson) = '' then
+    Exit;
+  LValue := TJSONObject.ParseJSONValue(AJson);
+  try
+    if not (LValue is TJSONObject) then
+      Exit;
+    FSymbolsDir := TJSONObject(LValue).GetValue<string>('SymbolsDir', '');
+    FSolution := TJSONObject(LValue).GetValue<string>('SolutionPath', '');
+  finally
+    LValue.Free;
   end;
 end;
 
@@ -856,6 +910,22 @@ begin
     Result.StartLine := LQuery.Fields[1].AsInteger;
     Result.EndLine := LQuery.Fields[2].AsInteger;
     Result.Found := Result.FileName <> '';
+  finally
+    LQuery.Free;
+  end;
+end;
+
+function TSessionStore.HasAnySourceLocations: Boolean;
+var
+  LQuery: TFDQuery;
+begin
+  Result := False;
+  if FSchemaVersion < 4 then
+    Exit;
+  LQuery := CreateQuery('SELECT 1 FROM method WHERE source_file IS NOT NULL AND source_file <> '''' LIMIT 1');
+  try
+    LQuery.Open;
+    Result := not LQuery.Eof;
   finally
     LQuery.Free;
   end;

@@ -30,6 +30,7 @@ uses
   uGuiControl in 'src\uGuiControl.pas',
   uGuiRender in 'src\uGuiRender.pas',
   uSessionStore in 'src\uSessionStore.pas',
+  uSessionSpec in 'src\uSessionSpec.pas',
   uControlClient in 'src\uControlClient.pas',
   uSetupDialog in 'src\uSetupDialog.pas',
   uCallspecDialog in 'src\uCallspecDialog.pas',

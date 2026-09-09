@@ -6,20 +6,16 @@ unit uLayouts;
 
   The docking controller writes a whole ini per layout (its own save/load takes a file,
   not a section), so a layout is simply a file in the layouts folder and the name is the
-  file name.
+  file name. Only the panels: the toolbars cannot be moved at all, so there is nothing
+  about them to remember (an older layout's <name>.bars.ini is ignored).
 }
 
 interface
 
 uses
   System.SysUtils, System.IOUtils, System.Classes, System.StrUtils,
-  dxDockControl, dxBar,
+  dxDockControl,
   uSettings;
-
-var
-  /// The toolbars are part of an arrangement too: the form registers its manager here so
-  /// a saved layout puts the bars back where they were, not only the panels.
-  GBarManager: TdxBarManager = nil;
 
 /// Names of the layouts saved so far, alphabetically.
 function LayoutNames: TArray<string>;
@@ -39,11 +35,6 @@ implementation
 function LayoutFile(const AName: string): string;
 begin
   Result := TPath.Combine(LayoutsDirectory, AName + '.ini');
-end;
-
-function BarsFile(const AName: string): string;
-begin
-  Result := TPath.Combine(LayoutsDirectory, AName + '.bars.ini');
 end;
 
 function LastLayoutFile: string;
@@ -84,8 +75,6 @@ begin
     raise Exception.Create('A layout needs a name.');
   TDirectory.CreateDirectory(LayoutsDirectory);
   dxDockingController.SaveLayoutToIniFile(LayoutFile(AName));
-  if GBarManager <> nil then
-    GBarManager.SaveToIniFile(BarsFile(AName));
 end;
 
 procedure LoadNamedLayout(const AName: string);
@@ -93,16 +82,12 @@ begin
   if not LayoutExists(AName) then
     raise Exception.CreateFmt('There is no layout called "%s".', [AName]);
   dxDockingController.LoadLayoutFromIniFile(LayoutFile(AName));
-  if (GBarManager <> nil) and TFile.Exists(BarsFile(AName)) then
-    GBarManager.LoadFromIniFile(BarsFile(AName));
 end;
 
 procedure DeleteLayout(const AName: string);
 begin
   if LayoutExists(AName) then
     TFile.Delete(LayoutFile(AName));
-  if TFile.Exists(BarsFile(AName)) then
-    TFile.Delete(BarsFile(AName));
   // A deleted layout cannot stay the one we open with.
   if SameText(GSettings.DefaultLayout, AName) then
   begin
@@ -120,8 +105,6 @@ begin
   if LayoutExists(ANewName) then
     raise Exception.CreateFmt('There is already a layout called "%s".', [ANewName]);
   TFile.Move(LayoutFile(AOldName), LayoutFile(ANewName));
-  if TFile.Exists(BarsFile(AOldName)) then
-    TFile.Move(BarsFile(AOldName), BarsFile(ANewName));
   if SameText(GSettings.DefaultLayout, AOldName) then
   begin
     GSettings.DefaultLayout := ANewName;

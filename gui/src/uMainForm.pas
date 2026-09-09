@@ -16,14 +16,16 @@ interface
 
 uses
   System.SysUtils, System.Classes, System.Math, System.UITypes, System.Types, System.RegularExpressions,
-  Winapi.Windows, Winapi.Messages,
+  System.Generics.Collections,
+  Winapi.Windows, Winapi.Messages, Winapi.ShellAPI,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, Vcl.Menus,
+  Vcl.FileCtrl,
   System.Variants, System.IOUtils, System.StrUtils, System.IniFiles, Data.DB, FireDAC.Comp.Client,
   dxCore, cxGraphics, cxControls, cxLookAndFeels, cxLookAndFeelPainters, cxStyles, cxClasses, cxScrollBar,
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxGridExportLink, cxFindPanel, cxTLExportLink,
-  cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox,
+  cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox, cxSplitter,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
   dxBar, dxBarExtItems, dxStatusBar, Vcl.ImgList,
@@ -31,11 +33,11 @@ uses
   dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
-  uSessionStore, uControlClient, uSetupDialog, uJobDialog, uTheme, uSettings, uSettingsDialog,
+  uSessionStore, uSessionSpec, uControlClient, uSetupDialog, uJobDialog, uTheme, uSettings, uSettingsDialog,
   uLayouts, uLayoutDialog, uGlyphs, uGuiRender;
 
 type
-  TExplorerKind = (ekSession, ekCategory, ekArchive);
+  TExplorerKind = (ekSession, ekCategory, ekArchive, ekGroup);
 
   /// A row of the Explorer: a result database to open, or a way to regroup the Report.
   TExplorerRef = record
@@ -50,14 +52,23 @@ type
     FBarManager: TdxBarManager;
     FGlyphs: TImageList;
     FSuppressCombo: Boolean;
-    FOpenButton: TdxBarButton;
+    FFileMenu: TdxBarSubItem;
     FRefreshButton: TdxBarButton;
     FStatus: TdxStatusBar;
     FUnits: TdxBarCombo;
-    FThemeBox: TdxBarCombo;
     FSettingsButton: TdxBarButton;
     FExportButton: TdxBarButton;
-    FLayoutButton: TdxBarButton;
+    /// The Layouts entry is a menu: the saved arrangements, the one marked as the
+    /// default, and what can be done with them. Its items are rebuilt on every popup,
+    /// so FLayoutItems holds them to be freed before the next build.
+    FLayoutMenu: TdxBarSubItem;
+    FLayoutItems: TList;
+    FLayoutNames: TArray<string>;
+    /// The window was on screen at least once: only then does its arrangement mean
+    /// anything worth writing back.
+    FWasShown: Boolean;
+    /// The arrangement was deliberately thrown away: do not write it back on the way out.
+    FForgetLayout: Boolean;
     FSkinController: TdxSkinController;
     FSummaryTab: TTabSheet;
     FSummary: TcxMemo;
@@ -136,6 +147,7 @@ type
     FEditorStart: Integer;
     FEditorEnd: Integer;
     FReportSplitter: TSplitter;
+    FDetailsSplitter: TcxSplitter;
     FGrid: TcxGrid;
     FGridView: TcxGridDBTableView;
     FGridLevel: TcxGridLevel;
@@ -158,11 +170,15 @@ type
     FCriticalStyle: TcxStyle;
     FClient: TControlClient;
     FSessionId: string;
+    /// The result database of the session this window started, empty when none is running.
+    FLiveDatabasePath: string;
     FPoll: TTimer;
-    FStartButton: TdxBarButton;
+    FExplorerMenu: TdxBarPopupMenu;
     FSnapshotButton: TdxBarButton;
     FArchiveButton: TdxBarButton;
     FPauseButton: TdxBarButton;
+    FRecordButton: TdxBarButton;
+    FRunAgainButton: TdxBarButton;
     FStopButton: TdxBarButton;
     FClearButton: TdxBarButton;
     FPaused: Boolean;
@@ -181,12 +197,36 @@ type
     FLog: TcxMemo;
     procedure BuildToolbar;
     procedure BuildExplorer;
+    procedure BuildFileMenu(ABar: TdxBar);
+    /// Every folder the Explorer lists sessions from: the standard one, and the ones a
+    /// session was deliberately saved in.
+    function SessionFolders: TArray<string>;
+    function FocusedSession(out AEntry: TExplorerRef): Boolean;
+    procedure ExplorerMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure ExplorerMenuPopup(Sender: TObject);
+    procedure ExplorerOpenClick(Sender: TObject);
+    procedure ExplorerRenameClick(Sender: TObject);
+    procedure ExplorerDeleteClick(Sender: TObject);
+    procedure ExplorerRevealClick(Sender: TObject);
+    procedure RefreshExplorerClick(Sender: TObject);
+    procedure AddSessionFolderClick(Sender: TObject);
+    procedure ExitClick(Sender: TObject);
     function AddDockPanel(const ACaption: string; ATarget: TdxCustomDockControl;
       AType: TdxDockingType): TdxDockPanel;
     procedure SaveLayout;
     procedure LoadLayout;
-    procedure ResetLayoutClick(Sender: TObject);
     function LayoutFile: string;
+    procedure ApplyBuiltInSizes;
+    procedure ApplyBuiltInLayout;
+    function HasPanels: Boolean;
+    procedure LogLayoutProblem(const AText: string);
+    procedure BuildLayoutMenu(ABar: TdxBar);
+    procedure UpdateLayoutMenu(Sender: TObject);
+    procedure ApplyNamedLayout(const AName: string);
+    procedure LayoutMenuItemClick(Sender: TObject);
+    procedure LayoutSaveCurrentClick(Sender: TObject);
+    procedure LayoutDefaultClick(Sender: TObject);
+    procedure LayoutBuiltInClick(Sender: TObject);
     procedure BuildSummaryTab;
     procedure BuildMemoryTab;
     procedure BuildMonitorTab;
@@ -199,7 +239,6 @@ type
     procedure PaintHeapChart(Sender: TObject);
     procedure UpdateSummary;
     procedure UnitsChanged(Sender: TObject);
-    procedure ThemeChanged(Sender: TObject);
     procedure ShowPreferencesInToolbar;
     procedure SetStatus(const AText: string);
     procedure ApplyTheme;
@@ -240,7 +279,7 @@ type
     procedure EditorSpecialLineColors(Sender: TObject; Line: TSynNativeInt;
       var Special: Boolean; var FG, BG: TColor);
     function BuildNeighbourGrid(AParent: TWinControl; AAlign: TAlign; const ACaption: string;
-      out AView: TcxGridTableView): TcxGrid;
+      AIsParents: Boolean; out AView: TcxGridTableView): TcxGrid;
     procedure OpenButtonClick(Sender: TObject);
     procedure RefreshButtonClick(Sender: TObject);
     procedure ReportFocusChanged(Sender: TcxCustomGridTableView;
@@ -256,10 +295,18 @@ type
     procedure DressReportColumns;
     procedure DressColumns(AView: TcxGridDBTableView);
     procedure StartButtonClick(Sender: TObject);
+    procedure RunAgainClick(Sender: TObject);
+    procedure ExplorerRunAgainClick(Sender: TObject);
+    /// Opens the setup dialog on the session in that directory and starts what it answers.
+    procedure RunAgain(const ASessionDirectory: string);
+    /// The directory of the session whose results are open, empty when none is.
+    function OpenSessionDirectory: string;
+    function StartSessionFrom(const ARequest: TSessionRequest; APrefilled: Boolean): Boolean;
     procedure SnapshotButtonClick(Sender: TObject);
     procedure ArchiveButtonClick(Sender: TObject);
     procedure ClearButtonClick(Sender: TObject);
     procedure PauseButtonClick(Sender: TObject);
+    procedure RecordButtonClick(Sender: TObject);
     procedure StopButtonClick(Sender: TObject);
     procedure PollTimer(Sender: TObject);
     procedure UpdateButtons(const AState: string);
@@ -290,6 +337,10 @@ type
     /// owned by the hidden application window. That is why the profiler had no taskbar
     /// button. Saying it here settles it whatever the order.
     procedure CreateParams(var Params: TCreateParams); override;
+    /// A window that was never on screen has no arrangement of its own: whatever it is
+    /// holding is what the code built or what a picture needed. This is what says the
+    /// arrangement is the user's, and so worth saving.
+    procedure DoShow; override;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -339,6 +390,12 @@ var
   LIndex: Integer;
 begin
   inherited CreateNew(AOwner);
+  // The window needs a name of its own, and this is not cosmetic: a saved docking layout
+  // records each control's form as `ParentForm=<the form's Name>`, and the loader skips
+  // every section whose ParentForm it cannot resolve. A form built with CreateNew has no
+  // Name, so the file was written with an empty one and nothing in it was ever loaded
+  // back - the arrangement was cleared and the window came up bare, every single time.
+  Name := 'MainForm';
   FBuildStarted := GetTickCount64;
   Caption := '.NET for Android profiler';
   Width := 1200;
@@ -387,13 +444,7 @@ begin
 
   // Sizes last: a panel resized before its neighbours exist gets squeezed back by the
   // containers created afterwards.
-  FExplorerPanel.Width := 280;
-  // The bottom strip is a tab container by now, and a panel inside one does not carry
-  // its own height: size the container, or the call views open as a 100px sliver.
-  if FDetailsDock.ParentDockControl <> nil then
-    FDetailsDock.ParentDockControl.Height := 320
-  else
-    FDetailsDock.Height := 320;
+  ApplyBuiltInSizes;
 
   BuildExplorer;
   BuildReportTab;
@@ -520,11 +571,15 @@ var
 begin
   FPendingLog.Free;
   FSummaryPending.Free;
-  if not GDrivenWindow then
-  begin
+  FLayoutItems.Free;
+  // Only a window somebody actually looked at has an arrangement worth remembering.
+  // A run that never showed one - --export, --render, the control channel - is holding
+  // whatever the code built or a picture needed, and writing that back is how the
+  // window came up empty the next time it was opened by hand.
+  if FWasShown and not FForgetLayout then
     SaveLayout;
+  if not GDrivenWindow then
     uSettings.SaveSettings;
-  end;
   // Dock panels created at runtime must go before the form takes its own children down,
   // otherwise one of them is destroyed after the window it lives in and VCL complains
   // that it "has no parent window". This is what the DevExpress sample does too.
@@ -559,6 +614,12 @@ procedure TMainForm.BuildToolbar;
     Result.Caption := ACaption;
     Result.DockingStyle := dsTop;
     Result.Visible := True;
+    // A toolbar is part of the window, not a thing to take apart: it cannot be closed,
+    // cannot be customized, and (see the end of this method) cannot be moved or torn off
+    // into a floating window.
+    Result.AllowClose := False;
+    Result.AllowCustomizing := False;
+    Result.AllowQuickCustomizing := False;
   end;
 
   function NewButton(ABar: TdxBar; const ACaption, AHint: string; AGlyph: TGlyphKind;
@@ -598,22 +659,27 @@ begin
   FBarManager.ImageOptions.Images := FGlyphs;
 
   LSession := NewBar('Session');
-  FOpenButton := NewButton(LSession, 'Open session...',
-    'Open the results of a session already collected', gkOpen, OpenButtonClick);
-  FOpenButton.ShortCut := TextToShortCut('Ctrl+O');
+  // Starting a session and opening one are File commands: they are how work begins, not
+  // controls of the run. What stays on the bar is what acts on the session in progress.
+  BuildFileMenu(LSession);
   FRefreshButton := NewButton(LSession, 'Refresh',
-    'Re-read the open session from disk', gkRefresh, RefreshButtonClick);
+    'Re-read the open session from disk', gkRefresh, RefreshButtonClick, True);
   FRefreshButton.ShortCut := TextToShortCut('F5');
-  FStartButton := NewButton(LSession, 'New session...',
-    'Profile an app: pick the device, the mode and what to instrument', gkRun,
-    StartButtonClick, True);
-  FSnapshotButton := NewButton(LSession, 'Snapshot',
-    'Refresh the results from what has been collected so far, without stopping the app',
+  // AQTime's name for it, and the better one: the button does not take a picture of
+  // anything, it produces the results of what has been collected so far.
+  FSnapshotButton := NewButton(LSession, 'Get Results',
+    'Produce the results from what has been collected so far, without stopping the app',
     gkSnapshot, SnapshotButtonClick);
   FArchiveButton := NewButton(LSession, 'Archive...',
     'Keep the results as they are now, under a name, and go on profiling: they stay in the '
     + 'Explorer and open again whenever you want',
     gkArchive, ArchiveButtonClick);
+  FRunAgainButton := NewButton(LSession, 'Run again...',
+    'Profile the same thing once more: the setup of the session you are looking at, ready to start',
+    gkRun, RunAgainClick);
+  FRecordButton := NewButton(LSession, 'Record',
+    'Start measuring now: the app has been running unmeasured, and what follows is what the results hold',
+    gkRun, RecordButtonClick);
   FPauseButton := NewButton(LSession, 'Pause',
     'Stop recording without stopping the app: the methods stay instrumented, so their overhead remains',
     gkPause, PauseButtonClick);
@@ -627,17 +693,16 @@ begin
   FSettingsButton := NewButton(LView, 'Settings...',
     'Theme, units, the font code is read in, and where sessions are kept', gkSettings,
     SettingsClick);
-  FLayoutButton := NewButton(LView, 'Layouts...',
-    'Save, load and manage panel arrangements', gkLayouts, LayoutsClick);
+  BuildLayoutMenu(LView);
   FExportButton := NewButton(LView, 'Export...',
     'Write the table you are looking at to a spreadsheet or a text file', gkExport,
     ExportClick);
 
-  FThemeBox := NewCombo(LView, 'Theme', 70, ThemeChanged);
-  FThemeBox.Items.Add(ThemeName(atLight));
-  FThemeBox.Items.Add(ThemeName(atDark));
-  FThemeBox.ItemIndex := 0;
-
+  // The theme is not here: it is chosen once, and Settings is where a choice made once
+  // belongs. The unit times are shown in stays, because it is changed while reading a
+  // result - "is that 12 ms or 12 us" is a question about the row under the cursor, not
+  // a preference - and walking through a dialog to answer it every time is the sort of
+  // friction that makes people stop asking.
   FUnits := NewCombo(LView, 'Times in', 95, UnitsChanged);
   FUnits.Items.Add(TimeUnitName(tuAuto));
   FUnits.Items.Add(TimeUnitName(tuSeconds));
@@ -659,7 +724,13 @@ begin
   FStatus.Panels.Add.Fixed := False;
   SetStatus('No session open.');
 
-  uLayouts.GBarManager := FBarManager;
+  // Nailed down, after the bars have been docked where they belong: with every docking
+  // style refused - dsNone, which is what dxBar calls floating, included - TdxBar.CanMoving
+  // is false, so the bars cannot be dragged along the row, moved to another edge, or torn
+  // off into a floating window. A toolbar that floats is a way for a window to be broken
+  // by accident, and there is nothing on the other side of the trade.
+  FBarManager.NotDocking := [Low(TdxBarDockingStyle)..High(TdxBarDockingStyle)];
+
   FSuppressCombo := False;
   UpdateButtons('');
 end;
@@ -712,6 +783,14 @@ end;
 
 procedure TMainForm.SaveLayout;
 begin
+  // An arrangement with no panels in it is not an arrangement, it is an accident - and
+  // writing it makes the next start empty too, which is how one bad moment became
+  // permanent. The last good file stays where it is.
+  if not HasPanels then
+  begin
+    LogLayoutProblem('the window had no panels: the saved arrangement was left as it was');
+    Exit;
+  end;
   try
     FDockManager.SaveLayoutToIniFile(LayoutFile);
   except
@@ -719,40 +798,382 @@ begin
   end;
 end;
 
+{ A layout that goes wrong does it before there is a window to say so in: the log file
+  beside the executable is where the reason survives. }
+procedure TMainForm.LogLayoutProblem(const AText: string);
+begin
+  try
+    TFile.AppendAllText(TPath.ChangeExtension(ParamStr(0), '.layout.log'),
+      Format('%s  %s' + sLineBreak, [DateTimeToStr(Now), AText]));
+  except
+    // diagnostics must not be the thing that breaks the start-up
+  end;
+end;
+
+{ Restoring an arrangement can fail in two ways, and only one of them raises: the load
+  throws, or it "succeeds" and leaves a window with no panels in it. Both end the same
+  way - the built-in arrangement - because an empty grey rectangle is never what anybody
+  wanted, and it is not something a person can fix from inside the window. }
 procedure TMainForm.LoadLayout;
+
+  function Restored(const AWhat: string; ALoad: TProc): Boolean;
+  begin
+    Result := False;
+    try
+      ALoad;
+    except
+      on E: Exception do
+      begin
+        LogLayoutProblem(AWhat + ' not restored: ' + E.Message);
+        LogLine(AWhat + ' not restored: ' + E.Message);
+        Exit;
+      end;
+    end;
+    Result := HasPanels;
+    if not Result then
+    begin
+      // The docking library finishes a load through the message queue - the containers it
+      // reads are built as the form settles - so what it has just read is not necessarily
+      // in place the instant the call returns. Asking twice is the difference between
+      // restoring somebody's arrangement and throwing it away every single start.
+      Application.ProcessMessages;
+      Result := HasPanels;
+    end;
+    if not Result then
+    begin
+      LogLayoutProblem(AWhat + ' loaded but left the window without panels');
+      LogLine(AWhat + ' left the window empty: the built-in arrangement is being used instead');
+    end;
+  end;
+
 begin
   // A named layout marked as the one to open with wins; otherwise the window comes
   // back the way it was closed.
   if LayoutExists(GSettings.DefaultLayout) then
-  begin
-    try
-      LoadNamedLayout(GSettings.DefaultLayout);
+    if Restored('layout "' + GSettings.DefaultLayout + '"',
+      procedure begin LoadNamedLayout(GSettings.DefaultLayout); end) then
       Exit;
-    except
-      on E: Exception do
-        LogLine('layout "' + GSettings.DefaultLayout + '" not restored: ' + E.Message);
-    end;
+  if TFile.Exists(LayoutFile) then
+    if Restored('the last arrangement',
+      procedure begin FDockManager.LoadLayoutFromIniFile(LayoutFile); end) then
+      Exit;
+  // Nothing was restored, or what was restored is unusable. The panels were docked by the
+  // constructor before this ran, so they only need putting back when a failed load moved
+  // them; when nothing was tried at all this costs one re-dock and changes nothing.
+  ApplyBuiltInLayout;
+end;
+
+{ The Layouts entry of the toolbar is a menu, the way an IDE keeps its window
+  arrangements: the saved layouts first, the one the window opens with marked, then what
+  can be done with them. The items are rebuilt every time it drops down, so a layout
+  saved or deleted meanwhile is in the list without a restart. }
+procedure TMainForm.BuildLayoutMenu(ABar: TdxBar);
+begin
+  FLayoutItems := TList.Create;
+  FLayoutMenu := TdxBarSubItem(FBarManager.AddItem(TdxBarSubItem));
+  FLayoutMenu.Caption := 'Layouts';
+  FLayoutMenu.Hint := 'Panel arrangements: load one, save this one, pick the one to open with';
+  FLayoutMenu.ImageIndex := Ord(gkLayouts);
+  FLayoutMenu.ShowCaption := True;
+  FLayoutMenu.OnPopup := UpdateLayoutMenu;
+  ABar.ItemLinks.Add.Item := FLayoutMenu;
+  UpdateLayoutMenu(nil);
+end;
+
+procedure TMainForm.UpdateLayoutMenu(Sender: TObject);
+
+  function NewItem(AParent: TCustomdxBarSubItem; const ACaption: string; AClick: TNotifyEvent;
+    ATag: Integer = 0; ABeginGroup: Boolean = False): TdxBarButton;
+  var
+    LLink: TdxBarItemLink;
+  begin
+    Result := TdxBarButton.Create(FBarManager);
+    Result.Category := 0;
+    Result.Visible := ivAlways;
+    Result.Caption := ACaption;
+    Result.Tag := ATag;
+    Result.OnClick := AClick;
+    FLayoutItems.Add(Result);
+    LLink := AParent.ItemLinks.Add;
+    LLink.Item := Result;
+    LLink.BeginGroup := ABeginGroup;
   end;
-  if not TFile.Exists(LayoutFile) then
+
+  procedure ShowTick(AItem: TdxBarButton; AIsOn: Boolean);
+  begin
+    AItem.ButtonStyle := bsChecked;
+    AItem.Down := AIsOn;
+  end;
+
+var
+  LOpenWith: TdxBarSubItem;
+  LItem: TdxBarButton;
+  LIndex: Integer;
+begin
+  if FLayoutMenu = nil then
     Exit;
+  FLayoutMenu.ItemLinks.Clear;
+  for LIndex := 0 to FLayoutItems.Count - 1 do
+    TdxBarItem(FLayoutItems[LIndex]).Free;
+  FLayoutItems.Clear;
+
+  FLayoutNames := LayoutNames;
+  for LIndex := 0 to High(FLayoutNames) do
+  begin
+    LItem := NewItem(FLayoutMenu, FLayoutNames[LIndex], LayoutMenuItemClick, LIndex);
+    if SameText(FLayoutNames[LIndex], GSettings.DefaultLayout) then
+      LItem.Caption := LItem.Caption + '  [default]';
+  end;
+  if Length(FLayoutNames) = 0 then
+  begin
+    LItem := NewItem(FLayoutMenu, 'No layouts saved yet', nil);
+    LItem.Enabled := False;
+  end;
+
+  NewItem(FLayoutMenu, '&Save this arrangement as...', LayoutSaveCurrentClick, 0, True);
+
+  // Which layout the window opens with is a choice about all of them, so it is a list of
+  // its own rather than a command that acts on whatever happens to be selected.
+  LOpenWith := TdxBarSubItem(FBarManager.AddItem(TdxBarSubItem));
+  LOpenWith.Caption := '&Open the window with';
+  FLayoutItems.Add(LOpenWith);
+  FLayoutMenu.ItemLinks.Add.Item := LOpenWith;
+  ShowTick(NewItem(LOpenWith, 'The arrangement you left', LayoutDefaultClick, -1),
+    GSettings.DefaultLayout = '');
+  for LIndex := 0 to High(FLayoutNames) do
+    ShowTick(NewItem(LOpenWith, FLayoutNames[LIndex], LayoutDefaultClick, LIndex),
+      SameText(FLayoutNames[LIndex], GSettings.DefaultLayout));
+
+  LItem := NewItem(FLayoutMenu, '&Manage layouts...', LayoutsClick);
+  LItem.Enabled := Length(FLayoutNames) > 0;
+  NewItem(FLayoutMenu, 'Back to the &built-in arrangement', LayoutBuiltInClick, 0, True);
+end;
+
+procedure TMainForm.ApplyNamedLayout(const AName: string);
+begin
   try
-    FDockManager.LoadLayoutFromIniFile(LayoutFile);
+    LoadNamedLayout(AName);
+    FForgetLayout := False;
+    SetStatus('Layout "' + AName + '" applied.');
   except
-    // an old or broken layout file must not stop the application from opening
     on E: Exception do
-      LogLine('layout not restored: ' + E.Message);
+      MessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
-procedure TMainForm.ResetLayoutClick(Sender: TObject);
+procedure TMainForm.LayoutMenuItemClick(Sender: TObject);
+var
+  LIndex: Integer;
 begin
-  if TFile.Exists(LayoutFile) then
-    TFile.Delete(LayoutFile);
-  MessageDlg('The panel layout will be back to its default the next time you start.',
-    mtInformation, [mbOK], 0);
+  LIndex := TdxBarButton(Sender).Tag;
+  if (LIndex < 0) or (LIndex > High(FLayoutNames)) then
+    Exit;
+  ApplyNamedLayout(FLayoutNames[LIndex]);
+end;
+
+procedure TMainForm.LayoutSaveCurrentClick(Sender: TObject);
+var
+  LName: string;
+begin
+  LName := '';
+  if not InputQuery('Save layout', 'A name for this arrangement:', LName) then
+    Exit;
+  LName := Trim(LName);
+  if LName = '' then
+    Exit;
+  if LayoutExists(LName) and (MessageDlg(Format('There is already a layout called "%s". Replace it?',
+    [LName]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
+    Exit;
+  try
+    SaveLayoutAs(LName);
+    FForgetLayout := False;
+    SetStatus('Layout saved as "' + LName + '".');
+  except
+    on E: Exception do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+  UpdateLayoutMenu(nil);
+end;
+
+procedure TMainForm.LayoutDefaultClick(Sender: TObject);
+var
+  LIndex: Integer;
+begin
+  LIndex := TdxBarButton(Sender).Tag;
+  if LIndex < 0 then
+  begin
+    uLayouts.SetDefaultLayout('');
+    SetStatus('The window will open the way you left it.');
+  end
+  else if LIndex <= High(FLayoutNames) then
+  begin
+    uLayouts.SetDefaultLayout(FLayoutNames[LIndex]);
+    SetStatus('The window will open with the layout "' + FLayoutNames[LIndex] + '".');
+  end;
+  UpdateLayoutMenu(nil);
+end;
+
+{ The panel sizes of the built-in arrangement. Kept apart from the docking because the
+  constructor docks the panels as it creates them, while the reset re-docks panels that
+  already exist - the sizes are the same either way. }
+procedure TMainForm.ApplyBuiltInSizes;
+begin
+  FExplorerPanel.Width := 280;
+  // The bottom strip is a tab container by now, and a panel inside one does not carry
+  // its own height: size the container, or the call views open as a 100px sliver.
+  if FDetailsDock.ParentDockControl <> nil then
+    FDetailsDock.ParentDockControl.Height := 320
+  else
+    FDetailsDock.Height := 320;
+end;
+
+{ Back to the factory arrangement, on screen and now - this is what somebody reaches for
+  after making a mess of the panels, and "it will be right the next time you start" is not
+  that. The panels are taken apart first: docking one that is still tabbed with another
+  moves its container instead of the panel, and the arrangement comes out half-built.
+  The order below is the constructor's, and has to stay the same as it. }
+procedure TMainForm.ApplyBuiltInLayout;
+
+  procedure Attach(APanel: TdxDockPanel; ATarget: TdxCustomDockControl; AType: TdxDockingType);
+  var
+    LTarget: TdxCustomDockControl;
+  begin
+    // Hidden or auto-hidden panels come back: this is the arrangement everything starts in.
+    if APanel.AutoHide then
+      APanel.AutoHide := False;
+    APanel.Visible := True;
+    LTarget := ATarget;
+    // Tabbing onto a panel that already has tabs means joining the container, not the
+    // panel: docking to the panel again leaves this one homeless.
+    if (AType = dtClient) and (ATarget is TdxDockPanel) and (TdxDockPanel(ATarget).TabContainer <> nil) then
+      LTarget := TdxDockPanel(ATarget).TabContainer;
+    APanel.DockTo(LTarget, AType, 0);
+  end;
+
+var
+  LPanel: TdxDockPanel;
+begin
+  // Docked straight to where they belong, in the constructor's order. An earlier version
+  // undocked everything first "to start clean" and left the window with no panels at all
+  // when a re-dock did not take - which is the one outcome a "back to the built-in
+  // arrangement" command must never produce.
+  DisableAlign;
+  try
+    Attach(FReportPanel, FDockSite, dtClient);
+    Attach(FExplorerPanel, FDockSite, dtLeft);
+    Attach(FDetailsDock, FDockSite, dtBottom);
+    for LPanel in [FTreePanel, FGraphPanel, FSourcePanel, FMemoryPanel, FMonitorPanel,
+      FSummaryPanel, FLogPanel] do
+      Attach(LPanel, FDetailsDock, dtClient);
+    ApplyBuiltInSizes;
+  finally
+    EnableAlign;
+  end;
+  FReportPanel.Activate;
+end;
+
+/// Whether there is a window to speak of: a dock site with nothing in it is the empty
+/// grey rectangle, not an arrangement.
+function TMainForm.HasPanels: Boolean;
+begin
+  Result := (FDockSite <> nil) and (FDockSite.ChildCount > 0);
+end;
+
+procedure TMainForm.LayoutBuiltInClick(Sender: TObject);
+begin
+  if MessageDlg('Put the panels back the way the profiler starts out?' + sLineBreak
+    + 'The saved layouts are kept, but the window stops opening with one of them.',
+    mtConfirmation, [mbOK, mbCancel], 0) <> mrOk then
+    Exit;
+  // A named layout marked as the one to open with would undo this at the next start,
+  // which is not what "back to the built-in arrangement" can mean.
+  uLayouts.SetDefaultLayout('');
+  try
+    ApplyBuiltInLayout;
+  except
+    on E: Exception do
+    begin
+      MessageDlg('The panels could not be rearranged: ' + E.Message + sLineBreak
+        + 'Closing and reopening the window puts them back.', mtError, [mbOK], 0);
+      // Whatever is on screen now is half-built: it must not be what the window opens
+      // with, so the remembered arrangement goes and the built-in one is what is left.
+      FForgetLayout := True;
+      if TFile.Exists(LayoutFile) then
+        TFile.Delete(LayoutFile);
+    end;
+  end;
+  UpdateLayoutMenu(nil);
+  SetStatus('The panels are back the way the profiler starts out.');
+end;
+
+procedure TMainForm.DoShow;
+begin
+  inherited;
+  FWasShown := True;
+end;
+
+{ File: where work begins. A new session and an already collected one are the same kind
+  of act - opening a document - and neither belongs among the buttons that control a run
+  in progress. }
+procedure TMainForm.BuildFileMenu(ABar: TdxBar);
+
+  function NewItem(const ACaption, AHint: string; AGlyph: TGlyphKind; AClick: TNotifyEvent;
+    const AShortCut: string = ''; ABeginGroup: Boolean = False): TdxBarButton;
+  var
+    LLink: TdxBarItemLink;
+  begin
+    Result := FBarManager.AddButton;
+    Result.Caption := ACaption;
+    Result.Hint := AHint;
+    Result.ImageIndex := Ord(AGlyph);
+    Result.OnClick := AClick;
+    if AShortCut <> '' then
+      Result.ShortCut := TextToShortCut(AShortCut);
+    LLink := FFileMenu.ItemLinks.Add;
+    LLink.Item := Result;
+    LLink.BeginGroup := ABeginGroup;
+  end;
+
+begin
+  FFileMenu := TdxBarSubItem(FBarManager.AddItem(TdxBarSubItem));
+  FFileMenu.Caption := 'File';
+  FFileMenu.ImageIndex := Ord(gkOpen);
+  FFileMenu.ShowCaption := True;
+  ABar.ItemLinks.Add.Item := FFileMenu;
+
+  NewItem('&New session...',
+    'Profile an app: pick the device, the mode and what to instrument', gkRun,
+    StartButtonClick, 'Ctrl+N');
+  NewItem('&Open session...', 'Open the results of a session already collected', gkOpen,
+    OpenButtonClick, 'Ctrl+O');
+  NewItem('Add a sessions &folder...',
+    'Show the sessions kept in another folder - yours, or somebody else''s - in the Explorer',
+    gkOpen, AddSessionFolderClick);
+  NewItem('E&xit', 'Close the profiler', gkStop, ExitClick, '', True);
+end;
+
+procedure TMainForm.ExitClick(Sender: TObject);
+begin
+  Close;
 end;
 
 procedure TMainForm.BuildExplorer;
+
+  procedure MenuItem(const ACaption: string; AGlyph: TGlyphKind; AClick: TNotifyEvent;
+    ABeginGroup: Boolean = False);
+  var
+    LItem: TdxBarButton;
+    LLink: TdxBarItemLink;
+  begin
+    LItem := FBarManager.AddButton;
+    LItem.Caption := ACaption;
+    LItem.ImageIndex := Ord(AGlyph);
+    LItem.OnClick := AClick;
+    LLink := FExplorerMenu.ItemLinks.Add;
+    LLink.Item := LItem;
+    LLink.BeginGroup := ABeginGroup;
+  end;
+
 begin
   FExplorer := TcxTreeList.Create(Self);
   FExplorer.Parent := FExplorerPanel;
@@ -765,10 +1186,24 @@ begin
   // makes the panel.
   FExplorer.OptionsView.ColumnAutoWidth := True;
   FExplorer.OnDblClick := ExplorerDblClick;
+  FExplorer.OnMouseDown := ExplorerMouseDown;
   FExplorerColumn := FExplorer.CreateColumn;
   FExplorerColumn.Caption.Text := 'Results';
   FExplorerColumn.Width := 260;
 
+  { What can be done to a session, where a person looks for it: on the session itself.
+    A dxBar popup rather than a VCL one, so it is drawn by the skin like everything else. }
+  FExplorerMenu := TdxBarPopupMenu.Create(Self);
+  FExplorerMenu.BarManager := FBarManager;
+  FExplorerMenu.OnPopup := ExplorerMenuPopup;
+  MenuItem('&Open', gkOpen, ExplorerOpenClick);
+  MenuItem('&Run again...', gkRun, ExplorerRunAgainClick);
+  MenuItem('&Rename...', gkArchive, ExplorerRenameClick);
+  MenuItem('&Delete...', gkClear, ExplorerDeleteClick);
+  MenuItem('Show in &folder', gkOpen, ExplorerRevealClick, True);
+  MenuItem('Add a sessions folder...', gkOpen, AddSessionFolderClick);
+  MenuItem('Refresh the list', gkRefresh, RefreshExplorerClick);
+  FExplorer.PopupMenu := FExplorerMenu;
 end;
 
 /// A node's meaning, kept in an array the node indexes into. Index 0 means "nothing to
@@ -784,56 +1219,246 @@ begin
   Result := Pointer(NativeInt(Length(FExplorerRefs)));
 end;
 
+{ Every folder sessions are listed from: the standard one plus the folders a session was
+  deliberately saved in. A folder that is no longer there is skipped rather than reported:
+  it is somebody's removed drive, not a fault of the profiler. }
+function TMainForm.SessionFolders: TArray<string>;
+begin
+  Result := nil;
+  if (FSessionsRoot <> '') and TDirectory.Exists(FSessionsRoot) then
+    Result := [FSessionsRoot];
+  for var LFolder in GSettings.SessionFolders do
+    if TDirectory.Exists(LFolder) and not SameText(LFolder, FSessionsRoot) then
+      Result := Result + [LFolder];
+end;
+
+{ The Explorer, grouped by what the sessions are of. A profiler used on more than one
+  product otherwise shows a wall of timestamps in which yesterday's run of the thing you
+  care about is indistinguishable from a test run of something else - so sessions sit
+  under the solution they came from, falling back to the project and then to the package
+  for sessions taken before a session recorded where it came from. }
 procedure TMainForm.ReloadExplorer;
+
+  function GroupOf(const AEntry: TSessionEntry): string;
+  begin
+    if AEntry.Solution <> '' then
+      Exit(TPath.GetFileNameWithoutExtension(AEntry.Solution));
+    if AEntry.Project <> '' then
+      Exit(TPath.GetFileNameWithoutExtension(AEntry.Project));
+    if AEntry.Package <> '' then
+      Exit(AEntry.Package);
+    Result := 'Sessions of unknown apps';
+  end;
+
+  function CaptionOf(const AEntry: TSessionEntry): string;
+  begin
+    if AEntry.Name <> '' then
+      Result := Format('%s  (%s)', [AEntry.Name, AEntry.Mode])
+    else
+      Result := Format('%s  (%s)', [AEntry.Id, AEntry.Mode]);
+  end;
+
 var
   LSessions: TSessionEntries;
   LArchives: TArchiveEntries;
-  LRoot, LNode, LChild: TcxTreeListNode;
+  LRoot, LGroup, LNode, LChild: TcxTreeListNode;
+  LGroups: TDictionary<string, TcxTreeListNode>;
+  LName: string;
   I, J: Integer;
 begin
   FExplorer.BeginUpdate;
+  LGroups := TDictionary<string, TcxTreeListNode>.Create;
   try
     FExplorer.Clear;
     FExplorerRefs := nil;
     LRoot := FExplorer.Add;
     LRoot.Values[0] := 'Sessions';
     LRoot.Data := nil;
-    if FSessionsRoot = '' then
-      Exit;
-    LSessions := ListSessions(FSessionsRoot);
-    for I := 0 to High(LSessions) do
+    for var LFolder in SessionFolders do
     begin
-      LNode := LRoot.AddChild;
-      LNode.Values[0] := Format('%s  (%s)', [LSessions[I].Id, LSessions[I].Mode]);
-      LNode.Data := AddExplorerRef(ekSession, LSessions[I].DatabasePath, '');
-      if SameText(LSessions[I].DatabasePath, FStore.Path) then
+      LSessions := ListSessions(LFolder);
+      for I := 0 to High(LSessions) do
       begin
-        // The open session shows the categories, like AQTime's Routines / Modules tree.
-        LChild := LNode.AddChild;
-        LChild.Values[0] := 'Routines';
-        LChild.Data := AddExplorerRef(ekCategory, '', 'Routines');
-        LChild := LNode.AddChild;
-        LChild.Values[0] := 'Modules';
-        LChild.Data := AddExplorerRef(ekCategory, '', 'Modules');
-        LChild := LNode.AddChild;
-        LChild.Values[0] := 'Source files';
-        LChild.Data := AddExplorerRef(ekCategory, '', 'Source files');
+        LName := GroupOf(LSessions[I]);
+        if not LGroups.TryGetValue(LName, LGroup) then
+        begin
+          LGroup := LRoot.AddChild;
+          LGroup.Values[0] := LName;
+          LGroup.Data := AddExplorerRef(ekGroup, '', LName);
+          LGroups.Add(LName, LGroup);
+        end;
+        LNode := LGroup.AddChild;
+        LNode.Values[0] := CaptionOf(LSessions[I]);
+        LNode.Data := AddExplorerRef(ekSession, LSessions[I].DatabasePath, '');
+        if SameText(LSessions[I].DatabasePath, FStore.Path) then
+        begin
+          // The open session shows the categories, like AQTime's Routines / Modules tree.
+          LChild := LNode.AddChild;
+          LChild.Values[0] := 'Routines';
+          LChild.Data := AddExplorerRef(ekCategory, '', 'Routines');
+          LChild := LNode.AddChild;
+          LChild.Values[0] := 'Modules';
+          LChild.Data := AddExplorerRef(ekCategory, '', 'Modules');
+          LChild := LNode.AddChild;
+          LChild.Values[0] := 'Source files';
+          LChild.Data := AddExplorerRef(ekCategory, '', 'Source files');
+        end;
+        // The results that were kept during that session, whether or not it is still open.
+        LArchives := ListArchives(TPath.GetDirectoryName(LSessions[I].DatabasePath));
+        for J := 0 to High(LArchives) do
+        begin
+          LChild := LNode.AddChild;
+          LChild.Values[0] := LArchives[J].Name;
+          LChild.Data := AddExplorerRef(ekArchive, LArchives[J].DatabasePath, '');
+        end;
+        if LNode.Count > 0 then
+          LNode.Expand(True);
       end;
-      // The results that were kept during that session, whether or not it is still open.
-      LArchives := ListArchives(TPath.GetDirectoryName(LSessions[I].DatabasePath));
-      for J := 0 to High(LArchives) do
-      begin
-        LChild := LNode.AddChild;
-        LChild.Values[0] := LArchives[J].Name;
-        LChild.Data := AddExplorerRef(ekArchive, LArchives[J].DatabasePath, '');
-      end;
-      if LNode.Count > 0 then
-        LNode.Expand(True);
     end;
-    LRoot.Expand(False);
+    LRoot.Expand(True);
   finally
+    LGroups.Free;
     FExplorer.EndUpdate;
   end;
+end;
+
+/// The reference of the focused node, whatever kind it is; False on the headings.
+function TMainForm.FocusedSession(out AEntry: TExplorerRef): Boolean;
+var
+  LIndex: Integer;
+begin
+  AEntry := Default(TExplorerRef);
+  if FExplorer.FocusedNode = nil then
+    Exit(False);
+  LIndex := Integer(NativeInt(FExplorer.FocusedNode.Data));
+  if (LIndex < 1) or (LIndex > Length(FExplorerRefs)) then
+    Exit(False);
+  AEntry := FExplorerRefs[LIndex - 1];
+  Result := True;
+end;
+
+/// A right-click acts on what is under the pointer, which is what everyone expects and
+/// what a tree list does not do on its own.
+procedure TMainForm.ExplorerMouseDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if (Button = mbRight) and FExplorer.HitTest.HitAtNode then
+    FExplorer.FocusedNode := FExplorer.HitTest.HitNode;
+end;
+
+procedure TMainForm.ExplorerMenuPopup(Sender: TObject);
+var
+  LRef: TExplorerRef;
+  LFound, LIsSession, LIsResult: Boolean;
+begin
+  LFound := FocusedSession(LRef);
+  LIsSession := LFound and (LRef.Kind = ekSession);
+  LIsResult := LFound and (LRef.Kind in [ekSession, ekArchive]);
+  // 0 Open, 1 Rename, 2 Delete, 3 Show in folder: the rest act on the list itself.
+  FExplorerMenu.ItemLinks[0].Item.Enabled := LIsResult;
+  // Run again reads the session's own spec, which an archive does not have of its own.
+  FExplorerMenu.ItemLinks[1].Item.Enabled := LIsSession and (FSessionId = '');
+  FExplorerMenu.ItemLinks[2].Item.Enabled := LIsSession;
+  FExplorerMenu.ItemLinks[3].Item.Enabled := LIsSession;
+  FExplorerMenu.ItemLinks[4].Item.Enabled := LIsResult;
+end;
+
+procedure TMainForm.ExplorerOpenClick(Sender: TObject);
+var
+  LRef: TExplorerRef;
+begin
+  if FocusedSession(LRef) and (LRef.Kind in [ekSession, ekArchive]) and TFile.Exists(LRef.DatabasePath) then
+    LoadSession(LRef.DatabasePath);
+end;
+
+procedure TMainForm.ExplorerRenameClick(Sender: TObject);
+var
+  LRef: TExplorerRef;
+  LDirectory, LName: string;
+begin
+  if not FocusedSession(LRef) or (LRef.Kind <> ekSession) then
+    Exit;
+  LDirectory := TPath.GetDirectoryName(LRef.DatabasePath);
+  LName := '';
+  if not InputQuery('Rename session', 'What is this session about?', LName) then
+    Exit;
+  if not EnsureService then
+    Exit;
+  try
+    // What a name is - and that the id everything else refers to does not move - is the
+    // engine's rule, so the GUI asks it rather than rewriting session.json behind its back.
+    FClient.RenameSession(LDirectory, Trim(LName));
+  except
+    on E: Exception do
+    begin
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+      Exit;
+    end;
+  end;
+  ReloadExplorer;
+end;
+
+procedure TMainForm.ExplorerDeleteClick(Sender: TObject);
+var
+  LRef: TExplorerRef;
+  LDirectory: string;
+begin
+  if not FocusedSession(LRef) or (LRef.Kind <> ekSession) then
+    Exit;
+  LDirectory := TPath.GetDirectoryName(LRef.DatabasePath);
+  if MessageDlg('Delete this session and everything it recorded?' + sLineBreak + LDirectory
+    + sLineBreak + sLineBreak + 'The results, the trace, the log and the archives kept during '
+    + 'it go with it, and none of it can be brought back.',
+    mtWarning, [mbYes, mbNo], 0) <> mrYes then
+    Exit;
+  if not EnsureService then
+    Exit;
+  // The session being deleted may be the one on screen: let go of the database first, or
+  // Windows refuses to remove a file the GUI still holds open.
+  if SameText(LRef.DatabasePath, FStore.Path) then
+  begin
+    FStore.Close;
+    FEditorFile := '';
+    ShowSourceOf(-1);
+    UpdateInfo;
+  end;
+  try
+    FClient.DeleteSession(LDirectory);
+  except
+    on E: Exception do
+    begin
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+      Exit;
+    end;
+  end;
+  ReloadExplorer;
+end;
+
+procedure TMainForm.ExplorerRevealClick(Sender: TObject);
+var
+  LRef: TExplorerRef;
+begin
+  if not FocusedSession(LRef) or (LRef.DatabasePath = '') then
+    Exit;
+  ShellExecute(0, 'open', 'explorer.exe', PChar('/select,"' + LRef.DatabasePath + '"'), nil, SW_SHOWNORMAL);
+end;
+
+procedure TMainForm.RefreshExplorerClick(Sender: TObject);
+begin
+  ReloadExplorer;
+end;
+
+{ Sessions kept somewhere else are still sessions: pointing the Explorer at their folder
+  is how somebody reads a colleague's recording, or their own from a project folder. }
+procedure TMainForm.AddSessionFolderClick(Sender: TObject);
+var
+  LFolder: string;
+begin
+  LFolder := '';
+  if not SelectDirectory('Folder holding profiling sessions', '', LFolder) then
+    Exit;
+  RememberSessionFolder(LFolder);
+  ReloadExplorer;
 end;
 
 procedure TMainForm.ExplorerDblClick(Sender: TObject);
@@ -889,9 +1514,17 @@ begin
   FDetailsPanel.Align := alClient;
   FDetailsPanel.BevelOuter := bvNone;
 
-  FParentsGrid := BuildNeighbourGrid(FDetailsPanel, alLeft, 'Parents', FParentsView);
-  FParentsGrid.Parent.Width := 560;
-  FChildrenGrid := BuildNeighbourGrid(FDetailsPanel, alClient, 'Children', FChildrenView);
+  // One above the other, not side by side: both tables hold method names, and a method
+  // name is long. Side by side each got half the width and showed a truncated name twice;
+  // stacked, both get the whole width and the reading goes down the page - callers above,
+  // callees below, which is also the direction the call stack runs.
+  FParentsGrid := BuildNeighbourGrid(FDetailsPanel, alTop, 'Parents', True, FParentsView);
+  FParentsGrid.Parent.Height := 200;
+  FDetailsSplitter := TcxSplitter.Create(Self);
+  FDetailsSplitter.Parent := FDetailsPanel;
+  FDetailsSplitter.Control := FParentsGrid.Parent;
+  FDetailsSplitter.AlignSplitter := salTop;
+  FChildrenGrid := BuildNeighbourGrid(FDetailsPanel, alClient, 'Children', False, FChildrenView);
 
   FGrid := TcxGrid.Create(Self);
   FGrid.Parent := FReportPanel;
@@ -912,7 +1545,7 @@ begin
 end;
 
 function TMainForm.BuildNeighbourGrid(AParent: TWinControl; AAlign: TAlign; const ACaption: string;
-  out AView: TcxGridTableView): TcxGrid;
+  AIsParents: Boolean; out AView: TcxGridTableView): TcxGrid;
 var
   LPanel: TPanel;
   LLabel: TcxLabel;
@@ -936,7 +1569,7 @@ begin
   LPie.Parent := LPanel;
   LPie.Align := alLeft;
   LPie.Width := 110;
-  if AAlign = alLeft then
+  if AIsParents then
   begin
     FParentsPie := LPie;
     LPie.OnPaint := PaintParentsPie;
@@ -957,7 +1590,10 @@ begin
   AView.OptionsSelection.CellSelect := False;
   AView.CreateColumn.Caption := 'Method';
   AView.CreateColumn.Caption := 'Value';
-  AView.Columns[0].Width := 380;
+  // The method name takes what is left: stacked tables have the full width to spend on it.
+  AView.OptionsView.ColumnAutoWidth := True;
+  AView.Columns[1].Width := 120;
+  AView.Columns[1].Options.HorzSizing := False;
   Result := LGrid;
 end;
 
@@ -1298,6 +1934,8 @@ end;
 procedure TMainForm.DockLayoutChanged(Sender: TdxCustomDockControl);
 begin
   UpdateEditorScrollBars;
+  // Panels moved after the arrangement was thrown away: this one is wanted again.
+  FForgetLayout := False;
 end;
 
 /// The editor moved, or was given another file: the bars follow it. Everything that scrolls
@@ -1448,15 +2086,33 @@ begin
   if not LSource.Found then
   begin
     FEditor.Lines.Clear;
-    FEditorHeader.Caption := Format(' %s: no source location. Run the session with a symbols directory (the app''s bin folder).',
-      [FStore.MethodName(AMethodId)]);
+    // Two different situations, and telling them apart is the whole point: a session
+    // recorded without symbols can never show source, while a running one simply has not
+    // resolved this method yet - the next refresh does it.
+    if FStore.SymbolsDir = '' then
+      FEditorHeader.Caption := Format(' %s: this session was recorded without a symbols directory, so it carries no source locations.',
+        [FStore.MethodName(AMethodId)])
+    // Only a session this window is running can still be refreshed. A stored one whose
+    // state says Collecting is not alive - it is a recording that stopped there - and
+    // telling somebody to press Get Results on it is sending them nowhere.
+    else if (FSessionId <> '') and SameText(FStore.Path, FLiveDatabasePath) then
+      FEditorHeader.Caption := Format(' %s: no source location yet - press Get Results to produce them from what is collected so far.',
+        [FStore.MethodName(AMethodId)])
+    else if not FStore.HasAnySourceLocations then
+      FEditorHeader.Caption := Format(' %s: these results carry no source locations at all, although the session had symbols (%s). '
+        + 'Record it again - Run again... - and they will be there.',
+        [FStore.MethodName(AMethodId), FStore.SymbolsDir])
+    else
+      FEditorHeader.Caption := Format(' %s: no source location. Its assembly''s pdb in %s does not carry one (compiler-generated methods often do not).',
+        [FStore.MethodName(AMethodId), FStore.SymbolsDir]);
     Exit;
   end;
   if not FileExists(LSource.FileName) then
   begin
     FEditor.Lines.Clear;
-    FEditorHeader.Caption := Format(' %s is at %s:%d, but that file is not on this machine.',
-      [FStore.MethodName(AMethodId), LSource.FileName, LSource.StartLine]);
+    FEditorHeader.Caption := Format(' %s is at %s:%d, but that file is not on this machine%s.',
+      [FStore.MethodName(AMethodId), LSource.FileName, LSource.StartLine,
+       IfThen(FStore.Solution = '', '', ' (the session came from ' + FStore.Solution + ')')]);
     Exit;
   end;
   if not SameText(FEditorFile, LSource.FileName) then
@@ -1904,7 +2560,6 @@ procedure TMainForm.ShowPreferencesInToolbar;
 begin
   FSuppressCombo := True;
   try
-    FThemeBox.ItemIndex := Ord(GTheme);
     FUnits.ItemIndex := Ord(GTimeUnit);
   finally
     FSuppressCombo := False;
@@ -1917,14 +2572,6 @@ begin
     FStatus.Panels[0].Text := AText;
 end;
 
-procedure TMainForm.ThemeChanged(Sender: TObject);
-begin
-  if FSuppressCombo then
-    Exit;
-  GTheme := TAppTheme(FThemeBox.ItemIndex);
-  GSettings.Theme := GTheme;
-  ApplyTheme;
-end;
 
 /// Colour everything that does not follow the skin: the plain VCL controls, the editor,
 /// and the panels we paint ourselves.
@@ -2085,14 +2732,11 @@ begin
   finally
     LDialog.Free;
   end;
+  // The dialog can rename, delete or set the default: the menu is built again either way.
+  UpdateLayoutMenu(nil);
   if LName = '' then
     Exit;
-  try
-    LoadNamedLayout(LName);
-  except
-    on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
-  end;
+  ApplyNamedLayout(LName);
 end;
 
 procedure TMainForm.UnitsChanged(Sender: TObject);
@@ -2154,7 +2798,10 @@ var
 begin
   LPath := ResolveSessionPath(APath);
   FStore.Open(LPath);
-  FSessionsRoot := TDirectory.GetParent(TDirectory.GetParent(LPath));
+  // A session opened from somewhere else joins the folders the Explorer browses; it does
+  // not become the folder sessions are kept in - that is a setting, and one open file
+  // should not silently change it.
+  RememberSessionFolder(TDirectory.GetParent(TDirectory.GetParent(LPath)));
   ReloadExplorer;
   LoadMemory;
   UpdateSummary;
@@ -2899,24 +3546,71 @@ begin
 end;
 
 procedure TMainForm.StartButtonClick(Sender: TObject);
+begin
+  StartSessionFrom(Default(TSessionRequest), False);
+end;
+
+/// The session whose results are on screen: where the toolbar's Run again reads its setup.
+function TMainForm.OpenSessionDirectory: string;
+begin
+  Result := '';
+  if FStore.IsOpen and (FStore.Path <> '') then
+    Result := TPath.GetDirectoryName(FStore.Path);
+end;
+
+procedure TMainForm.RunAgainClick(Sender: TObject);
+begin
+  RunAgain(OpenSessionDirectory);
+end;
+
+procedure TMainForm.ExplorerRunAgainClick(Sender: TObject);
+var
+  LRef: TExplorerRef;
+begin
+  if FocusedSession(LRef) and (LRef.Kind = ekSession) then
+    RunAgain(TPath.GetDirectoryName(LRef.DatabasePath));
+end;
+
+{ The same measurement once more. A session records everything it was started with, so
+  this is the setup dialog opened on what that session recorded - the point being that
+  nobody retypes a solution, a callspec and eleven assembly names to ask the same question
+  a second time. }
+procedure TMainForm.RunAgain(const ASessionDirectory: string);
+var
+  LRequest: TSessionRequest;
+begin
+  if ASessionDirectory = '' then
+    Exit;
+  if not TryReadSessionSpec(ASessionDirectory, LRequest) then
+  begin
+    MessageDlg('That session did not keep what it was started with, so it cannot be run again.'
+      + sLineBreak + 'Use New session... and set it up once; from then on Run again works.',
+      mtInformation, [mbOK], 0);
+    Exit;
+  end;
+  StartSessionFrom(LRequest, True);
+end;
+
+function TMainForm.StartSessionFrom(const ARequest: TSessionRequest; APrefilled: Boolean): Boolean;
 var
   LDialog: TSetupDialog;
   LSetup: TSetupResult;
   LStatus: TSessionStatus;
 begin
+  Result := False;
   if not EnsureService then
     Exit;
   LDialog := TSetupDialog.Create(Self, FClient);
   try
+    if APrefilled then
+      LDialog.PrefillFrom(ARequest);
     if not LDialog.Execute(LSetup) then
       Exit;
   finally
     LDialog.Free;
   end;
   try
-    LStatus := FClient.StartSession(LSetup.DeviceSerial, LSetup.Package, LSetup.Mode,
-      LSetup.Engine, LSetup.Callspec, LSetup.DurationSeconds, LSetup.SymbolsDir,
-      LSetup.Assemblies, LSetup.WeaveMapPath);
+    LStatus := FClient.StartSession(LSetup);
   except
     on E: Exception do
     begin
@@ -2924,10 +3618,14 @@ begin
       Exit;
     end;
   end;
+  Result := True;
   FSessionId := LStatus.Id;
+  // Which database belongs to the session this window is running: what tells a live
+  // recording apart from a stored one that happens to be open.
+  FLiveDatabasePath := LStatus.DatabasePath;
   FPaused := False;
   FLiveExplained := False;
-  // Snapshot, Pause and Clear read and rewrite files the collector flushes as it goes,
+  // Get Results, Pause and Clear read and rewrite files the collector flushes as it goes,
   // which only the weaver engine produces. A runtime-provider trace becomes readable
   // when the session ends, so the buttons stay off rather than failing on the click.
   FLiveControllable := SameText(LSetup.Mode, 'instrumenting') and
@@ -2936,6 +3634,9 @@ begin
   // state rather than a guess made here.
   if SameText(LSetup.Engine, 'auto') then
     FLiveControllable := SameText(LSetup.Mode, 'instrumenting');
+  // A session kept somewhere else must not disappear from the Explorer the moment it is
+  // created: the folder joins the ones the tree browses.
+  RememberSessionFolder(LSetup.SessionsRoot);
   SetLength(FMonitorSamples, 0);
   LogLine('session ' + FSessionId + ' started');
   UpdateButtons(LStatus.State);
@@ -2968,6 +3669,9 @@ begin
   if (LStatus.State = 'Ready') or (LStatus.State = 'Failed') then
   begin
     FPoll.Enabled := False;
+    // It is a recording now, not a session in progress: what can still be done to it is
+    // what can be done to any stored result.
+    FLiveDatabasePath := '';
     if LStatus.Error <> '' then
       MessageDlg(LStatus.Error, mtError, [mbOK], 0);
     if (LStatus.DatabasePath <> '') and TFile.Exists(LStatus.DatabasePath) then
@@ -3084,7 +3788,7 @@ begin
   if ARunning and not FLiveControllable and not FLiveExplained then
   begin
     FLiveExplained := True;
-    LogLine('Snapshot, Archive, Pause and Clear are off for this session: ' + CWhy);
+    LogLine('Get Results, Archive, Pause and Clear are off for this session: ' + CWhy);
   end;
 end;
 
@@ -3158,6 +3862,22 @@ begin
   end;
 end;
 
+{ A session started paused is set up, the app is running, and nothing is being measured:
+  this is the moment somebody has reached the screen worth looking at. }
+procedure TMainForm.RecordButtonClick(Sender: TObject);
+begin
+  if FSessionId = '' then
+    Exit;
+  try
+    FClient.Resume(FSessionId);
+    LogLine('recording started');
+    SetStatus('Recording.');
+  except
+    on E: Exception do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
 procedure TMainForm.StopButtonClick(Sender: TObject);
 begin
   if FSessionId = '' then
@@ -3177,7 +3897,15 @@ var
   LRunning: Boolean;
 begin
   LRunning := (FSessionId <> '') and
-    ((AState = 'Collecting') or (AState = 'WaitingForApp') or (AState = 'Preparing'));
+    ((AState = 'Collecting') or (AState = 'WaitingForApp') or (AState = 'Preparing')
+     or (AState = 'WaitingToRecord'));
+  // The one button that matters while a paused session waits, and the only time it is on.
+  FRecordButton.Enabled := (FSessionId <> '') and (AState = 'WaitingToRecord');
+  // Running it again makes sense while looking at results and only while nothing is
+  // running: two sessions on one device would fight over the diagnostic port.
+  FRunAgainButton.Enabled := (not LRunning) and (OpenSessionDirectory <> '');
+  if AState = 'WaitingToRecord' then
+    SetStatus('The app is running and nothing is being measured. Press Record when you are where you want to look.');
   FSnapshotButton.Enabled := LRunning and FLiveControllable;
   // Archiving a finished session would only copy what the Explorer already shows.
   FArchiveButton.Enabled := LRunning and FLiveControllable;
