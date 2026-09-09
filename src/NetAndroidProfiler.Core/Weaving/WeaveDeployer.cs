@@ -176,6 +176,7 @@ public sealed class WeaveDeployer
             .Where(l => l.EndsWith(".napw", StringComparison.Ordinal)
                      || l.EndsWith(".napt", StringComparison.Ordinal)
                      || l == "nap-types.txt")
+            .Where(l => BelongsToGeneration(l, _generation))
             .ToList();
         foreach (var f in files)
             await CatToLocalAsync($"{remoteEventsDir}/{f}", Path.Combine(localDir, f), ct).ConfigureAwait(false);
@@ -212,11 +213,6 @@ public sealed class WeaveDeployer
         WriteControlAsync(collecting ? "run" : "pause", ct);
 
     /// <summary>
-    /// Throw away the events collected so far (clear results). The generation is bumped
-    /// first: a collector that kept writing to its old handles would be filling files that
-    /// no longer have a name, so every thread has to start a new one.
-    /// </summary>
-    /// <summary>
     /// The event files pulled from the device: the per-call log (<c>.napw</c>) and, in tree mode,
     /// each thread's call tree (<c>.napt</c>). Clearing has to remove both - a clear that left the
     /// trees behind was undone by the next Get Results, which re-imported them.
@@ -231,6 +227,51 @@ public sealed class WeaveDeployer
             }
     }
 
+    /// <summary>
+    /// Take the generation on from what the app already has. The control file lives in the app's
+    /// private files and outlives the session that wrote it, so a counter that restarts at zero
+    /// writes the number that is already there - the collector sees no change and the clear does
+    /// nothing at all. Called once the app is running under instrumentation.
+    /// </summary>
+    public async Task AdoptDeviceGenerationAsync(CancellationToken ct)
+    {
+        string text = await _adb.RunAsAsync(_serial, _package, $"cat {ControlPath}", ct).ConfigureAwait(false);
+        _generation = Math.Max(_generation, GenerationIn(text));
+    }
+
+    /// <summary>The generation a control file's text declares, 0 when it declares none.</summary>
+    public static int GenerationIn(string controlText)
+    {
+        int at = controlText.IndexOf("gen=", StringComparison.OrdinalIgnoreCase);
+        if (at < 0) return 0;
+        return int.TryParse(controlText[(at + 4)..].Split(' ')[0].Trim(), out int g) ? g : 0;
+    }
+
+    /// <summary>The generation an event file belongs to (its <c>-g&lt;n&gt;</c> tag), -1 when it has none.</summary>
+    public static int GenerationOf(string fileName)
+    {
+        int at = fileName.LastIndexOf("-g", StringComparison.Ordinal);
+        if (at < 0) return -1;
+        string digits = Path.GetFileNameWithoutExtension(fileName)[(at + 2)..];
+        return int.TryParse(digits, out int g) ? g : -1;
+    }
+
+    /// <summary>
+    /// Whether an event file still belongs to the session as it is now. A file of an earlier
+    /// generation is what a clear left behind: importing it brings back the figures the clear
+    /// threw away.
+    /// </summary>
+    public static bool BelongsToGeneration(string fileName, int generation)
+    {
+        int g = GenerationOf(fileName);
+        return g < 0 || g >= generation;
+    }
+
+    /// <summary>
+    /// Throw away the events collected so far (clear results). The generation is bumped
+    /// first: a collector that kept writing to its old handles would be filling files that
+    /// no longer have a name, so every thread has to start a new one.
+    /// </summary>
     public async Task ClearEventsAsync(CancellationToken ct)
     {
         // Delete first, bump second. The other order deletes the fresh files the collector
@@ -240,6 +281,9 @@ public sealed class WeaveDeployer
         _generation++;
         await WriteControlAsync(_collecting ? "run" : "pause", ct).ConfigureAwait(false);
     }
+
+    /// <summary>The generation the session is on: older files are leftovers of a clear.</summary>
+    public int Generation => _generation;
 
     private int _generation;
     private bool _collecting = true;

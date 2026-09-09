@@ -170,4 +170,29 @@ public class WeaveToolBackupTests : IDisposable
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
+    /// <summary>
+    /// The app's control file outlives the session that wrote it, so a session whose generation
+    /// counter starts at zero can write a number the collector is already on - and its first
+    /// clear does nothing. The number to carry on from is the one on the device.
+    /// </summary>
+    [Fact]
+    public void The_generation_carries_on_from_what_the_app_already_has()
+    {
+        Assert.Equal(2, WeaveDeployer.GenerationIn("run gen=2"));
+        Assert.Equal(0, WeaveDeployer.GenerationIn("pause"));
+        Assert.Equal(0, WeaveDeployer.GenerationIn(""));
+    }
+
+    /// <summary>
+    /// Files of an earlier generation are what a clear left on the device: importing them brings
+    /// back the figures the clear threw away, which is what a real session came back with.
+    /// </summary>
+    [Fact]
+    public void Event_files_of_a_cleared_generation_are_not_imported()
+    {
+        Assert.False(WeaveDeployer.BelongsToGeneration("d88f81a1-t5-g1.napt", 2));
+        Assert.True(WeaveDeployer.BelongsToGeneration("d88f81a1-t5-g2.napt", 2));
+        Assert.True(WeaveDeployer.BelongsToGeneration("d88f81a1-t5-g3.napw", 2));
+        Assert.True(WeaveDeployer.BelongsToGeneration("nap-types.txt", 2));
+    }
 }

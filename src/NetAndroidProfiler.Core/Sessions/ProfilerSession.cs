@@ -646,6 +646,10 @@ public sealed class ProfilerSession : IAsyncDisposable
 
     private async Task CollectWeaverAsync(CancellationToken ct)
     {
+        // The app keeps the control file of whatever session touched it last, so this session's
+        // generation starts from that number instead of from zero: otherwise its first clear
+        // rewrites a generation the collector is already on and nothing is cleared.
+        await _weaveDeployer!.AdoptDeviceGenerationAsync(ct).ConfigureAwait(false);
         // Paused first, so that the woven methods executed while somebody navigates to the
         // screen worth measuring are not recorded. They still run woven: the overhead is
         // there, only the recording is not.

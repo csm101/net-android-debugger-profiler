@@ -129,6 +129,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
 - [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
 - [x] engine=auto picks the weaver when a build-time weave map is given, whatever the app does with its assemblies - `Auto_picks_the_weaver_when_the_build_already_wove_the_app` (an app that embeds them was sent to the runtime provider, which then refused it and advised the weave map already passed)
+- [x] The generation a clear bumps carries on from the one the app already has, and event files of a cleared generation are not imported - `The_generation_carries_on_from_what_the_app_already_has`, `Event_files_of_a_cleared_generation_are_not_imported` (the first clear of a session was a no-op, and the files left on the device brought the cleared figures back)
 - [x] Clear Results deletes the pulled call trees as well as the pulled per-call files - `Clearing_deletes_the_pulled_trees_as_well_as_the_pulled_events` (a cleared session came back with every figure it had before the clear)
 - [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
 - [x] A type the dump names twice in one snapshot is stored once, with the summed figures - `A_type_named_twice_in_a_snapshot_is_stored_once_with_the_totals` (a real app lost its whole heap session on the primary key of `heap_by_type`)
