@@ -59,6 +59,14 @@ public static class AppBuilder
             // Handed to the build rather than imported by the app project: instrumenting
             // an app must not require editing it.
             args.Add("-p:CustomAfterMicrosoftCommonTargets=" + Path.GetFullPath(targets));
+
+            // The targets default both of these to the package's build\tools, which is right
+            // for an installation and empty in a source tree until somebody publishes. Saying
+            // where they are is this side's job: it is the side that knows.
+            if (ToolLocator.FindWeaveTool() is { } weaver)
+                args.Add("-p:NapWeaveTool=" + weaver);
+            if (ToolLocator.FindCollectorAssembly() is { } collector)
+                args.Add("-p:NapCollectorAssembly=" + collector);
         }
         if (!string.IsNullOrWhiteSpace(request.DeviceSerial))
             args.Add($"-p:AdbTarget=-s {request.DeviceSerial}");

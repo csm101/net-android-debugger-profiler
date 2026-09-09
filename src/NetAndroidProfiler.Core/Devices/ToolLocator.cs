@@ -22,6 +22,45 @@ public static class ToolLocator
     public static string? FindDsRouter() => FindDotnetTool("dotnet-dsrouter");
 
     /// <summary>
+    /// The weaver the build-time weaving targets run, and the collector assembly the woven app
+    /// references. Both ship in the package's build/tools/ folder next to the targets file;
+    /// in a source tree that folder is written by the packaging step, so an ordinary build's
+    /// output is where they are. Answered here rather than in the targets file because this is
+    /// where every other "where is my binary" question is answered, and because a path with a
+    /// target framework in it does not belong in an msbuild condition that nobody rebuilds.
+    /// </summary>
+    public static string? FindWeaveTool(string? appBase = null) =>
+        FindShippedTool("nap-weave.dll", Path.Combine("src", "NetAndroidProfiler.Weave", "bin"), appBase);
+
+    /// <inheritdoc cref="FindWeaveTool"/>
+    public static string? FindCollectorAssembly(string? appBase = null) =>
+        FindShippedTool("NetAndroidProfiler.Collector.dll", Path.Combine("src", "NetAndroidProfiler.Collector", "bin"), appBase);
+
+    /// <summary>
+    /// A file that ships in the package's build/tools/, looked for there first and then in the
+    /// build output of the project that produces it. The configuration and the target framework
+    /// are not spelled out: whatever is under bin/ is searched, newest first, so a retargeted
+    /// project keeps working without anyone remembering to edit a path.
+    /// </summary>
+    private static string? FindShippedTool(string fileName, string projectBin, string? appBase)
+    {
+        var dir = new DirectoryInfo(appBase ?? AppContext.BaseDirectory);
+        for (int i = 0; dir is not null && i < 8; i++, dir = dir.Parent)
+        {
+            var shipped = Path.Combine(dir.FullName, "build", "tools", fileName);
+            if (File.Exists(shipped)) return Path.GetFullPath(shipped);
+
+            var bin = Path.Combine(dir.FullName, projectBin);
+            if (!Directory.Exists(bin)) continue;
+            var built = new DirectoryInfo(bin).GetFiles(fileName, SearchOption.AllDirectories)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .FirstOrDefault();
+            if (built is not null) return built.FullName;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// The desktop GUI. It ships in the package's gui/ folder next to bin/, and lives in
     /// gui/ at the root of a source tree, so both are searched - the same shape as
     /// <see cref="FindWeavingTargets"/>. The GUI is optional: a machine without it profiles

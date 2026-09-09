@@ -27,7 +27,9 @@
                       callspec: all, N:Namespace, T:Type, M:Type:Method, '-' excludes).
                       Keep it narrow: instrumenting thousands of methods makes
                       startup unusably slow.
-      NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file)
+      NapWeaveTool    path to nap-weave.dll (default: build/tools next to this file, which is
+                      what a package has; the profiler's own frontends pass it explicitly,
+                      because they already know where their binaries are)
       NapMapPath      where the id map is written (default: $(OutDir)nap-weave.map)
       NapAssemblies   names of referenced assemblies to weave as well as the app's own,
                       semicolon separated (App.Core;App.GeoLocation). An app is more
@@ -104,9 +106,9 @@
     <Error Condition="'$(NapCallspec)' == ''"
            Text="NapWeave is true but NapCallspec is empty. Pass -p:NapCallspec=&quot;T:My.App.Type&quot; (or N:My.Namespace). Weaving everything makes the app unusably slow." />
     <Error Condition="!Exists('$(NapWeaveTool)')"
-           Text="nap-weave was not found at $(NapWeaveTool). Publish it (dotnet publish src/NetAndroidProfiler.Weave) or set NapWeaveTool." />
+           Text="nap-weave was not found at $(NapWeaveTool). From a source tree, build the solution or publish the tool: dotnet publish src/NetAndroidProfiler.Weave -c Release -o build/tools. Otherwise set NapWeaveTool to the nap-weave.dll to use." />
     <Error Condition="!Exists('$(NapCollectorAssembly)')"
-           Text="The collector assembly was not found at $(NapCollectorAssembly). Set NapCollectorAssembly to NetAndroidProfiler.Collector.dll." />
+           Text="The collector assembly was not found at $(NapCollectorAssembly). From a source tree, build the solution; otherwise set NapCollectorAssembly to the NetAndroidProfiler.Collector.dll to use." />
   </Target>
 
   <!--

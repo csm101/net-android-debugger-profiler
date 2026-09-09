@@ -195,13 +195,35 @@ public sealed class ControlService : IAsyncDisposable
                 var request = await ReadBodyAsync<StartRequest>(ctx).ConfigureAwait(false)
                     ?? throw new ProfilerException("A session request body is required.");
                 var spec = request.ToSpec();
-                var live = _registry.Create(spec);
+                var live = _registry.Create(spec, request.SessionsRoot);
                 live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
                 return (201, Describe(live));
             }
 
+            // Naming and deleting are about a session on disk, not about a running one:
+            // they answer for a session this service never started, which is what lets a
+            // frontend tidy up yesterday's recordings. The session travels in the body
+            // rather than in the path because it can be a directory somewhere else, and a
+            // Windows path is not a URL segment.
+            case ["sessions", "rename"] when method == "POST":
+            {
+                var request = await ReadBodyAsync<RenameRequest>(ctx).ConfigureAwait(false)
+                    ?? throw new ProfilerException("A rename request body is required.");
+                _registry.Rename(request.Id, request.Name);
+                return (200, new RenamedResponse(request.Id, request.Name));
+            }
+
+            case ["sessions", "delete"] when method == "POST":
+            {
+                var request = await ReadBodyAsync<DeleteRequest>(ctx).ConfigureAwait(false)
+                    ?? throw new ProfilerException("A delete request body is required.");
+                _registry.Delete(request.Id);
+                return (200, new DeletedResponse(request.Id));
+            }
+
             case ["sessions", var id] when method == "GET":
                 return (200, Describe(LiveOrThrow(id)));
+
 
             case ["sessions", var id, "counters"] when method == "GET":
                 return (200, LiveOrThrow(id).Session.Counters());
@@ -369,11 +391,20 @@ public sealed class StartRequest
     public int MaxTraceMb { get; set; } = 512;
     /// <summary>Build output with the app's portable .pdb files; lets the GUI show the source.</summary>
     public string? SymbolsDir { get; set; }
+    /// <summary>The project profiled and the solution holding it, so sessions can be listed by product.</summary>
+    public string? ProjectPath { get; set; }
+    /// <inheritdoc cref="ProjectPath"/>
+    public string? SolutionPath { get; set; }
+    /// <summary>Where to put this session; empty means the service's own sessions folder.</summary>
+    public string? SessionsRoot { get; set; }
+    /// <summary>Record nothing until asked (POST /sessions/{id}/resume): the app runs unmeasured meanwhile.</summary>
+    public bool StartPaused { get; set; }
 
     public SessionSpec ToSpec() => SessionSpecFactory.Build(
         DeviceSerial, PackageName, Mode, Launch, DurationSeconds, Callspec, TrackAllocations, SuspendOnStart,
         Name, KeepAppRunning, Engine, WeaveAssemblies, WeaveReferenceDirs, WeaveMapPath,
-        Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb, SymbolsDir);
+        Snapshots, SnapshotIntervalSeconds, WeavePropertyAccessors, WeaveAsyncBodies, MaxTraceMb, SymbolsDir,
+        ProjectPath, SolutionPath, StartPaused);
 }
 
 /// <summary>Body of POST /sessions/{id}/archive: what to call the results being kept.</summary>
@@ -381,6 +412,25 @@ public sealed class ArchiveRequest
 {
     public string? Name { get; set; }
 }
+
+/// <summary>
+/// Body of POST /sessions/rename: which session (an id, or the full path of a session
+/// directory) and what to call it - nothing takes the name away.
+/// </summary>
+public sealed class RenameRequest
+{
+    public string Id { get; set; } = "";
+    public string? Name { get; set; }
+}
+
+/// <summary>Body of POST /sessions/delete: which session to delete, by id or by path.</summary>
+public sealed class DeleteRequest
+{
+    public string Id { get; set; } = "";
+}
+
+public sealed record RenamedResponse(string Id, string? Name);
+public sealed record DeletedResponse(string Id);
 
 /// <summary>Body of POST /prereqs/install: which of the known tools to install.</summary>
 public sealed class InstallToolRequest
@@ -443,6 +493,10 @@ public sealed class BuildRequest
 [JsonSerializable(typeof(AppProjectInfo))]
 [JsonSerializable(typeof(List<AppProjectInfo>))]
 [JsonSerializable(typeof(ArchiveRequest))]
+[JsonSerializable(typeof(RenameRequest))]
+[JsonSerializable(typeof(DeleteRequest))]
+[JsonSerializable(typeof(RenamedResponse))]
+[JsonSerializable(typeof(DeletedResponse))]
 [JsonSerializable(typeof(ArchivedResult))]
 [JsonSerializable(typeof(List<ArchivedResult>))]
 [JsonSerializable(typeof(CallspecCandidate))]

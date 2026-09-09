@@ -41,10 +41,21 @@ public sealed class PortablePdbSymbols : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// A module as this looks it up: the assembly name, with no extension. Callers name
+    /// modules both ways - a sampling trace says "App.Droid", the weave map records the file
+    /// it rewrote, "App.Droid.dll" - and a lookup that missed on the second silently gave a
+    /// whole session no source locations at all.
+    /// </summary>
+    private static string ModuleKey(string module) =>
+        module.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || module.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? module[..^4]
+            : module;
+
     /// <summary>Source range of a method (first to last sequence point of its primary document), or null when unknown.</summary>
     public MethodSourceRange? Find(string module, int token)
     {
-        if (!_pdbs.TryGetValue(module, out var pdb)) return null;
+        if (!_pdbs.TryGetValue(ModuleKey(module), out var pdb)) return null;
         if ((token >> 24) != 0x06) return null;
         int row = token & 0xFFFFFF;
         var reader = pdb.reader;

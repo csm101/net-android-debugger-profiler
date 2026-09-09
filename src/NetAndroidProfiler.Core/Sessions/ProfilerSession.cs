@@ -53,7 +53,7 @@ public enum LaunchMode
     Attach,
 }
 
-public enum SessionState { Idle, Preparing, WaitingForApp, Collecting, Analyzing, Ready, Failed }
+public enum SessionState { Idle, Preparing, WaitingForApp, WaitingToRecord, Collecting, Analyzing, Ready, Failed }
 
 /// <summary>
 /// Source-generated serialization for the session spec. Reflection-based System.Text.Json
@@ -102,7 +102,26 @@ public sealed record SessionSpec(
     /// where each method lives, which is what lets a frontend show the source next to the
     /// figures. The profiler is used by whoever built the app, so asking is legitimate.
     /// </summary>
-    string? SymbolsDir = null)
+    string? SymbolsDir = null,
+    /// <summary>
+    /// The project the app was built from, and the solution that holds it, when the
+    /// frontend knows them. Nothing in a session needs them: they are recorded so that a
+    /// list of sessions can be read as "what I profiled of this product", which is how
+    /// anyone with more than one app looks for yesterday's run. Sessions written before
+    /// this existed simply have neither.
+    /// </summary>
+    string? ProjectPath = null,
+    /// <inheritdoc cref="ProjectPath"/>
+    string? SolutionPath = null,
+    /// <summary>
+    /// Set the session up, let the app run, and record nothing until somebody says "now"
+    /// (AQTime's "start with profiling disabled"). What needs measuring is rarely the
+    /// application's startup: it is what happens when a person presses a certain button,
+    /// and everything recorded before they get there is noise to be waded through. With
+    /// this the app is never suspended at launch, whatever <see cref="SuspendOnStart"/>
+    /// says - waiting for a diagnostic session is exactly what is being deferred.
+    /// </summary>
+    bool StartPaused = false)
 {
     /// <summary>
     /// Default ceiling for a .nettrace: a session left running fills the disk otherwise
@@ -178,6 +197,16 @@ public sealed class ProfilerSession : IAsyncDisposable
     private IReadOnlyList<WovenMethod>? _weaveMap;
     private string? _weaveEventsDir;
     private ResultStore? _store;
+    /// <summary>Completed when somebody asks a paused session to start recording.</summary>
+    private readonly TaskCompletionSource _recordRequested = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    /// <summary>The session was stopped while it was still waiting to record.</summary>
+    private bool _recordedNothing;
+    /// <summary>
+    /// The build's pdbs, read once and kept for the life of the session: every snapshot
+    /// resolves source locations, and a real app's symbols take seconds to read.
+    /// </summary>
+    private Symbols.PortablePdbSymbols? _pdbs;
+    private bool _pdbsTried;
 
     private ProfilerSession(string id, SessionSpec spec, string directory, AdbClient adb)
     {
@@ -211,6 +240,34 @@ public sealed class ProfilerSession : IAsyncDisposable
     /// <summary>Open a finished session (its database) from disk.</summary>
     public static ResultStore OpenResults(string sessionDirectory) => ResultStore.Open(Path.Combine(sessionDirectory, "session.db"));
 
+    /// <summary>
+    /// Give a session on disk a name, or take its name away (null). The name is what a
+    /// frontend lists it by; the directory keeps the id it was created with, because the
+    /// id is what everything else - archives, logs, an open database - refers to.
+    /// </summary>
+    public static void Rename(string sessionDirectory, string? name)
+    {
+        string specPath = Path.Combine(sessionDirectory, "session.json");
+        if (!File.Exists(specPath))
+            throw new ProfilerException($"No session.json in '{sessionDirectory}': this session cannot be renamed.");
+        var spec = JsonSerializer.Deserialize(File.ReadAllText(specPath), SessionJsonContext.Default.SessionSpec)
+            ?? throw new ProfilerException($"The session spec in '{sessionDirectory}' could not be read.");
+        string? trimmed = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        File.WriteAllText(specPath, JsonSerializer.Serialize(spec with { Name = trimmed }, SessionJsonContext.Default.SessionSpec));
+    }
+
+    /// <summary>
+    /// Delete a session directory and everything in it: the database, the trace, the log
+    /// and the archives kept during it. Deliberately not recoverable - a profiling session
+    /// is a recording, and a frontend that offers this asks first.
+    /// </summary>
+    public static void Delete(string sessionDirectory)
+    {
+        if (!System.IO.Directory.Exists(sessionDirectory))
+            throw new ProfilerException($"No session directory at '{sessionDirectory}'.");
+        System.IO.Directory.Delete(sessionDirectory, recursive: true);
+    }
+
     /// <summary>Enumerate session directories under <paramref name="sessionsRoot"/> (newest first).</summary>
     public static IReadOnlyList<(string id, string directory, SessionSpec? spec, bool ready)> ListSessions(string sessionsRoot)
     {
@@ -236,6 +293,15 @@ public sealed class ProfilerSession : IAsyncDisposable
         {
             await PrepareAsync(ct).ConfigureAwait(false);
             await CollectAsync(ct).ConfigureAwait(false);
+            // Stopped before it ever started recording: there is no trace to analyze, and
+            // saying so is better than failing a session that did exactly what was asked.
+            if (_recordedNothing)
+            {
+                _warnings.Add("Stopped before recording started: nothing was collected, so this session has no results.");
+                Log("stopped while waiting to record: no results");
+                SetState(SessionState.Ready);
+                return Info;
+            }
             await AnalyzeAsync(ct).ConfigureAwait(false);
             SetState(SessionState.Ready);
         }
@@ -529,8 +595,53 @@ public sealed class ProfilerSession : IAsyncDisposable
         return names.ToList();
     }
 
+    /// <summary>
+    /// Where a session started paused waits: everything is in place, the app is running,
+    /// and nothing is measured until <see cref="StartRecordingAsync"/>. False means the
+    /// session was stopped while waiting, so there is nothing to collect or analyze.
+    /// </summary>
+    private async Task<bool> WaitForTheWordAsync(CancellationToken ct)
+    {
+        if (!Spec.StartPaused) return true;
+        SetState(SessionState.WaitingToRecord);
+        Log("waiting for the word to record: the app is running and nothing is being measured");
+        var stopped = new TaskCompletionSource();
+        using (_stopRequested.Token.Register(() => stopped.TrySetResult()))
+        using (ct.Register(() => stopped.TrySetResult()))
+            await Task.WhenAny(_recordRequested.Task, stopped.Task).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        if (_recordRequested.Task.IsCompletedSuccessfully) return true;
+        _recordedNothing = true;
+        _ended = DateTimeOffset.UtcNow;
+        return false;
+    }
+
+    /// <summary>
+    /// Begin recording in a session started with <see cref="SessionSpec.StartPaused"/>.
+    /// The app has been running all along: this is the moment the measuring starts.
+    /// </summary>
+    public Task StartRecordingAsync(CancellationToken ct = default)
+    {
+        if (!Spec.StartPaused)
+            throw new ProfilerException($"Session {Id} was not started paused: it has been recording since it began.");
+        if (_state != SessionState.WaitingToRecord)
+            throw new ProfilerException($"Session {Id} is {_state}, not waiting to record.");
+        _recordRequested.TrySetResult();
+        Log("recording started on request");
+        return Task.CompletedTask;
+    }
+
     private async Task CollectWeaverAsync(CancellationToken ct)
     {
+        // Paused first, so that the woven methods executed while somebody navigates to the
+        // screen worth measuring are not recorded. They still run woven: the overhead is
+        // there, only the recording is not.
+        if (Spec.StartPaused)
+        {
+            await _weaveDeployer!.SetCollectingAsync(false, ct).ConfigureAwait(false);
+            if (!await WaitForTheWordAsync(ct).ConfigureAwait(false)) return;
+            await _weaveDeployer!.SetCollectingAsync(true, ct).ConfigureAwait(false);
+        }
         SetState(SessionState.WaitingForApp);
         // The collector writes a marker the first time a woven method executes. No
         // marker means either that the app is not running the woven assemblies at all
@@ -577,6 +688,10 @@ public sealed class ProfilerSession : IAsyncDisposable
             await CollectWeaverAsync(ct).ConfigureAwait(false);
             return;
         }
+        // Nothing is connected to the runtime until this returns: an EventPipe session
+        // records from the moment it opens, so a session that must not measure the startup
+        // simply does not open one yet.
+        if (!await WaitForTheWordAsync(ct).ConfigureAwait(false)) return;
         SetState(SessionState.WaitingForApp);
         var collector = new EventPipeCollector(_dsrouter!.Pid, Log);
         await collector.WaitForRuntimeAsync(TimeSpan.FromSeconds(Spec.Launch == LaunchMode.Attach ? 20 : 90), ct, _expectedMarker).ConfigureAwait(false);
@@ -696,7 +811,15 @@ public sealed class ProfilerSession : IAsyncDisposable
     /// </summary>
     private void WriteMethodSources(ResultStore store)
     {
-        if (string.IsNullOrWhiteSpace(Spec.SymbolsDir)) return;
+        // Said out loud rather than passed over in silence: without symbols the results
+        // can never be shown next to the source, and by the time anyone notices, the build
+        // those pdbs belong to may be gone.
+        if (string.IsNullOrWhiteSpace(Spec.SymbolsDir))
+        {
+            _warnings.Add("No symbols directory: this session records no source locations. "
+                + "Pass symbolsDir (the app's bin/<Configuration>/<tfm>) or projectPath when starting one.");
+            return;
+        }
         try
         {
             if (!System.IO.Directory.Exists(Spec.SymbolsDir))
@@ -704,8 +827,13 @@ public sealed class ProfilerSession : IAsyncDisposable
                 _warnings.Add($"Symbols directory not found: {Spec.SymbolsDir}");
                 return;
             }
-            using var pdbs = Symbols.PortablePdbSymbols.LoadDirectory(Spec.SymbolsDir);
-            if (pdbs.Modules.Count == 0)
+            if (!_pdbsTried)
+            {
+                _pdbsTried = true;
+                _pdbs = Symbols.PortablePdbSymbols.LoadDirectory(Spec.SymbolsDir);
+            }
+            var pdbs = _pdbs;
+            if (pdbs is null || pdbs.Modules.Count == 0)
             {
                 _warnings.Add($"No portable pdb files in {Spec.SymbolsDir} (DebugType must be portable).");
                 return;
@@ -724,6 +852,13 @@ public sealed class ProfilerSession : IAsyncDisposable
         {
             _warnings.Add($"Could not read the symbols in {Spec.SymbolsDir}: {e.Message}");
         }
+    }
+
+    /// <summary>Let go of the symbols; the session is over or being disposed.</summary>
+    private void ReleaseSymbols()
+    {
+        _pdbs?.Dispose();
+        _pdbs = null;
     }
 
     /// <summary>The writable store of this session, created on first use (a snapshot or the analysis).</summary>
@@ -797,6 +932,11 @@ public sealed class ProfilerSession : IAsyncDisposable
 
         _writeStore ??= File.Exists(DatabasePath) ? ResultStore.Open(DatabasePath, readOnly: false) : ResultStore.Create(DatabasePath, ToolVersion);
         _writeStore.WriteInstrumenting(result);
+        // The methods are new to the database, so their source locations are too. Doing this
+        // only at the end of the session was the reason a running session showed "no source
+        // location" for an app whose symbols it had all along - and a running session is
+        // exactly when somebody wants to read the code next to the figures.
+        WriteMethodSources(_writeStore);
         _writeStore.WriteSession(new SessionRow(Id, Spec.Mode.ToString(), _state.ToString(), Spec.Package, Spec.DeviceSerial,
             _started, null, null, null, null, JsonSerializer.Serialize(Spec, SessionJsonContext.Default.SessionSpec), null));
         int segment = _writeStore.AddSegment(DateTimeOffset.UtcNow, "snapshot", result.EnterEvents, $"{files} event files");
@@ -902,6 +1042,13 @@ public sealed class ProfilerSession : IAsyncDisposable
     /// <summary>Resume recording after <see cref="PauseAsync"/>.</summary>
     public async Task ResumeAsync(CancellationToken ct = default)
     {
+        // A session waiting for the word has not started yet: resuming it is starting it,
+        // whatever engine it runs on.
+        if (_state == SessionState.WaitingToRecord)
+        {
+            await StartRecordingAsync(ct).ConfigureAwait(false);
+            return;
+        }
         RequireLiveWeaverSession("resume");
         await _weaveDeployer!.SetCollectingAsync(true, ct).ConfigureAwait(false);
         Log("collection resumed");
@@ -1022,6 +1169,7 @@ public sealed class ProfilerSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _store?.Dispose();
+        ReleaseSymbols();
         await CleanupAsync().ConfigureAwait(false);
         _stopRequested.Dispose();
     }

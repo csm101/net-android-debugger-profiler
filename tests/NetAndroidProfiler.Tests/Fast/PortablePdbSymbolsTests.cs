@@ -15,6 +15,24 @@ public class PortablePdbSymbolsTests
         Assert.Contains(s.Documents(), d => d.EndsWith("CpuBurner.cs", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The weave map records the file it rewrote ("TestTarget.dll"), a sampling trace the
+    /// assembly ("TestTarget"). Both must find the same pdb: when they did not, every
+    /// instrumenting session came out with no source locations whatsoever, on an app whose
+    /// symbols the session had all along.
+    /// </summary>
+    [Fact]
+    public void A_module_named_with_its_file_extension_finds_the_same_pdb()
+    {
+        using var s = PortablePdbSymbols.LoadDirectory(PdbDir);
+        var method = s.MethodsInDocument("Workloads/CpuBurner.cs").First();
+
+        var byFileName = s.Find(method.Module + ".dll", method.Token);
+
+        Assert.NotNull(byFileName);
+        Assert.Equal(s.Find(method.Module, method.Token)!.Document, byFileName!.Document);
+    }
+
     [Fact]
     public void Methods_in_document_have_line_ranges()
     {

@@ -37,9 +37,15 @@ public sealed class SessionRegistry : IAsyncDisposable
     /// <summary>Sessions created in this process, newest first.</summary>
     public IReadOnlyList<LiveSession> LiveSessions => _live.Values.OrderByDescending(l => l.Session.CreatedUtc).ToList();
 
-    public LiveSession Create(SessionSpec spec)
+    /// <param name="spec">What to profile.</param>
+    /// <param name="sessionsRoot">
+    /// Where to put this one, when it does not belong with the others: a session kept
+    /// beside the product it measures, or on a share somebody else reads. Empty means the
+    /// registry's own root, which is the ordinary case.
+    /// </param>
+    public LiveSession Create(SessionSpec spec, string? sessionsRoot = null)
     {
-        var session = ProfilerSession.Create(spec, SessionsRoot);
+        var session = ProfilerSession.Create(spec, string.IsNullOrWhiteSpace(sessionsRoot) ? SessionsRoot : sessionsRoot);
         var live = new LiveSession { Session = session };
         _live[session.Id] = live;
         _currentId = session.Id;
@@ -61,6 +67,40 @@ public sealed class SessionRegistry : IAsyncDisposable
         var newest = ProfilerSession.ListSessions(SessionsRoot).FirstOrDefault(s => s.ready);
         if (newest.id is null) throw new ProfilerException("No profiling session yet: run one first.");
         return newest.id;
+    }
+
+    /// <summary>
+    /// Where a session lives: an id under this registry's root, or the full path of a
+    /// session directory, which is how one created somewhere else is reached.
+    /// </summary>
+    public string DirectoryOf(string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) throw new ProfilerException("A session id is required.");
+        string dir = Path.IsPathRooted(sessionId) ? sessionId : Path.Combine(SessionsRoot, sessionId);
+        if (!Directory.Exists(dir)) throw new ProfilerException($"Unknown session '{sessionId}'.");
+        return dir;
+    }
+
+    /// <summary>Name a session on disk, or take its name away (null).</summary>
+    public void Rename(string sessionId, string? name) => ProfilerSession.Rename(DirectoryOf(sessionId), name);
+
+    /// <summary>
+    /// Delete a session and everything it recorded. A session this process is still
+    /// running is refused: stopping it is a decision of its own, and deleting the files
+    /// under a collector that is writing them is how a device is left with the app's
+    /// environment still redirected.
+    /// </summary>
+    public void Delete(string sessionId)
+    {
+        string dir = DirectoryOf(sessionId);
+        string id = Path.GetFileName(dir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (_live.TryGetValue(id, out var live)
+            && live.Session.State is not (SessionState.Ready or SessionState.Failed or SessionState.Idle))
+            throw new ProfilerException($"Session {id} is still {live.Session.State}: stop it before deleting it.");
+        ProfilerSession.Delete(dir);
+        _live.TryRemove(id, out _);
+        if (_currentId == id) _currentId = null;
+        _log?.Invoke($"session {id} deleted");
     }
 
     /// <summary>

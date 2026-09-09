@@ -164,9 +164,10 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: instrument async state machines too, reported as '<method> (async body)' - their calls are resumptions and their time excludes the awaits. On by default; turn it off to weave only the synchronous stub of async methods")] bool weaveAsyncBodies = true,
         [Description("Stop collecting when the trace reaches this many MB (default 512; 0 = no limit). A real app samples at roughly 1.5 MB/s and instrumenting traces grow faster")] int maxTraceMb = 512,
         [Description("Build output with the app's portable .pdb files (bin/<Configuration>/<tfm>). Given this, the results record where each method lives, which is what lets a GUI show the source beside the figures")] string? symbolsDir = null,
+        [Description("The app's .csproj. Worth passing whenever you know it: the session records which product it belongs to, and takes the symbols from that project's build output when symbolsDir is not given - a session recorded without symbols can never be shown next to its source")] string? projectPath = null,
         CancellationToken ct = default)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb, symbolsDir);
+        var spec = BuildSpec(deviceSerial, packageName, mode, durationSeconds, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb, symbolsDir, projectPath);
         var live = host.Create(spec);
         SessionInfo info;
         try { info = await live.Session.RunAsync(ct); }
@@ -194,9 +195,11 @@ public sealed class ProfilerTools(SessionHost host)
         [Description("Weaver: local reference directories (app bin folder)")] string? weaveReferenceDirs = null,
         [Description("Weaver: path of nap-weave.map from a build-time weaving build")] string? weaveMapPath = null,
         [Description("Stop collecting when the trace reaches this many MB (default 512; 0 = no limit). Sessions without a duration are exactly the ones that can run away")] int maxTraceMb = 512,
-        [Description("Build output with the app's portable .pdb files, so the results record where each method lives")] string? symbolsDir = null)
+        [Description("Build output with the app's portable .pdb files, so the results record where each method lives")] string? symbolsDir = null,
+        [Description("The app's .csproj: records which product the session belongs to, and supplies the symbols when symbolsDir is not given")] string? projectPath = null,
+        [Description("Set everything up but record nothing until profile_resume. What needs measuring is rarely the startup: drive the app to the screen that matters (tap_screen and the rest), then start recording, and the results hold that and nothing else. The app is never suspended at launch in this mode")] bool startPaused = false)
     {
-        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, maxTraceMb: maxTraceMb, symbolsDir: symbolsDir);
+        var spec = BuildSpec(deviceSerial, packageName, mode, null, launch, callspec, trackAllocations, suspendOnStart, name, keepAppRunning, engine, weaveAssemblies, weaveReferenceDirs, weaveMapPath, maxTraceMb: maxTraceMb, symbolsDir: symbolsDir, projectPath: projectPath, startPaused: startPaused);
         if (spec.Mode == ProfilingMode.HeapSnapshot) throw new McpException("heap snapshots are one-shot: use profile_run with mode=heap.");
         var live = host.Create(spec);
         live.RunTask = Task.Run(() => live.Session.RunAsync(CancellationToken.None));
@@ -240,7 +243,8 @@ public sealed class ProfilerTools(SessionHost host)
         catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
     }
 
-    [McpServerTool(Name = "profile_resume"), Description("Resumes recording after profile_pause. Weaver sessions only.")]
+    [McpServerTool(Name = "profile_resume"), Description(
+        "Starts recording in a session started with startPaused (any mode), or resumes one paused with profile_pause (weaver sessions only).")]
     public async Task<string> ProfileResume([Description("Session id (default: current)")] string? sessionId = null, CancellationToken ct = default)
     {
         var live = LiveOrThrow(sessionId);
@@ -313,6 +317,25 @@ public sealed class ProfilerTools(SessionHost host)
         foreach (var s in list)
             sb.AppendLine($"{s.id}  {(s.ready ? "ready" : "incomplete")}  mode={s.spec?.Mode}  package={s.spec?.Package}  device={s.spec?.DeviceSerial}");
         return sb.ToString().TrimEnd();
+    }
+
+    [McpServerTool(Name = "profile_rename_session"), Description(
+        "Names a stored session (or clears its name with an empty one). The name is what the lists and the GUI show it by; the session keeps the id everything else refers to.")]
+    public string ProfileRenameSession(
+        [Description("Session id, or the full path of a session directory")] string sessionId,
+        [Description("New name; empty removes it")] string? name = null)
+    {
+        host.Rename(sessionId, name);
+        return string.IsNullOrWhiteSpace(name) ? $"{sessionId}: name removed." : $"{sessionId} is now \"{name.Trim()}\".";
+    }
+
+    [McpServerTool(Name = "profile_delete_session", Destructive = true), Description(
+        "Deletes a stored session and everything it recorded (database, trace, log, archives). Not recoverable. A session still running in this server is refused: stop it first.")]
+    public string ProfileDeleteSession(
+        [Description("Session id, or the full path of a session directory")] string sessionId)
+    {
+        host.Delete(sessionId);
+        return $"{sessionId} deleted.";
     }
 
     // ------------------------------------------------------------------ results
@@ -543,14 +566,15 @@ public sealed class ProfilerTools(SessionHost host)
     }
 
     /// <summary>Translate the tool arguments into a spec; Core owns the aliases and the validation.</summary>
-    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "auto", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512, string? symbolsDir = null)
+    private static SessionSpec BuildSpec(string deviceSerial, string packageName, string mode, int? durationSeconds, string launch, string? callspec, bool trackAllocations, bool suspendOnStart, string? name, bool keepAppRunning, string engine = "auto", string? weaveAssemblies = null, string? weaveReferenceDirs = null, string? weaveMapPath = null, int snapshots = 1, int snapshotIntervalSeconds = 30, bool weavePropertyAccessors = false, bool weaveAsyncBodies = true, int maxTraceMb = 512, string? symbolsDir = null, string? projectPath = null, bool startPaused = false)
     {
         try
         {
             return SessionSpecFactory.Build(deviceSerial, packageName, mode, launch, durationSeconds, callspec,
                 trackAllocations, suspendOnStart, name, keepAppRunning, engine,
                 SessionSpecFactory.SplitList(weaveAssemblies), SessionSpecFactory.SplitList(weaveReferenceDirs),
-                weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb, symbolsDir);
+                weaveMapPath, snapshots, snapshotIntervalSeconds, weavePropertyAccessors, weaveAsyncBodies, maxTraceMb,
+                symbolsDir, projectPath, startPaused: startPaused);
         }
         catch (ProfilerException e)
         {

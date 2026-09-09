@@ -143,6 +143,12 @@ assertion skipped.
   error carrying guidance - `Profile_annotate_source_puts_the_figures_beside_the_method` (device)
 
 ## H3. GUI data layer (gui/tests/StoreTests.dpr, Delphi; run against real session databases)
+
+- `run again` (no database needed): a session.json comes back as the request it was started
+  with - package, mode, engine, callspec, assemblies, startPaused, solution, and the folder
+  the session is kept in - lands on the right entry of the dialog's profiler list, and
+  proposes a name of its own (`Prova1` -> `Prova2`, `startup` -> `startup 2`, the package
+  when there is no name). A directory with no spec says so instead of pretending.
 - [x] Session identity, report rows, tree roots and expansion, details queries, segment history - `StoreTests`
 - [x] A database written before the current schema still opens read-only (missing tables answer empty)
 - [x] The heap chart gets a point per snapshot, with totals - `StoreTests`
@@ -251,7 +257,30 @@ the GUI's own data layer.
   `RunSetupInputs`
 - [ ] Automated in CI: it needs a device, like the .NET device suite
 
+## H11. Sessions as documents (Fast/SessionCatalogTests, no device)
+
+- `A_session_records_the_solution_it_came_from` - the spec keeps SolutionPath, and it
+  survives to `ListSessions`.
+- `A_session_without_a_solution_reads_as_one_without` - a session written before those
+  fields existed still reads.
+- `Renaming_a_session_changes_what_it_is_listed_by_and_not_its_id`, `A_name_can_be_taken_away`.
+- `Deleting_a_session_takes_everything_it_recorded` - directory, database and archives.
+- `A_session_outside_the_root_is_named_by_its_path` - a session kept elsewhere is reachable.
+- `An_unknown_session_says_so_instead_of_throwing_an_io_error`.
+- `A_session_that_records_on_demand_does_not_suspend_the_app_at_launch` - StartPaused and
+  SuspendOnStart are opposites.
+- `Starting_to_record_is_refused_on_a_session_that_was_never_paused`.
+- `The_build_output_of_the_project_is_taken_as_the_symbols_directory` - symbols are found
+  from projectPath when nobody passes them.
+
+Gap, needs a device: recording on demand end to end - start paused, drive the app, record,
+and assert that what the results hold begins where recording did.
+
 ## H2. Control service (Fast/ControlServiceTests, no device)
+
+- `A_stored_session_can_be_named_and_deleted_by_a_service_that_never_ran_it` and
+  `Deleting_a_session_that_is_not_there_says_which_one` - `POST /sessions/rename` and
+  `POST /sessions/delete` answer for sessions on disk, not only for live ones.
 - [x] /health reports version, sessions root and port - `Health_reports_the_version_and_where_sessions_live`
 - [x] An empty sessions root lists nothing - `An_empty_sessions_root_lists_no_sessions`
 - [x] Unknown route answers 404 naming the path - `An_unknown_route_is_a_404_naming_what_was_asked`

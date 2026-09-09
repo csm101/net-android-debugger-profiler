@@ -1,4 +1,5 @@
 using NetAndroidProfiler.Core.Apps;
+using NetAndroidProfiler.Core.Projects;
 
 namespace NetAndroidProfiler.Core.Sessions;
 
@@ -54,7 +55,10 @@ public static class SessionSpecFactory
         bool weavePropertyAccessors = false,
         bool weaveAsyncBodies = true,
         int maxTraceMb = 512,
-        string? symbolsDir = null)
+        string? symbolsDir = null,
+        string? projectPath = null,
+        string? solutionPath = null,
+        bool startPaused = false)
     {
         if (string.IsNullOrWhiteSpace(deviceSerial)) throw new ProfilerException("deviceSerial is required (list the devices first).");
         if (string.IsNullOrWhiteSpace(packageName)) throw new ProfilerException("packageName is required.");
@@ -67,13 +71,21 @@ public static class SessionSpecFactory
             throw new ProfilerException(
                 "Instrumenting needs a callspec (e.g. N:My.App.Namespace). Instrumenting everything is not supported: it makes the app unusably slow.");
 
+        // A session without symbols records no source locations, and nothing later can put
+        // them back: the pdbs of that build are what they are read from. So they are looked
+        // for rather than demanded - the project says where its build output is, and the
+        // weaver's reference directories are that same folder by another name.
+        string? symbols = FirstExisting(symbolsDir, OutputOf(projectPath), weaveReferenceDirs?.FirstOrDefault());
+
         return new SessionSpec(
             deviceSerial.Trim(),
             packageName.Trim(),
             pm,
             lm,
             durationSeconds is > 0 ? TimeSpan.FromSeconds(durationSeconds.Value) : null,
-            suspendOnStart,
+            // Suspending the app at launch waits for a diagnostic session, which is the very
+            // thing a paused session defers: the two cannot both be true.
+            suspendOnStart && !startPaused,
             string.IsNullOrWhiteSpace(callspec) ? null : callspec.Trim(),
             trackAllocations,
             string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
@@ -87,8 +99,19 @@ public static class SessionSpecFactory
             weavePropertyAccessors,
             weaveAsyncBodies,
             maxTraceMb > 0 ? maxTraceMb * 1024L * 1024L : null,
-            string.IsNullOrWhiteSpace(symbolsDir) ? null : symbolsDir.Trim());
+            symbols,
+            string.IsNullOrWhiteSpace(projectPath) ? null : projectPath.Trim(),
+            string.IsNullOrWhiteSpace(solutionPath) ? null : solutionPath.Trim(),
+            startPaused);
     }
+
+    /// <summary>The build output of a project file, when it names one that exists.</summary>
+    private static string? OutputOf(string? projectPath) =>
+        string.IsNullOrWhiteSpace(projectPath) ? null : AppProjectFinder.Describe(projectPath.Trim())?.OutputDir;
+
+    /// <summary>The first of these that is a directory on this machine; null when none is.</summary>
+    private static string? FirstExisting(params string?[] candidates) =>
+        candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c) && Directory.Exists(c.Trim()))?.Trim();
 
     /// <summary>Split a comma-separated frontend argument ("A,B") into a list, or null when empty.</summary>
     public static IReadOnlyList<string>? SplitList(string? value) =>

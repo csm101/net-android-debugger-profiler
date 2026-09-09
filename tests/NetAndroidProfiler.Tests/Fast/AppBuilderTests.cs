@@ -117,6 +117,28 @@ public class AppBuilderTests : IDisposable
         Assert.DoesNotContain(args, a => a.StartsWith("-p:NapAssemblies=") && a.Contains(';'));
     }
 
+    /// <summary>
+    /// The targets default the weaver and the collector to the package's build\tools, which a
+    /// source tree does not have until the packaging step writes it. Where the binaries are is
+    /// this side's question - it is the side that knows - so the build is told, and a clone that
+    /// was merely built weaves without anybody being sent to run a publish first.
+    /// </summary>
+    [Fact]
+    public void The_build_is_told_where_the_weaver_and_the_collector_are()
+    {
+        string targets = Path.Combine(_root, "NetAndroidProfiler.Weaving.targets");
+        File.WriteAllText(targets, "<Project />");
+
+        var args = AppBuilder.ArgumentsFor(new AppBuildRequest(
+            _project, Weave: true, Callspec: "N:V7", WeavingTargets: targets));
+
+        var weaver = args.FirstOrDefault(a => a.StartsWith("-p:NapWeaveTool="));
+        var collector = args.FirstOrDefault(a => a.StartsWith("-p:NapCollectorAssembly="));
+        Assert.NotNull(weaver);
+        Assert.NotNull(collector);
+        Assert.True(File.Exists(weaver!["-p:NapWeaveTool=".Length..]), weaver);
+        Assert.True(File.Exists(collector!["-p:NapCollectorAssembly=".Length..]), collector);
+    }
     [Fact]
     public void Weaving_during_the_build_without_a_callspec_is_refused()
     {

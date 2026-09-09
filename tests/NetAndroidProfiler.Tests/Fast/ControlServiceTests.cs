@@ -248,6 +248,41 @@ public class ControlServiceTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
     }
 
+    /// <summary>
+    /// Naming and deleting are about sessions on disk: the service answers for sessions it
+    /// never started, which is what lets the GUI tidy up yesterday's recordings.
+    /// </summary>
+    [Fact]
+    public async Task A_stored_session_can_be_named_and_deleted_by_a_service_that_never_ran_it()
+    {
+        string directory = Path.Combine(_root, "20260101-000000-acme-sampling");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "session.json"), """
+            { "DeviceSerial": "emulator-5554", "Package": "com.acme.app", "Mode": 0 }
+            """);
+        await File.WriteAllTextAsync(Path.Combine(directory, "session.db"), "not really a database");
+
+        var renamed = await _client.PostAsync("sessions/rename",
+            Body("""{ "id": "20260101-000000-acme-sampling", "name": "the slow startup" }"""));
+        Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
+        Assert.Contains("\"the slow startup\"", await File.ReadAllTextAsync(Path.Combine(directory, "session.json")));
+
+        var deleted = await _client.PostAsync("sessions/delete",
+            Body("""{ "id": "20260101-000000-acme-sampling" }"""));
+        Assert.Equal(HttpStatusCode.OK, deleted.StatusCode);
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public async Task Deleting_a_session_that_is_not_there_says_which_one()
+    {
+        var response = await _client.PostAsync("sessions/delete",
+            Body("""{ "id": "20260101-000000-nope-sampling" }"""));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("20260101-000000-nope-sampling", await response.Content.ReadAsStringAsync());
+    }
+
     [Fact]
     public async Task A_job_this_service_did_not_start_is_named_in_the_error()
     {

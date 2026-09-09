@@ -40,5 +40,17 @@ public sealed class SessionHost : IAsyncDisposable
         catch (ProfilerException e) { throw new McpException(e.Message); }
     }
 
+    public void Rename(string sessionId, string? name)
+    {
+        try { _registry.Rename(sessionId, name); }
+        catch (ProfilerException e) { throw new McpException(e.Message); }
+    }
+
+    public void Delete(string sessionId)
+    {
+        try { _registry.Delete(sessionId); }
+        catch (ProfilerException e) { throw new McpException(e.Message); }
+    }
+
     public ValueTask DisposeAsync() => _registry.DisposeAsync();
 }

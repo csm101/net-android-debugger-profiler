@@ -113,6 +113,65 @@ Two deployment shapes:
   embed their assemblies - injecting an override environment file would stop
   such an app from starting at all.
 
+## A session is something somebody keeps (2026-09-09)
+
+A session used to be a run: a directory named after a timestamp, in one folder, gone when
+nobody remembered which timestamp it was. It is now addressed the way a document is, and
+the spec carries what that needs:
+
+- `Name` (it always existed, now the frontends ask for it), `ProjectPath` and
+  `SolutionPath`. Nothing in a run needs the last two: they are what lets a list of
+  sessions be read as "my runs of this product" instead of a wall of timestamps, and they
+  are what the GUI's Explorer groups by. Sessions written before they existed have neither
+  and group by package.
+- `SessionRegistry.Create` takes an optional root, so a session can be kept beside the
+  product it measures rather than in the profiler's own pile. `DirectoryOf` accepts an id
+  under the registry's root **or** the full path of a session directory, which is how one
+  kept elsewhere is reached afterwards.
+- `ProfilerSession.Rename` / `Delete` and their registry wrappers own the rules: a name
+  changes what a session is listed by and never its id (everything else - archives, logs,
+  an open database - refers to that), and a session this process is still running is
+  refused rather than deleted under a collector that is writing into it.
+- Over the wire: `POST /sessions/rename` and `POST /sessions/delete`, both taking the
+  session in the **body** (`{ "id": ... }`) because it may be a directory somewhere else,
+  and a Windows path is not a URL segment. As MCP tools: `profile_rename_session`,
+  `profile_delete_session` (marked destructive).
+
+## Recording on demand (2026-09-09)
+
+`SessionSpec.StartPaused` sets everything up, lets the app run, and records nothing until
+asked - AQTime's "start with profiling disabled". What needs measuring is rarely an
+application's startup; it is what happens when somebody presses a certain button, and
+everything recorded on the way there is noise to wade through.
+
+- New state `WaitingToRecord`, and `StartRecordingAsync`; `ResumeAsync` on a session in
+  that state means "begin", so the frontends need no second verb (`POST /sessions/{id}/resume`,
+  `profile_resume`, the GUI's Record button).
+- Where the waiting happens differs by engine, and that is the whole design:
+  **weaver** deploys with the device-side control file at `pause`, so the woven methods run
+  (their overhead is there) but nothing is recorded, and flips to `run` at the word;
+  **EventPipe** (sampling, provider instrumenting, heap) simply does not open a session
+  yet - an EventPipe session records from the moment it is opened.
+- `StartPaused` forces `SuspendOnStart` off: suspending the app at launch waits for a
+  diagnostic session, which is exactly what is being deferred.
+- Stopped while waiting, the session ends `Ready` with the warning "nothing was collected"
+  rather than failing an analysis over a trace that does not exist.
+
+## Symbols: found rather than demanded (2026-09-09)
+
+Source locations can only be read from the pdbs of the build that was profiled, so a
+session recorded without them can never be shown next to its source, and nothing later can
+repair it. Therefore:
+
+- `SessionSpecFactory` takes the first of `symbolsDir`, the build output of `projectPath`,
+  and the weaver's first reference directory that exists on this machine.
+- A session with no symbols says so in its warnings instead of being quietly source-less.
+- **Snapshots resolve source locations too.** Doing it only in the final analysis was why a
+  running session showed "no source location" for an app whose symbols it had all along -
+  and a running session is exactly when somebody wants to read the code beside the figures.
+  The pdbs are read once and kept for the life of the session (a real app's symbols take
+  seconds to read, and a snapshot happens repeatedly).
+
 ## SQLite schema contract
 
 Source of truth: `src/NetAndroidProfiler.Core/Store/ResultSchema.cs`
