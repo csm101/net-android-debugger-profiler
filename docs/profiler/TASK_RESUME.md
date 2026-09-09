@@ -6,6 +6,25 @@ private) as its profiler component: sources under `src/NetAndroidProfiler.*`, th
 under `docs/profiler/`. Repository-level state lives in the root `TASK_RESUME.md`; the shared
 rules in the root `CLAUDE.md`, the component's own in `src/NetAndroidProfiler.Core/CLAUDE.md`.
 ## Current task
+**Full MCP test tour on the physical device (2026-09-09).** Done and green: sampling one-shot with
+projectPath; a long instrumenting session with a build-time weave map through startPaused ->
+profile_resume -> profile_snapshot -> profile_pause -> profile_resume -> profile_stop (results hold
+only what happened after the tap, as designed); profile_archive/archives and reading an archive back
+through sessionId; every read tool (hotspots, flat, tree, callers, callees, threads, timings,
+annotate_source); rename/delete; the whole GUI surface (gui_open/view/capture of graph, source,
+report, tree, whole window, gui_show/gui_close); and the documented debugger+profiler combination
+(sampling attach on the app the debugger runs, debug session intact afterwards).
+
+Five defects the tour found are fixed and committed (12eb8f1..dc8d693): both dsrouter ports checked,
+an ambiguous source suffix refused, the session name shown in the listing, duplicate heap types
+summed, engine=auto choosing the weaver when a build-time map is given, and the results of a
+mid-run Get Results readable. Fast suites green (138 + 24 + 25).
+
+Next: the running MCP server holds `dist/net-android-0.3.0`, so those fixes are not live. With the
+server disabled, rebuild the package, re-enable it, then finish the tour: heap x2 + heap_diff (the
+duplicate-type crash), engine=auto with a weave map, profile_snapshot summary, alloc_report on a
+session woven with allocations, and profile_clear.
+
 **Sampling stop that never ends the event stream (2026-09-06, evening).** Device suite on the API 33
 emulator (`api_33_0` = emulator-5556) with port 9000 free: `Sampling_restart_session_finds_busy_method`
 and `Stop_ends_a_session_that_was_started_without_a_duration` fail; the session log stops at
