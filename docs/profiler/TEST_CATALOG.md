@@ -129,6 +129,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Sampling round-trip (hotspots, tree, edges) - `Sampling_round_trip_hotspots_tree_and_edges`
 - [x] Instrumenting round-trip (timings, allocs, tree) - `Instrumenting_round_trip_timings_and_allocations`
 - [x] Heap snapshot round-trip - `Heap_snapshot_round_trip`
+- [x] A type the dump names twice in one snapshot is stored once, with the summed figures - `A_type_named_twice_in_a_snapshot_is_stored_once_with_the_totals` (a real app lost its whole heap session on the primary key of `heap_by_type`)
 - [x] Snapshots replace the results and leave a history - `Snapshots_replace_the_results_and_leave_a_history`
 - [x] Clearing empties the results, keeps session and history - `Clearing_empties_the_results_and_keeps_the_session_row`
 - [x] Large tree (200k nodes, 5k methods): write and GUI queries stay interactive - `Large_call_tree_stays_queryable`

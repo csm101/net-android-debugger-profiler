@@ -195,4 +195,26 @@ public class ResultStoreTests
         }
         Assert.Throws<InvalidDataException>(() => ResultStore.Open(db));
     }
+
+    /// <summary>
+    /// A gcdump names the same type more than once (the same name comes back for distinct
+    /// runtime types). Storing a row per occurrence broke the primary key and lost the whole
+    /// session at its second snapshot; the figures of one type are the sum of its occurrences.
+    /// </summary>
+    [Fact]
+    public void A_type_named_twice_in_a_snapshot_is_stored_once_with_the_totals()
+    {
+        string db = Recorded.TempDb("heap-duplicate-type");
+        using var store = ResultStore.Create(db, "test");
+        store.WriteHeapSnapshot(DateTimeOffset.UtcNow, null,
+            [("System.String", 2, 100), ("System.String", 3, 50), ("System.Byte[]", 1, 8)]);
+        store.WriteHeapSnapshot(DateTimeOffset.UtcNow, null, [("System.String", 1, 10)]);
+
+        var rows = store.HeapByType(1, 10);
+
+        var strings = rows.Single(r => r.typeName == "System.String");
+        Assert.Equal(5, strings.count);
+        Assert.Equal(150, strings.bytes);
+        Assert.Equal(2, rows.Count);
+    }
 }

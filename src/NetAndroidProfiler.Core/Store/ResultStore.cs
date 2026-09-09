@@ -260,8 +260,14 @@ public sealed class ResultStore : IDisposable
     }
 
     /// <summary>Write a heap snapshot (types are added to the shared type table by name).</summary>
-    public int WriteHeapSnapshot(DateTimeOffset takenUtc, string? file, IReadOnlyList<(string typeName, long count, long bytes)> byType)
+    public int WriteHeapSnapshot(DateTimeOffset takenUtc, string? file, IReadOnlyList<(string typeName, long count, long bytes)> rawByType)
     {
+        // A dump names the same type more than once - the same name comes back for runtime
+        // types the dump keeps apart - and a snapshot holds one row per type: sum them.
+        var byType = rawByType
+            .GroupBy(t => t.typeName, StringComparer.Ordinal)
+            .Select(g => (typeName: g.Key, count: g.Sum(t => t.count), bytes: g.Sum(t => t.bytes)))
+            .ToList();
         using var tx = _conn.BeginTransaction();
         var typeIds = new Dictionary<string, int>();
         using (var q = _conn.CreateCommand())
