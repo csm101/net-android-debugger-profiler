@@ -465,7 +465,7 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   timings in a 12 s session that deployed nothing: IsMainProcess 173 ms
   (2 calls), InizializzaApplicazione 135 ms (30.9 ms self), ..ctor 133 ms,
   OnCreate 95.6 ms, AttendiTermineInizializzazione 3.4 ms.
-  **[verified - Build_time_weaving_session_on_the reference application]**
+  **[verified - Build_time_weaving_session_on_the_reference_app]**
 - **Async bodies are woven by default and work on the real app**: for a matching
   async method the weaver instruments both the synchronous stub and the
   compiler-generated `MoveNext`, the second reported as
@@ -474,7 +474,7 @@ on net9 - U20). Verified 2026-08-20 on TestTarget (net10):
   inclusive / 2.2 ms self as a stub, while `OnCreate (async body)` shows 3
   resumptions and 284.7 ms self - i.e. without the body the async method's own
   work is invisible. Five consecutive launches of the woven build, no crash.
-  **[verified - Build_time_weaving_records_async_bodies_on_the reference application]**
+  **[verified - Build_time_weaving_records_async_bodies_on_the_reference_app]**
 - **Iterators are instrumented the same way** (`<Type>.<Method> (iterator body)`):
   one call per item produced, plus the MoveNext that ends the sequence. Measured on
   TestTarget (net10, on-device weaving of a single type): 813 enter / 813 leave and
@@ -704,7 +704,7 @@ class's session marker]**
 
 ## Real target: the reference application
 
-- C:\Work\ReferenceApp\the reference application.sln, app project App.Droid,
+- C:\Work\ReferenceApp\ReferenceApp.sln, app project App.Droid,
   TFM net9.0-android35.0, ApplicationId=App.Droid, RunAOTCompilation=false.
 - Builds here with `-c Debug -p:EnableDiagnostics=true` (SDK pack 35.0.105
   auto-resolved); APK 24.7 MB, diagnostics component present, no libaot-*,

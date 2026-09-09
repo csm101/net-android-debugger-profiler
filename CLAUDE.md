@@ -18,7 +18,7 @@ folders (`%LOCALAPPDATA%\net-android-debugger`, `%LOCALAPPDATA%\net-android-prof
 and MCP registration names are those of the two original repositories and do not change.
 
 The ultimate real-world target of both products is **the reference application**
-(`C:\Work\ReferenceApp\the reference application.sln`, project `App.Droid`, `net9.0-android35.0`,
+(`C:\Work\ReferenceApp\ReferenceApp.sln`, project `App.Droid`, `net9.0-android35.0`,
 `ApplicationId=App.Droid`). Architectural template of both: the Delphi Win64 debugger
 project (`C:\Athens\GitHub\delphi-visual-studio-code-debugger`) - the same
 frontends-over-one-core layout, living-documents methodology and
@@ -234,6 +234,25 @@ Commit messages: one imperative line saying why.
 
 After coding work, respond with only: files changed, what changed, build/test
 executed, result, next step.
+
+# Whose product is this about (blocking)
+
+This repository is MIT and meant to become public. Nothing in it - documentation, tests,
+comments, commit messages - names the applications it was developed against, the companies
+that own them, their source paths, their service or process names, their internal hosts.
+A fact learned from a real application is worth writing down; the name of that application
+is not, and it is not ours to publish.
+
+Write the fact and drop the identity: "a background sync library's watchdog restarts its
+thread every 60 s" says everything "the sync library's watchdog:112" said, and
+can be read by anyone. Use `MyApp.Core` and the like for the examples that need a name, and
+the neutral terms already in use here: **the reference application** (the large real app
+the products are validated against, thirty-odd projects, two of them applications).
+
+`SkillTests.The_plugin_names_no_product_machine_or_repository` guards the distributed
+package and `The_repository_names_no_customer_product` guards the repository itself. The
+second one exists because the first was written first, and the rule was then applied only
+to what shipped - the repository is published too, and its history cannot be unpublished.
 
 # Licensing and IP (blocking)
 

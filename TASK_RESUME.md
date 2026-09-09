@@ -189,7 +189,7 @@ Final state: 168 commits, 334 tracked files, `examples/` intact (49 files), subm
   0 failed, 7 skipped by design, 7 min 14 s; API 30 the same: 25 passed, 0 failed, 7 skipped,
   6 min 31 s. Details in `docs/profiler/TASK_RESUME.md` and the
   profiler's notes.
-- Not run: the the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
+- Not run: the reference application tests (opt-in `NAP_REFAPP=1`), the build-time weave map test (needs a
   `-p:NapWeave=true` install), anything on the Redmi.
 
 ### Skipped or changed on purpose

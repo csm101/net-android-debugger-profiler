@@ -51,12 +51,18 @@ handshake, quirks per device/emulator), `KNOWN_UNKNOWNS.md`, `TEST_CATALOG.md`,
 `tests/NetAndroidDebugger.Tests` drives the real engine against
 `TestTarget/Debugger` (package `net.androiddebugger.testtarget`) on the emulator
 or an attached device. `NAD_DEVICE_SERIAL` is mandatory with more than one device
-attached; `NAD_SKIP_DEPLOY=1` skips the redeploy. The device classes carry no
-trait: without a device they fail at fixture initialization rather than skip.
+attached; `NAD_SKIP_DEPLOY=1` skips the redeploy.
+
+Every class that takes the device fixture carries `[Trait("Category", "Device")]`, the
+convention `NetAndroid.Device.Tests` already followed, so a device-free run really is one:
+50 tests in a tenth of a second instead of 146 tests, a quarter of an hour and 58 failures
+against whatever phone happened to be plugged in. `TestConventionTests` fails when a new
+device class forgets the trait.
 
 ```powershell
 dotnet build NetAndroidDebugger.slnx
-dotnet test  NetAndroidDebugger.slnx
+dotnet test  NetAndroidDebugger.slnx --filter "Category!=Device"   # fast pass
+dotnet test  NetAndroidDebugger.slnx                                # everything
 ```
 
 # Frontends and install

@@ -8,6 +8,7 @@ namespace NetAndroidDebugger.Tests;
 /// Drives the real DAP adapter process over stdio, the way an editor would, against TestTarget.
 /// </summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class DapEndToEndTests(DeviceFixture device, ITestOutputHelper output)
 {
     private const string BuildConfiguration =

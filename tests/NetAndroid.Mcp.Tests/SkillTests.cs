@@ -101,6 +101,40 @@ public sealed class SkillTests
         Assert.True(hits.Count == 0, string.Join("\n", hits));
     }
 
+    /// <summary>
+    /// The same rule as above, one level up: the repository itself is MIT and will be
+    /// published, and its history cannot be unpublished afterwards. A fact learned from a
+    /// real application belongs in the documentation; the name of that application, its
+    /// namespaces, its source paths, its service and process names and its internal hosts
+    /// do not - they are not ours to publish. Write the fact and drop the identity.
+    /// </summary>
+    [Fact]
+    public void The_repository_names_no_customer_product()
+    {
+        var forbidden = new[]
+        {
+            "the reference application", "App.Droid", "App.Core", "App", "the background service", "Sync",
+            "an internal host", "the app's background service", @"C:\Work",
+        };
+        var skipped = new[] { ".git", "bin", "obj", "dist", "node_modules", "ThirdParty", "packages" };
+        var extensions = new[] { ".cs", ".md", ".pas", ".dpr", ".dfm", ".txt", ".json", ".ps1", ".cmd", ".sh", ".targets", ".csproj", ".slnx", ".yml" };
+
+        var hits = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(Support.RepoRoot, "*.*", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(Support.RepoRoot, file);
+            if (skipped.Any(part => relative.Split(Path.DirectorySeparatorChar).Contains(part))) continue;
+            // This file lists the words: it is the one place they are allowed to appear.
+            if (Path.GetFileName(file) == "SkillTests.cs") continue;
+            if (!extensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase)) continue;
+            var text = File.ReadAllText(file);
+            foreach (var word in forbidden)
+                if (text.Contains(word, StringComparison.OrdinalIgnoreCase))
+                    hits.Add($"{relative}: {word}");
+        }
+        Assert.True(hits.Count == 0, "the customer's product is named in:" + Environment.NewLine + string.Join(Environment.NewLine, hits.Take(40)));
+    }
+
     [Fact]
     public void Every_reference_the_skill_links_exists()
     {

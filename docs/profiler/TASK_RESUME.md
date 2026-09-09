@@ -183,7 +183,7 @@ The repository carries the code, the docs and the tests. It does not carry:
 ## Open, found in the field on 2026-08-27
 (fixed 2026-08-28: `NapAssemblies` weaves the named libraries in the output folder and
 appends them to the same map; the GUI sends its Assemblies field, and the rule now says
-"name it" rather than refusing. Still to check on a device: that a the reference application build-time weave
+"name it" rather than refusing. Still to check on a device: that a reference application build-time weave
 with App.Core named collects what a session then reads.)
 
 **Build-time weaving reached only the application's own assembly.** The targets weave
@@ -218,7 +218,7 @@ here is the shell of the window, which nobody had designed yet.
   the meantime. The input is now chosen by whether the assembly is already woven (it
   references the collector), and an already woven assembly with no backup is refused
   instead of being woven twice. `Fast/WeaveToolBackupTests` covers it; the stale artefacts
-  in the the reference application obj folder were removed, and build/tools was republished - the targets run
+  in the reference application obj folder were removed, and build/tools was republished - the targets run
   the **published** tool, so a fix in src/ alone would have changed nothing.
 - (done 2026-08-27) The Setup dialog remembers the build options too (no fast deployment,
   instrument during the build, clear deployed assemblies), and refuses **before** Start what

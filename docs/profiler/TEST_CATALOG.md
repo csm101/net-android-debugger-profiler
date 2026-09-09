@@ -109,8 +109,8 @@ Conventions (mirroring the debugger project's discipline):
 - [x] Weaver skips property accessors by default and can include them - `Property_accessors_are_skipped_by_default_and_can_be_included`
 - [x] Async methods woven as stub + state machine - `Async_methods_are_woven_as_stub_and_state_machine`
 - [x] Async state machine records every resumption (opt-in; CoreCLR only so far) - `Async_state_machine_records_every_resumption`
-- [x] Async-body weaving runs on a real net9 app (the old TODO-RED was a launch defect, not the IL) - `Build_time_weaving_records_async_bodies_on_the reference application`
-- [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the reference application`
+- [x] Async-body weaving runs on a real net9 app (the old TODO-RED was a launch defect, not the IL) - `Build_time_weaving_records_async_bodies_on_the_reference_app`
+- [x] Build-time weaving exercised on the reference application (embedded assemblies, no device changes) - `Build_time_weaving_session_on_the_reference_app`
 
 - [x] Iterator state machine: one resumption per item plus the terminating one - `Iterator_state_machine_records_every_produced_item`
 
@@ -302,13 +302,13 @@ and assert that what the results hold begins where recording did.
 - [x] `nap serve` prints its port and ends itself when the process that owns it exits - `Serve_ends_itself_when_the_process_that_owns_it_exits`
 
 ## G. the reference application (opt-in: NAP_REFAPP=1, Category=the reference application)
-- [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the reference application_resolves_app_methods`
-- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the reference application` (on-device weaving; opt-in with NAP_REFAPP_ONDEVICE=1 and a fast-deployment build, since the reference application ships with embedded assemblies)
-- [x] Build-time weaving on the shipped configuration - `Build_time_weaving_session_on_the reference application`
+- [x] Sampling restart session resolves V7 startup hot path - `Sampling_restart_session_on_the_reference_app_resolves_app_methods`
+- [x] Weaver instrumenting records real timings - `Weaver_instrumenting_session_on_the_reference_app` (on-device weaving; opt-in with NAP_REFAPP_ONDEVICE=1 and a fast-deployment build, since the reference application ships with embedded assemblies)
+- [x] Build-time weaving on the shipped configuration - `Build_time_weaving_session_on_the_reference_app`
 - [x] Portable pdbs load and map tokens - `the reference application_pdbs_load_and_map_tokens`
-- [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the reference application_with_namespace_callspec`
-- [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the reference application`
-- [x] Async state machines woven by default report their resumptions - `Build_time_weaving_records_async_bodies_on_the reference application`
+- [ ] TODO-RED U20: runtime-provider instrumenting (net9 runtime crash) - `Instrumenting_session_on_the_reference_app_with_namespace_callspec`
+- [x] Weaver with a wide callspec is NOT usable and reports why (measured: 7882 methods -> startup exceeds the 240 s marker wait; one type works) - covered by the guidance path in `Weaver_instrumenting_session_on_the_reference_app`
+- [x] Async state machines woven by default report their resumptions - `Build_time_weaving_records_async_bodies_on_the_reference_app`
 - [x] Multi-assembly in one session: both TestTarget and TestTarget.Support woven, named
   per module and resolved to their own source files -
   `One_session_symbolicates_methods_from_two_assemblies` (device). The app gained a

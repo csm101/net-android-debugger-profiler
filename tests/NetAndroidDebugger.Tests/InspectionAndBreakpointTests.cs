@@ -7,6 +7,7 @@ namespace NetAndroidDebugger.Tests;
 
 /// <summary>Breakpoint variants, execution control and value inspection against TestTarget.</summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class InspectionAndBreakpointTests(DeviceFixture device, ITestOutputHelper output)
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(25);

@@ -11,6 +11,7 @@ namespace NetAndroidDebugger.Tests;
 /// NetAndroid.Device.Tests, where DeviceControl now lives.
 /// </summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class DeviceControlTests(DeviceFixture device, ITestOutputHelper output)
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(20);

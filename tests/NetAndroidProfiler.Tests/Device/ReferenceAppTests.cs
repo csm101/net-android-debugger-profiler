@@ -31,7 +31,7 @@ public class ReferenceAppTests
     }
 
     [SkippableFact]
-    public async Task Sampling_restart_session_on_the reference application_resolves_app_methods()
+    public async Task Sampling_restart_session_on_the_reference_app_resolves_app_methods()
     {
         Skip.IfNot(Enabled, "set NAP_REFAPP=1 to run against the reference application");
         await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Sampling, Duration: TimeSpan.FromSeconds(25)));
@@ -47,7 +47,7 @@ public class ReferenceAppTests
     }
 
     [SkippableFact(Skip = "TODO-RED: U20 - net9 MonoVM crashes at init when a profiler callspec is set (SIGSEGV registering the instrumentation filter callback); retest when the reference application targets net10. Weaver (P3) is the instrumenting path for net9.")]
-    public async Task Instrumenting_session_on_the reference application_with_namespace_callspec()
+    public async Task Instrumenting_session_on_the_reference_app_with_namespace_callspec()
     {
         Skip.IfNot(Enabled, "set NAP_REFAPP=1 to run against the reference application");
         await using var s = await RunAsync(new SessionSpec(Serial, Package, ProfilingMode.Instrumenting, Duration: TimeSpan.FromSeconds(25), Callspec: "N:App.Droid", TrackAllocations: true));
@@ -64,12 +64,12 @@ public class ReferenceAppTests
     /// <summary>
     /// On-device weaving needs V7 installed from a fast-deployment build
     /// (-p:EmbedAssembliesIntoApk=false), which is not how the reference application ships: the shipped
-    /// shape is covered by <see cref="Build_time_weaving_session_on_the reference application"/>. Opt in
+    /// shape is covered by <see cref="Build_time_weaving_session_on_the_reference_app"/>. Opt in
     /// with NAP_REFAPP_ONDEVICE=1 after installing such a build, and narrow the callspec
     /// (NAP_REFAPP_CALLSPEC) - the whole App.Droid namespace is far too wide to start.
     /// </summary>
     [SkippableFact]
-    public async Task Weaver_instrumenting_session_on_the reference application()
+    public async Task Weaver_instrumenting_session_on_the_reference_app()
     {
         Skip.IfNot(Enabled && Environment.GetEnvironmentVariable("NAP_REFAPP_ONDEVICE") == "1",
             "set NAP_REFAPP=1 and NAP_REFAPP_ONDEVICE=1, with V7 installed from a fast-deployment build");
@@ -96,7 +96,7 @@ public class ReferenceAppTests
     /// -p:NapWeave=true -p:NapCallspec="T:App.Droid.AppApplication".
     /// </summary>
     [SkippableFact]
-    public async Task Build_time_weaving_session_on_the reference application()
+    public async Task Build_time_weaving_session_on_the_reference_app()
     {
         string map = Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_MAP")
             ?? Path.Combine(SymbolsDir, "nap-weave.map");
@@ -123,7 +123,7 @@ public class ReferenceAppTests
     /// -p:NapWeave=true -p:NapWeaveArgs="--async-bodies".
     /// </summary>
     [SkippableFact]
-    public async Task Build_time_weaving_records_async_bodies_on_the reference application()
+    public async Task Build_time_weaving_records_async_bodies_on_the_reference_app()
     {
         string map = Environment.GetEnvironmentVariable("NAP_REFAPP_WEAVE_MAP")
             ?? Path.Combine(SymbolsDir, "nap-weave.map");
@@ -149,7 +149,7 @@ public class ReferenceAppTests
     }
 
     [SkippableFact]
-    public void the reference application_pdbs_load_and_map_tokens()
+    public void Reference_app_pdbs_load_and_map_tokens()
     {
         Skip.IfNot(Enabled && Directory.Exists(SymbolsDir), "set NAP_REFAPP=1 and build App.Droid Debug");
         using var pdbs = PortablePdbSymbols.LoadDirectory(SymbolsDir);

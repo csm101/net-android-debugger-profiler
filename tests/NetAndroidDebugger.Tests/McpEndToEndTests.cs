@@ -7,6 +7,7 @@ namespace NetAndroidDebugger.Tests;
 
 /// <summary>Drives the real MCP server process over stdio with the SDK client, against TestTarget.</summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class McpEndToEndTests(DeviceFixture device, ITestOutputHelper output)
 {
     /// <summary>The server under test: this product's, or the one NAD_MCP_SERVER_DLL names (the unified server, when its suite runs these).</summary>

@@ -6,6 +6,7 @@ namespace NetAndroidDebugger.Tests;
 
 /// <summary>Edge cases: per-file breakpoint replacement, odd lines, dictionaries, unhandled exceptions, other threads, launch errors.</summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class RobustnessTests(DeviceFixture device, ITestOutputHelper output)
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(25);

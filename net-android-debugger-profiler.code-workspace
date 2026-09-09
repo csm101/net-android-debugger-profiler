@@ -1,7 +1,6 @@
 {
   "folders": [
-    { "name": "net-android-debugger-profiler", "path": "." },
-    { "name": "the reference application (debug and profiling target, read-only)", "path": "../../Work/ReferenceApp" }
+    { "name": "net-android-debugger-profiler", "path": "." }
   ],
   "settings": {
     "files.exclude": {

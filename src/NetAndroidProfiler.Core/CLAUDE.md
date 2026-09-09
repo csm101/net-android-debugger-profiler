@@ -60,7 +60,7 @@ overhead measurements, per-device quirks), `KNOWN_UNKNOWNS.md`, `TEST_CATALOG.md
 run of `TestTarget/Profiler` (package `com.mcasoftware.testtarget`, installed with
 `-p:EnableDiagnostics=true`) on the emulator or an attached device, then asserts on
 the analyzed output. `NAP_TEST_SERIAL` names the device (default `emulator-5556`),
-`NAP_TEST_PACKAGE` the package; the the reference application tests are opt-in (`NAP_REFAPP=1`).
+`NAP_TEST_PACKAGE` the package; the reference application tests are opt-in (`NAP_REFAPP=1`).
 
 ```powershell
 dotnet build NetAndroidProfiler.slnx

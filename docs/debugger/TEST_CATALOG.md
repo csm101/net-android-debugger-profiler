@@ -18,6 +18,16 @@ Conventions (mirroring the Delphi project's discipline):
 
 ---
 
+
+## How to run only what needs no device
+
+Every class that takes the device fixture is marked `[Trait("Category", "Device")]`, so
+`dotnet test NetAndroidDebugger.slnx --filter "Category!=Device"` runs the device-free half
+(50 tests, a tenth of a second). Until 2026-09-09 those classes carried no trait and the
+filter ran them anyway, against whichever phone was plugged in: a quarter of an hour and 58
+failures that said nothing about the code. `TestConventionTests` now fails when a device
+class is added without the trait.
+
 ## Running the suite
 
 - Needs a booted device/emulator with TestTarget deployable. Select it with

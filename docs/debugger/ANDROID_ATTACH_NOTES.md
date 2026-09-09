@@ -424,11 +424,11 @@ clear is still issued; it just is not trusted.
 
 ## Real target: the reference application
 
-- Solution: `C:\Work\ReferenceApp\the reference application.sln` (branch `master`)
+- Solution: `C:\Work\ReferenceApp\ReferenceApp.sln` (branch `master`)
 - App project: `App.Droid\App.Droid.csproj`, TFM `net9.0-android35.0`,
   `ApplicationId=App.Droid`
-- Companion projects: App.Core, App.Shared, App.Sync, App.DroidLibs, …
-- Old checkout at `C:\Work\stable` is classic Xamarin (2022) — ignore it.
+- Companion projects: App.Core, App.Shared, App.Sync, App.App.DroidLibs, …
+- Old checkout at `C:\Work\legacy-checkout` is classic Xamarin (2022) — ignore it.
 - **Multi-process (verified in source 2026-08-20):**
   - `App.Droid/Services/ForegroundService/CrashReportSender.cs`:
     `[Service(Name="the app's crash reporting service", Process=":crash_report_process")]`
@@ -558,8 +558,8 @@ clear is still issued; it just is not trusted.
 - **Re-driven through the MCP server after the breakpoint-disarm fix
   (2026-08-21):** the scenario the fix targets — a breakpoint on periodic
   background code while inspection invokes debuggee code — was exercised
-  against a fully started the reference application. Breakpoint on
-  `the sync library's base thread:112`
+  against a fully started reference application. Breakpoint on
+  `the sync library's base thread`
   (`AttendiMillisecondi`, the wait every sync thread goes through: WatchDog
   every 60 s, Sender every 500 ms when it has just polled). Result over five
   stops on three different sync threads, with deep expansion in between

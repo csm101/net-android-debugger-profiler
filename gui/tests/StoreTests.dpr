@@ -114,16 +114,16 @@ var
 begin
   Writeln('run again');
   LFolder := TPath.Combine(TPath.GetTempPath, 'nap-gui-tests-' + TGuid.NewGuid.ToString);
-  LSession := TPath.Combine(LFolder, '20260909-003357-Prova1-instrumenting');
+  LSession := TPath.Combine(LFolder, '20260909-003357-First run-instrumenting');
   TDirectory.CreateDirectory(LSession);
   try
     TFile.WriteAllText(TPath.Combine(LSession, 'session.json'),
-      '{ "DeviceSerial": "a-physical-device", "Package": "App.Droid", "Mode": 1, "Engine": 2,' +
+      '{ "DeviceSerial": "a-device-serial", "Package": "App.Droid", "Mode": 1, "Engine": 2,' +
       '  "Callspec": "N:App,N:App.Core", "Duration": null, "StartPaused": true,' +
-      '  "WeaveAssemblies": [ "App.Droid", "App.Core" ], "Name": "Prova1",' +
+      '  "WeaveAssemblies": [ "App.Droid", "App.Core" ], "Name": "First run",' +
       '  "SymbolsDir": "C:\\Work\\ReferenceApp\\App.Droid\\bin\\Debug\\net9.0-android35.0",' +
       '  "ProjectPath": "C:\\Work\\ReferenceApp\\App.Droid\\App.Droid.csproj",' +
-      '  "SolutionPath": "C:\\Work\\ReferenceApp\\the reference application.sln" }');
+      '  "SolutionPath": "C:\\Work\\ReferenceApp\\ReferenceApp.sln" }');
 
     Check(TryReadSessionSpec(LSession, LRequest), 'the session says what it was started with');
     Check(LRequest.Package = 'App.Droid', 'package: ' + LRequest.Package);
@@ -132,14 +132,14 @@ begin
     Check(LRequest.Callspec = 'N:App,N:App.Core', 'callspec: ' + LRequest.Callspec);
     Check(Length(LRequest.Assemblies) = 2, 'the assemblies come back');
     Check(LRequest.StartPaused, 'started paused, and stays so');
-    Check(LRequest.SolutionPath.EndsWith('the reference application.sln'), 'the solution: ' + LRequest.SolutionPath);
+    Check(LRequest.SolutionPath.EndsWith('ReferenceApp.sln'), 'the solution: ' + LRequest.SolutionPath);
     Check(SameText(LRequest.SessionsRoot, ExcludeTrailingPathDelimiter(LFolder)),
       'the next run goes where this one is kept');
     Check(ProfilerIndexOf(LRequest) = 1, 'the profiler list lands on the call-tree weaver');
 
     // The proposed name counts on from the one it repeats, and avoids what is already there.
-    Check(NextRunName(LRequest.Name, LRequest.Package, LFolder) = 'Prova2', 'Prova1 -> Prova2');
-    Check(NextRunName('startup', 'App.Droid', LFolder) = 'startup 2', 'a name with no number gets one');
+    Check(NextRunName(LRequest.Name, LRequest.Package, LFolder) = 'First run 2', 'a name with no number gets one');
+    Check(NextRunName('startup7', 'App.Droid', LFolder) = 'startup8', 'a trailing number counts on');
     Check(NextRunName('', 'App.Droid', LFolder) = 'App.Droid 2', 'no name at all: the package counts');
 
     Check(not TryReadSessionSpec(TPath.Combine(LFolder, 'nothing-here'), LRequest),

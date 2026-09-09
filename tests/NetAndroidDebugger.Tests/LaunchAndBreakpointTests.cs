@@ -6,6 +6,7 @@ namespace NetAndroidDebugger.Tests;
 
 /// <summary>Launch → attach → breakpoint → inspection, against TestTarget on the selected device.</summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class LaunchAndBreakpointTests(DeviceFixture device, ITestOutputHelper output)
 {
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(20);

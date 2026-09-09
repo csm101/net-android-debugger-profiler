@@ -173,7 +173,7 @@ configuration permanently.
 Implemented (Apps/AppInspector): `pm path` -> pull every APK -> zip entries
 under lib/<abi> (diagnostics component, libaot-*), strings of
 libxamarin-app.so for MONO_DIAGNOSTICS, `run-as` for debuggable. Open: cost
-on the reference application-size APKs (pull of 50+ MB per session) - cache by package
+on APKs of that size (pull of 50+ MB per session) - cache by package
 version / `pm dump` signature, or read only the needed entries remotely.
 
 ## U19 - Reuse Desymbolicate's symbol-server lookup

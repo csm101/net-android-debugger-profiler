@@ -10,6 +10,7 @@ namespace NetAndroidDebugger.Tests;
 /// boundary replays nothing) lives in NetAndroid.Device.Tests; this is the launch-level half.
 /// </summary>
 [Collection(DeviceCollection.Name)]
+[Trait("Category", "Device")]
 public sealed class LogcatTests(DeviceFixture device, ITestOutputHelper output)
 {
     [Fact]
