@@ -154,8 +154,10 @@ end;
 procedure DoView(const ARequest, AAnswer: TJSONObject);
 var
   LPanel, LMethod, LFilter, LSort: string;
+  LExpand: Integer;
 begin
   LPanel := StringOf(ARequest, 'panel');
+  LExpand := IntegerOf(ARequest, 'expand', 0);
   LMethod := StringOf(ARequest, 'method');
   LFilter := StringOf(ARequest, 'filter');
   LSort := StringOf(ARequest, 'sortBy');
@@ -169,6 +171,9 @@ begin
   if LPanel <> '' then
     if not MainForm.ActivatePanel(LPanel) then
       raise EArgumentException.CreateFmt('Unknown panel "%s". One of: %s.', [LPanel, MainForm.PanelNames]);
+  // "expand": how many levels of the call graph to open, the way clicking every [+] would.
+  if LExpand > 0 then
+    MainForm.ExpandGraph(LExpand);
   AddStatus(AAnswer);
 end;
 

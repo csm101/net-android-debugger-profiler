@@ -49,9 +49,10 @@ public sealed class GuiTools(SessionHost host, GuiHost gui)
         [Description("Show only methods whose name contains this")] string? filter = null,
         [Description("Column to sort the report by, e.g. self_samples, total_ns, calls")] string? sortBy = null,
         [Description("Sort ascending instead of descending")] bool ascending = false,
+        [Description("Call graph: open the branches this many levels deep, the way clicking every [+] would. 0 shows the focused method's immediate callees only")] int expand = 0,
         CancellationToken ct = default)
     {
-        var answer = await gui.Existing().ViewAsync(panel, method, filter, sortBy, ascending, ct);
+        var answer = await gui.Existing().ViewAsync(panel, method, filter, sortBy, ascending, expand, ct);
         return $"panel={Text(answer, "panel")} method={Text(answer, "method")}";
     }
 

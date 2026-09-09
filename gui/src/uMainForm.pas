@@ -25,11 +25,11 @@ uses
   cxCustomData, cxFilter, cxData, cxDataStorage, cxEdit, cxNavigator, cxDataControllerConditionalFormattingRulesManagerDialog,
   cxGridLevel, cxGridCustomTableView, cxGridTableView, cxGridDBTableView, cxGridCustomView, cxGrid,
   cxGridExportLink, cxFindPanel, cxTLExportLink,
-  cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox, cxSplitter,
+  cxLabel, cxButtons, cxDropDownEdit, cxMemo, cxPC, cxCheckBox, cxSplitter, cxScrollBox,
   cxProgressBar, cxTextEdit,
   cxTL, cxTLdxBarBuiltInMenu, cxInplaceContainer, cxTLData,
   dxBar, dxBarExtItems, dxStatusBar, Vcl.ImgList,
-  dxDockControl, dxDockPanel,
+  dxDockControl, dxDockPanel, dxPanel, dxMessageDialog, dxInputDialogs,
   dxSkinsCore, dxSkinsDefaultPainters, dxSkinsForm,
   dxSkinOffice2019Colorful, dxSkinOffice2019Black,
   SynEdit, SynEditHighlighter, SynHighlighterCS, SynEditTypes, SynFunc,
@@ -38,6 +38,37 @@ uses
 
 type
   TExplorerKind = (ekSession, ekCategory, ekArchive, ekGroup);
+
+  {
+    One box of the call graph. The graph is a tree grown from the method in focus: its
+    callers in the column to the left, its callees to the right, and each callee carrying
+    a [+] that opens its own callees in the next column. Nothing is expanded by itself
+    beyond the first level - a real application's call graph is unreadable when it is
+    complete, and useful when somebody follows one branch of it.
+  }
+  TGraphNode = record
+    MethodId: Integer;
+    Name: string;
+    /// 0 the method in focus, 1.. its callees by depth, -1 a caller.
+    Depth: Integer;
+    Stats: TMethodStats;
+    Expanded: Boolean;
+    HasCallees: Boolean;
+    HiddenChildren: Integer;
+    Box, Toggle: TRect;
+    /// Where the arrows out of this box turn: its own vertical line in the gap to the next
+    /// column. One per box, at its own distance from it - two boxes sharing a line is how a
+    /// picture ends up saying that both of them call both callees.
+    Trunk: Integer;
+  end;
+
+  /// A call from one box to another. A method reached from two places is one box with two
+  /// arrows into it, which is how AQTime draws it and what makes "this is called from
+  /// three points of this branch" visible at a glance.
+  TGraphEdge = record
+    FromNode, ToNode: Integer;
+    Calls, Value: Int64;
+  end;
 
   /// A row of the Explorer: a result database to open, or a way to regroup the Report.
   TExplorerRef = record
@@ -70,14 +101,11 @@ type
     /// The arrangement was deliberately thrown away: do not write it back on the way out.
     FForgetLayout: Boolean;
     FSkinController: TdxSkinController;
-    FSummaryTab: TTabSheet;
     FSummary: TcxMemo;
-    FMonitorTab: TTabSheet;
     FMonitor: TPaintBox;
     FMonitorLabel: TcxLabel;
     FMonitorSamples: TArray<Int64>;
     FMonitorLast: TSessionCounters;
-    FMemoryTab: TTabSheet;
     FMemoryPages: TcxPageControl;
     FAllocTypeGrid: TcxGrid;
     FAllocTypeView: TcxGridDBTableView;
@@ -102,11 +130,12 @@ type
     FExplorerRefs: TArray<TExplorerRef>;
     FExplorer: TcxTreeList;
     FExplorerColumn: TcxTreeListColumn;
-    FExplorerSplitter: TSplitter;
     FSessionsRoot: string;
     FActivePanel: string;
     FBuilt: Boolean;
     FPendingRender: string;
+    /// --expand=<levels>: how far to open the call graph before the picture is taken.
+    FPendingExpand: Integer;
     FDockManager: TdxDockingManager;
     FDockSite: TdxDockSite;
     FExplorerPanel: TdxDockPanel;
@@ -119,41 +148,36 @@ type
     FMonitorPanel: TdxDockPanel;
     FSummaryPanel: TdxDockPanel;
     FLogPanel: TdxDockPanel;
-    FReportTab: TTabSheet;
-    FTreeTab: TTabSheet;
-    FGraphTab: TTabSheet;
     FGraph: TPaintBox;
-    FGraphScroll: TScrollBox;
+    FGraphScroll: TcxScrollBox;
     FGraphMethodId: Integer;
-    FGraphCentre: string;
-    FGraphCentreValue: Int64;
+
     FGraphHistory: TArray<Integer>;
     FGraphParentsHidden: Integer;
     FGraphChildrenHidden: Integer;
-    FGraphParents: TNeighbours;
-    FGraphChildren: TNeighbours;
-    FGraphBoxes: TArray<TRect>;
-    FGraphBoxIds: TArray<Integer>;
-    FEditorTab: TTabSheet;
+    FGraphNodes: TArray<TGraphNode>;
+    FGraphEdges: TArray<TGraphEdge>;
+    /// The methods whose callees are open. A method is one box, so being open is a
+    /// property of the method and not of the way somebody arrived at it.
+    FGraphOpen: TStringList;
     FEditor: TSynEdit;
     FEditorHeader: TcxLabel;
     FEditorHighlighter: TSynCSSyn;
     FEditorScrollV: TcxScrollBar;
     FEditorScrollH: TcxScrollBar;
-    FEditorScrollHost: TPanel;
-    FEditorScrollCorner: TPanel;
+    FEditorScrollHost: TdxPanel;
+    FEditorScrollCorner: TdxPanel;
     FUpdatingEditorScrollBars: Boolean;
     FEditorFile: string;
     FEditorStart: Integer;
     FEditorEnd: Integer;
-    FReportSplitter: TSplitter;
     FDetailsSplitter: TcxSplitter;
     FGrid: TcxGrid;
     FGridView: TcxGridDBTableView;
     FGridLevel: TcxGridLevel;
     FReportQuery: TFDQuery;
     FReportSource: TDataSource;
-    FDetailsPanel: TPanel;
+    FDetailsPanel: TdxPanel;
     FParentsPie: TPaintBox;
     FChildrenPie: TPaintBox;
     FParentsShares: TArray<Int64>;
@@ -263,11 +287,18 @@ type
     procedure BuildTreeTab;
     procedure BuildGraphTab;
     procedure PaintGraph(Sender: TObject);
+    procedure BuildGraphNodes;
+    procedure LayoutGraphNodes;
+    function AddGraphNode(AMethodId: Integer; const AName: string; ADepth: Integer): Integer;
+    function GraphNodeOf(AMethodId: Integer): Integer;
+    procedure DrawGraphNode(ACanvas: TCanvas; const ANode: TGraphNode);
+    procedure DrawGraphEdge(ACanvas: TCanvas; const AEdge: TGraphEdge; AMax: Int64);
+    procedure GraphResized(Sender: TObject);
+    function GraphValueLine(const ACaption: string; AValue: Int64): string;
     procedure GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure GraphMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure ShowGraphOf(AMethodId: Integer);
     procedure GraphBack;
-    function DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
-      AValue: Int64; AIsCentre: Boolean): TRect;
     procedure BuildEditorTab;
     procedure EditorStatusChanged(Sender: TObject; Changes: TSynStatusChanges);
     procedure EditorScrollBarScrolled(Sender: TObject; AScrollCode: TScrollCode; var AScrollPos: Integer);
@@ -360,6 +391,10 @@ type
     procedure ResizeClient(AWidth, AHeight: Integer);
     function CurrentSessionPath: string;
     function CurrentMethodName: string;
+    /// Open the call graph's branches down to this many levels of callees, the way clicking
+    /// every [+] would. What a picture of "the graph two levels deep" needs, and what an
+    /// agent asks for when it wants one.
+    procedure ExpandGraph(ALevels: Integer);
   end;
 
 var
@@ -524,7 +559,9 @@ begin
   // rendering, available to a script that has no channel.
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--render=', True) then
-      FPendingRender := ParamStr(LIndex).Substring(9);
+      FPendingRender := ParamStr(LIndex).Substring(9)
+    else if ParamStr(LIndex).StartsWith('--expand=', True) then
+      FPendingExpand := StrToIntDef(ParamStr(LIndex).Substring(9), 0);
   for LIndex := 1 to ParamCount do
     if ParamStr(LIndex).StartsWith('--export=', True) then
     begin
@@ -547,6 +584,8 @@ end;
 procedure TMainForm.RenderPending;
 begin
   try
+    if FPendingExpand > 0 then
+      ExpandGraph(FPendingExpand);
     RenderPanelToFile(FPendingRender);
   except
     on E: Exception do
@@ -571,6 +610,7 @@ var
 begin
   FPendingLog.Free;
   FSummaryPending.Free;
+  FGraphOpen.Free;
   FLayoutItems.Free;
   // Only a window somebody actually looked at has an arrangement worth remembering.
   // A run that never showed one - --export, --render, the control channel - is holding
@@ -957,7 +997,7 @@ begin
     SetStatus('Layout "' + AName + '" applied.');
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -976,12 +1016,12 @@ var
   LName: string;
 begin
   LName := '';
-  if not InputQuery('Save layout', 'A name for this arrangement:', LName) then
+  if not dxInputQuery('Save layout', 'A name for this arrangement:', LName) then
     Exit;
   LName := Trim(LName);
   if LName = '' then
     Exit;
-  if LayoutExists(LName) and (MessageDlg(Format('There is already a layout called "%s". Replace it?',
+  if LayoutExists(LName) and (dxMessageDlg(Format('There is already a layout called "%s". Replace it?',
     [LName]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes) then
     Exit;
   try
@@ -990,7 +1030,7 @@ begin
     SetStatus('Layout saved as "' + LName + '".');
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
   UpdateLayoutMenu(nil);
 end;
@@ -1081,7 +1121,7 @@ end;
 
 procedure TMainForm.LayoutBuiltInClick(Sender: TObject);
 begin
-  if MessageDlg('Put the panels back the way the profiler starts out?' + sLineBreak
+  if dxMessageDlg('Put the panels back the way the profiler starts out?' + sLineBreak
     + 'The saved layouts are kept, but the window stops opening with one of them.',
     mtConfirmation, [mbOK, mbCancel], 0) <> mrOk then
     Exit;
@@ -1093,7 +1133,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg('The panels could not be rearranged: ' + E.Message + sLineBreak
+      dxMessageDlg('The panels could not be rearranged: ' + E.Message + sLineBreak
         + 'Closing and reopening the window puts them back.', mtError, [mbOK], 0);
       // Whatever is on screen now is half-built: it must not be what the window opens
       // with, so the remembered arrangement goes and the built-in one is what is left.
@@ -1380,7 +1420,7 @@ begin
     Exit;
   LDirectory := TPath.GetDirectoryName(LRef.DatabasePath);
   LName := '';
-  if not InputQuery('Rename session', 'What is this session about?', LName) then
+  if not dxInputQuery('Rename session', 'What is this session about?', LName) then
     Exit;
   if not EnsureService then
     Exit;
@@ -1391,7 +1431,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
       Exit;
     end;
   end;
@@ -1406,7 +1446,7 @@ begin
   if not FocusedSession(LRef) or (LRef.Kind <> ekSession) then
     Exit;
   LDirectory := TPath.GetDirectoryName(LRef.DatabasePath);
-  if MessageDlg('Delete this session and everything it recorded?' + sLineBreak + LDirectory
+  if dxMessageDlg('Delete this session and everything it recorded?' + sLineBreak + LDirectory
     + sLineBreak + sLineBreak + 'The results, the trace, the log and the archives kept during '
     + 'it go with it, and none of it can be brought back.',
     mtWarning, [mbYes, mbNo], 0) <> mrYes then
@@ -1427,7 +1467,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
       Exit;
     end;
   end;
@@ -1509,10 +1549,9 @@ end;
 
 procedure TMainForm.BuildReportTab;
 begin
-  FDetailsPanel := TPanel.Create(Self);
+  FDetailsPanel := TdxPanel.Create(Self);
   FDetailsPanel.Parent := FDetailsDock;
   FDetailsPanel.Align := alClient;
-  FDetailsPanel.BevelOuter := bvNone;
 
   // One above the other, not side by side: both tables hold method names, and a method
   // name is long. Side by side each got half the width and showed a truncated name twice;
@@ -1547,16 +1586,15 @@ end;
 function TMainForm.BuildNeighbourGrid(AParent: TWinControl; AAlign: TAlign; const ACaption: string;
   AIsParents: Boolean; out AView: TcxGridTableView): TcxGrid;
 var
-  LPanel: TPanel;
+  LPanel: TdxPanel;
   LLabel: TcxLabel;
   LGrid: TcxGrid;
   LLevel: TcxGridLevel;
   LPie: TPaintBox;
 begin
-  LPanel := TPanel.Create(Self);
+  LPanel := TdxPanel.Create(Self);
   LPanel.Parent := AParent;
   LPanel.Align := AAlign;
-  LPanel.BevelOuter := bvNone;
 
   LLabel := TcxLabel.Create(Self);
   LLabel.Transparent := True;
@@ -1625,18 +1663,27 @@ end;
 
 procedure TMainForm.BuildGraphTab;
 begin
-  FGraphScroll := TScrollBox.Create(Self);
+  // A cxScrollBox rather than the VCL one: its scrollbars are painted by the skin like
+  // every other bar in the window, and its background is a colour we set rather than the
+  // system's white - which on a dark theme was a white sheet flashing on every resize and
+  // standing there in the open whenever the window grew past the drawing.
+  FGraphScroll := TcxScrollBox.Create(Self);
   FGraphScroll.Parent := FGraphPanel;
   FGraphScroll.Align := alClient;
-  FGraphScroll.Color := clWindow;
-  FGraphScroll.ParentColor := False;
+  FGraphScroll.BorderStyle := cxcbsNone;
+  FGraphScroll.LookAndFeel.NativeStyle := False;
+  FGraphScroll.DoubleBuffered := True;
+  FGraphScroll.OnResize := GraphResized;
 
   FGraph := TPaintBox.Create(Self);
   FGraph.Parent := FGraphScroll;
   FGraph.SetBounds(0, 0, 1200, 700);
   FGraph.OnPaint := PaintGraph;
   FGraph.OnMouseDown := GraphMouseDown;
+  FGraph.OnMouseMove := GraphMouseMove;
+  FGraph.ShowHint := True;
   FGraphMethodId := -1;
+  FGraphOpen := TStringList.Create;
 end;
 
 /// A line with a head on it: without the head the direction of a call is a guess.
@@ -1656,67 +1703,455 @@ begin
     Point(ATo.X - Round(Head * Cos(LAngle + Pi / 7)), ATo.Y - Round(Head * Sin(LAngle + Pi / 7)))]);
 end;
 
-/// One box per method: the name on top, the metric underneath, exactly the shape AQTime
-/// draws. Callers sit above the focused method, callees below, arrows follow the calls.
-function TMainForm.DrawGraphBox(ACanvas: TCanvas; const ARect: TRect; const AName: string;
-  AValue: Int64; AIsCentre: Boolean): TRect;
+{ ------------------------------------------------------------------ the call graph
+
+  Read from the method in focus outwards, the way AQTime draws it: the callers in the
+  column to its left, the callees to its right, one column per level. Every box that has
+  callees carries a [+]; opening it brings its callees into the next column, closing it
+  takes that whole branch away. Nothing past the first level opens by itself - a real
+  application's call graph is unreadable when it is complete, and useful when somebody
+  follows one branch of it - and what is open is remembered per box, so the same method
+  reached two ways is two boxes that open independently.
+}
+
+const
+  CGraphBoxWidth = 258;
+  CGraphBoxHeight = 76;
+  CGraphColumnGap = 78;
+  CGraphRowGap = 12;
+  CGraphMargin = 24;
+  CGraphMaxCallers = 8;
+  CGraphMaxCallees = 14;
+  CGraphToggle = 13;
+
+{ What to write on a box: the type and the method, which is what tells one apart from
+  another. The namespace is the same for most of the graph and eats the width; the whole
+  name is a hover away. }
+function GraphTitle(const AFullName: string): string;
 var
-  LText: string;
-  LTextRect: TRect;
+  LSuffix, LName: string;
+  LParts, LKept: TArray<string>;
+  LBracket, I: Integer;
 begin
-  Result := ARect;
-  if AIsCentre then
+  LName := AFullName;
+  LSuffix := '';
+  LBracket := Pos('(', LName);
+  if LBracket > 0 then
   begin
-    ACanvas.Brush.Color := ThemeColors.BoxCentreFill;
-    ACanvas.Pen.Width := 2;
+    // "(async body)" and "(iterator body)" say what the row is; shortened, they still do,
+    // and they leave room for the name.
+    LSuffix := ' ' + Copy(LName, LBracket, Length(LName));
+    LSuffix := StringReplace(LSuffix, ' body)', ')', [rfReplaceAll]);
+    LName := Trim(Copy(LName, 1, LBracket - 1));
+  end;
+  // The empty parts are what a constructor's "Type..ctor" leaves behind: dropping them
+  // keeps the two that matter, the type and the method.
+  LParts := LName.Split(['.']);
+  LKept := nil;
+  for I := 0 to High(LParts) do
+    if LParts[I] <> '' then
+      LKept := LKept + [LParts[I]];
+  if Length(LKept) > 2 then
+    LKept := Copy(LKept, Length(LKept) - 2, 2);
+  Result := string.Join('.', LKept) + LSuffix;
+end;
+
+/// A figure in the words of the session's mode: nanoseconds for instrumenting, samples
+/// for sampling, where "time" would be a lie.
+function TMainForm.GraphValueLine(const ACaption: string; AValue: Int64): string;
+begin
+  if FStore.Mode = smInstrumenting then
+    Result := ACaption + ': ' + FormatNs(AValue)
+  else
+    Result := ACaption + ': ' + IntToStr(AValue);
+end;
+
+function TMainForm.AddGraphNode(AMethodId: Integer; const AName: string; ADepth: Integer): Integer;
+begin
+  SetLength(FGraphNodes, Length(FGraphNodes) + 1);
+  Result := High(FGraphNodes);
+  FGraphNodes[Result].MethodId := AMethodId;
+  FGraphNodes[Result].Name := AName;
+  FGraphNodes[Result].Depth := ADepth;
+  FGraphNodes[Result].Stats := FStore.MethodStats(AMethodId);
+  FGraphNodes[Result].HasCallees := FStore.HasCallees(AMethodId);
+  FGraphNodes[Result].Expanded := FGraphOpen.IndexOf(IntToStr(AMethodId)) >= 0;
+end;
+
+/// The box a method already has in this graph, or -1. Callers are not counted: a method
+/// that both calls the focus and is called by it is two different statements.
+function TMainForm.GraphNodeOf(AMethodId: Integer): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FGraphNodes) do
+    if (FGraphNodes[I].Depth >= 0) and (FGraphNodes[I].MethodId = AMethodId) then
+      Exit(I);
+  Result := -1;
+end;
+
+{ The graph is grown breadth first from the method in focus. A callee that already has a
+  box gets another arrow into that box rather than a box of its own - the graph is a graph,
+  not a tree - which also ends recursion: a method is visited once. }
+procedure TMainForm.BuildGraphNodes;
+
+  procedure AddEdge(AFrom, ATo: Integer; ACalls, AValue: Int64);
+  begin
+    SetLength(FGraphEdges, Length(FGraphEdges) + 1);
+    FGraphEdges[High(FGraphEdges)].FromNode := AFrom;
+    FGraphEdges[High(FGraphEdges)].ToNode := ATo;
+    FGraphEdges[High(FGraphEdges)].Calls := ACalls;
+    FGraphEdges[High(FGraphEdges)].Value := AValue;
+  end;
+
+  procedure AddCallees(ANodeIndex: Integer);
+  var
+    LCallees: TNeighbours;
+    LDepth, LCount, LChild, I: Integer;
+  begin
+    LCallees := FStore.Children(FGraphNodes[ANodeIndex].MethodId);
+    LDepth := FGraphNodes[ANodeIndex].Depth + 1;
+    LCount := Min(Length(LCallees), CGraphMaxCallees);
+    FGraphNodes[ANodeIndex].HiddenChildren := Length(LCallees) - LCount;
+    // The store answers heaviest first, and the order they are added in is the order they
+    // are stacked in: the call that costs most is the one at the top of the column.
+    for I := 0 to LCount - 1 do
+    begin
+      LChild := GraphNodeOf(LCallees[I].MethodId);
+      if LChild < 0 then
+      begin
+        LChild := AddGraphNode(LCallees[I].MethodId, LCallees[I].FullName, LDepth);
+        if FGraphNodes[LChild].Expanded then
+          AddCallees(LChild);
+      end;
+      AddEdge(ANodeIndex, LChild, LCallees[I].Calls, LCallees[I].Value);
+    end;
+  end;
+
+var
+  LCallers: TNeighbours;
+  LFocus, LCaller, LCount, I: Integer;
+begin
+  FGraphNodes := nil;
+  FGraphEdges := nil;
+  FGraphParentsHidden := 0;
+  FGraphChildrenHidden := 0;
+  if (FGraphMethodId < 0) or not FStore.IsOpen then
+    Exit;
+  LFocus := AddGraphNode(FGraphMethodId, FStore.MethodName(FGraphMethodId), 0);
+  // The callers are one level and no further: a caller's own callers are that method's
+  // graph, one click away. The callees of the method in focus are always shown.
+  LCallers := FStore.Parents(FGraphMethodId);
+  LCount := Min(Length(LCallers), CGraphMaxCallers);
+  FGraphParentsHidden := Length(LCallers) - LCount;
+  for I := 0 to LCount - 1 do
+  begin
+    LCaller := AddGraphNode(LCallers[I].MethodId, LCallers[I].FullName, -1);
+    AddEdge(LCaller, LFocus, LCallers[I].Calls, LCallers[I].Value);
+  end;
+  AddCallees(LFocus);
+  FGraphChildrenHidden := FGraphNodes[LFocus].HiddenChildren;
+end;
+
+{ Where every box goes. Each column is packed from the top in the order the boxes were
+  discovered, which is heaviest call first; the method in focus sits against the middle of
+  the column it calls, and its callers against the middle of it. }
+procedure TMainForm.LayoutGraphNodes;
+
+  function ColumnLeft(ADepth: Integer): Integer;
+  begin
+    Result := CGraphMargin + (ADepth + 1) * (CGraphBoxWidth + CGraphColumnGap);
+  end;
+
+  { Every box that calls something gets a vertical line of its own in the gap it calls
+    across, spaced out from its neighbours in the same column. Sharing one line - which is
+    what routing through the middle of the gap does - draws two boxes as if each called
+    every callee of the other. }
+  procedure AssignTrunks;
+  var
+    LSources: TArray<Integer>;
+    LDeepest, LDepth, LStep, I, J: Integer;
+  begin
+    LDeepest := 0;
+    for I := 0 to High(FGraphNodes) do
+    begin
+      FGraphNodes[I].Trunk := FGraphNodes[I].Box.Right + CGraphColumnGap div 2;
+      LDeepest := Max(LDeepest, FGraphNodes[I].Depth);
+    end;
+    for LDepth := -1 to LDeepest do
+    begin
+      LSources := nil;
+      for I := 0 to High(FGraphNodes) do
+        if FGraphNodes[I].Depth = LDepth then
+          for J := 0 to High(FGraphEdges) do
+            if (FGraphEdges[J].FromNode = I)
+              and (FGraphNodes[FGraphEdges[J].ToNode].Box.Left > FGraphNodes[I].Box.Left) then
+            begin
+              LSources := LSources + [I];
+              Break;
+            end;
+      if Length(LSources) = 0 then
+        Continue;
+      LStep := (CGraphColumnGap - 10) div (Length(LSources) + 1);
+      for I := 0 to High(LSources) do
+        FGraphNodes[LSources[I]].Trunk := FGraphNodes[LSources[I]].Box.Right + 8 + (I + 1) * LStep;
+    end;
+  end;
+
+  procedure PlaceBox(AIndex, ALeft, ATop: Integer);
+  begin
+    FGraphNodes[AIndex].Box := Rect(ALeft, ATop, ALeft + CGraphBoxWidth, ATop + CGraphBoxHeight);
+    FGraphNodes[AIndex].Toggle := TRect.Empty;
+    if not FGraphNodes[AIndex].HasCallees then
+      Exit;
+    FGraphNodes[AIndex].Toggle := Rect(ALeft + CGraphBoxWidth - CGraphToggle div 2,
+      ATop + CGraphBoxHeight div 2 - CGraphToggle div 2,
+      ALeft + CGraphBoxWidth + CGraphToggle div 2 + 1,
+      ATop + CGraphBoxHeight div 2 + CGraphToggle div 2 + 1);
+  end;
+
+  function SpanCentre(ADepth: Integer): Integer;
+  var
+    LTop, LBottom, I: Integer;
+  begin
+    LTop := MaxInt;
+    LBottom := 0;
+    for I := 0 to High(FGraphNodes) do
+      if FGraphNodes[I].Depth = ADepth then
+      begin
+        LTop := Min(LTop, FGraphNodes[I].Box.Top);
+        LBottom := Max(LBottom, FGraphNodes[I].Box.Bottom);
+      end;
+    if LTop = MaxInt then
+      Exit(CGraphMargin + CGraphBoxHeight div 2);
+    Result := (LTop + LBottom) div 2;
+  end;
+
+  procedure StackColumn(ADepth, ACentre: Integer);
+  var
+    LTop, I, LCount: Integer;
+  begin
+    LCount := 0;
+    for I := 0 to High(FGraphNodes) do
+      if FGraphNodes[I].Depth = ADepth then
+        Inc(LCount);
+    if LCount = 0 then
+      Exit;
+    LTop := ACentre - (LCount * (CGraphBoxHeight + CGraphRowGap) - CGraphRowGap) div 2;
+    for I := 0 to High(FGraphNodes) do
+      if FGraphNodes[I].Depth = ADepth then
+      begin
+        PlaceBox(I, ColumnLeft(ADepth), LTop);
+        Inc(LTop, CGraphBoxHeight + CGraphRowGap);
+      end;
+  end;
+
+var
+  LMaxDepth, LDepth, LTop, LShift, LBottom, LRight, I: Integer;
+begin
+  if Length(FGraphNodes) = 0 then
+    Exit;
+  LMaxDepth := 0;
+  for I := 0 to High(FGraphNodes) do
+    LMaxDepth := Max(LMaxDepth, FGraphNodes[I].Depth);
+
+  // The callee columns first, each packed from the top of the drawing.
+  for LDepth := 1 to LMaxDepth do
+  begin
+    LTop := CGraphMargin;
+    for I := 0 to High(FGraphNodes) do
+      if FGraphNodes[I].Depth = LDepth then
+      begin
+        PlaceBox(I, ColumnLeft(LDepth), LTop);
+        Inc(LTop, CGraphBoxHeight + CGraphRowGap);
+      end;
+  end;
+  // Then the focus against the middle of what it calls, and the callers against it.
+  StackColumn(0, IfThen(LMaxDepth >= 1, SpanCentre(1), CGraphMargin + CGraphBoxHeight div 2));
+  StackColumn(-1, SpanCentre(0));
+
+  // Nothing may sit above the top edge: what is drawn there cannot be scrolled to.
+  LShift := MaxInt;
+  for I := 0 to High(FGraphNodes) do
+    LShift := Min(LShift, FGraphNodes[I].Box.Top);
+  LShift := CGraphMargin - LShift;
+  if LShift > 0 then
+    for I := 0 to High(FGraphNodes) do
+    begin
+      FGraphNodes[I].Box.Offset(0, LShift);
+      if not FGraphNodes[I].Toggle.IsEmpty then
+        FGraphNodes[I].Toggle.Offset(0, LShift);
+    end;
+
+  AssignTrunks;
+
+  LBottom := 0;
+  LRight := 0;
+  for I := 0 to High(FGraphNodes) do
+  begin
+    LBottom := Max(LBottom, FGraphNodes[I].Box.Bottom);
+    LRight := Max(LRight, FGraphNodes[I].Box.Right);
+  end;
+  // At least the whole viewport: a canvas smaller than the window leaves the scroll box's
+  // own background showing, and that background is not the one the theme paints.
+  FGraph.SetBounds(0, 0, Max(FGraphScroll.ClientWidth, LRight + CGraphMargin),
+    Max(FGraphScroll.ClientHeight, LBottom + CGraphMargin + 24));
+end;
+
+/// The window grew or shrank: the canvas has to cover it, or the space that is not canvas
+/// shows through in a colour nobody chose.
+procedure TMainForm.GraphResized(Sender: TObject);
+begin
+  if (FGraph = nil) or (FGraphScroll = nil) then
+    Exit;
+  if Length(FGraphNodes) = 0 then
+    FGraph.SetBounds(0, 0, FGraphScroll.ClientWidth, FGraphScroll.ClientHeight)
+  else
+    LayoutGraphNodes;
+  FGraph.Invalidate;
+end;
+
+/// One box: the method on a title bar, its figures underneath, and the [+] that opens
+/// what it calls. The method in focus is the one painted in the accent colour.
+procedure TMainForm.DrawGraphNode(ACanvas: TCanvas; const ANode: TGraphNode);
+var
+  LIsFocus: Boolean;
+  LRect: TRect;
+  LText: string;
+  LLine: Integer;
+
+  procedure Line(const AText: string);
+  var
+    LLineRect: TRect;
+    LLineText: string;
+  begin
+    LLineRect := Rect(ANode.Box.Left + 8, ANode.Box.Top + 26 + LLine * 16,
+      ANode.Box.Right - 8, ANode.Box.Top + 42 + LLine * 16);
+    // TextRect clips through a var string, so it needs one of its own.
+    LLineText := AText;
+    ACanvas.TextRect(LLineRect, LLineText, [tfEndEllipsis]);
+    Inc(LLine);
+  end;
+
+begin
+  LIsFocus := ANode.Depth = 0;
+  ACanvas.Pen.Color := ThemeColors.Line;
+  ACanvas.Pen.Width := IfThen(LIsFocus, 2, 1);
+  ACanvas.Brush.Color := IfThen(LIsFocus, ThemeColors.Accent, ThemeColors.BoxFill);
+  ACanvas.Rectangle(ANode.Box);
+  ACanvas.Pen.Width := 1;
+
+  // The title bar, and under it the line AQTime draws between name and figures.
+  ACanvas.Brush.Style := bsClear;
+  ACanvas.Font.Color := IfThen(LIsFocus, clWhite, ThemeColors.Text);
+  ACanvas.Font.Style := [fsBold];
+  LText := GraphTitle(ANode.Name);
+  LRect := Rect(ANode.Box.Left + 8, ANode.Box.Top + 5, ANode.Box.Right - 8, ANode.Box.Top + 23);
+  ACanvas.TextRect(LRect, LText, [tfEndEllipsis]);
+  ACanvas.Pen.Color := IfThen(LIsFocus, clWhite, ThemeColors.Line);
+  ACanvas.MoveTo(ANode.Box.Left + 1, ANode.Box.Top + 24);
+  ACanvas.LineTo(ANode.Box.Right - 1, ANode.Box.Top + 24);
+
+  ACanvas.Font.Style := [];
+  LLine := 0;
+  if ANode.Stats.Calls > 0 then
+    Line(Format('Calls: %d', [ANode.Stats.Calls]));
+  Line(GraphValueLine(IfThen(FStore.Mode = smInstrumenting, 'Time', 'Samples'), ANode.Stats.SelfValue));
+  Line(GraphValueLine(IfThen(FStore.Mode = smInstrumenting, 'With children', 'With callees'),
+    ANode.Stats.Total));
+  ACanvas.Brush.Style := bsSolid;
+
+  if ANode.Toggle.IsEmpty then
+    Exit;
+  ACanvas.Brush.Color := ThemeColors.Window;
+  ACanvas.Pen.Color := ThemeColors.Line;
+  ACanvas.Rectangle(ANode.Toggle);
+  ACanvas.Pen.Color := ThemeColors.Text;
+  ACanvas.MoveTo(ANode.Toggle.Left + 3, ANode.Toggle.CenterPoint.Y);
+  ACanvas.LineTo(ANode.Toggle.Right - 3, ANode.Toggle.CenterPoint.Y);
+  if not ANode.Expanded then
+  begin
+    ACanvas.MoveTo(ANode.Toggle.CenterPoint.X, ANode.Toggle.Top + 3);
+    ACanvas.LineTo(ANode.Toggle.CenterPoint.X, ANode.Toggle.Bottom - 3);
+  end;
+end;
+
+{ An elbow from one box to the next, the way a call is drawn on paper: out of the right
+  edge, across the gap, up or down to the callee, and into its left edge. What the drawing
+  says about a call: the number on it is how many times it happened, and the heavier the
+  call - the share of the graph's biggest - the thicker and the more accented the line. A
+  call that goes back to a box in the same column or to the left of it is drawn faintly:
+  it is a return into the graph, not another step outwards.
+}
+procedure TMainForm.DrawGraphEdge(ACanvas: TCanvas; const AEdge: TGraphEdge; AMax: Int64);
+const
+  Head = 6;
+var
+  LFrom, LTo: TRect;
+  LStart, LEnd: TPoint;
+  LMidX, LWidth: Integer;
+  LBackwards: Boolean;
+begin
+  LFrom := FGraphNodes[AEdge.FromNode].Box;
+  LTo := FGraphNodes[AEdge.ToNode].Box;
+  LBackwards := LTo.Left <= LFrom.Left;
+  LStart := Point(LFrom.Right, LFrom.CenterPoint.Y);
+  LEnd := Point(LTo.Left, LTo.CenterPoint.Y);
+  LWidth := 1;
+  if (AMax > 0) and (AEdge.Value > 0) then
+    LWidth := 1 + Trunc(2.5 * AEdge.Value / AMax);
+  ACanvas.Pen.Width := IfThen(LBackwards, 1, LWidth);
+  if LBackwards then
+    ACanvas.Pen.Color := ThemeColors.Subtle
+  else
+    ACanvas.Pen.Color := IfThen(LWidth > 2, ThemeColors.Accent, ThemeColors.Line);
+
+  if LBackwards then
+  begin
+    // Round the outside rather than cut through the boxes in between.
+    LMidX := Max(LFrom.Right, LTo.Right) + CGraphColumnGap div 2;
+    ACanvas.MoveTo(LStart.X, LStart.Y);
+    ACanvas.LineTo(LMidX, LStart.Y);
+    ACanvas.LineTo(LMidX, LTo.Bottom + 6);
+    ACanvas.LineTo(LTo.CenterPoint.X, LTo.Bottom + 6);
+    ACanvas.LineTo(LTo.CenterPoint.X, LTo.Bottom);
+    LEnd := Point(LTo.CenterPoint.X, LTo.Bottom);
+    ACanvas.Brush.Color := ACanvas.Pen.Color;
+    ACanvas.Polygon([LEnd, Point(LEnd.X - 4, LEnd.Y + Head), Point(LEnd.X + 4, LEnd.Y + Head)]);
   end
   else
   begin
-    ACanvas.Brush.Color := ThemeColors.BoxFill;
-    ACanvas.Pen.Width := 1;
+    // The turn happens on the source's own vertical line, not in the middle of the gap.
+    LMidX := Min(FGraphNodes[AEdge.FromNode].Trunk, LEnd.X - 12);
+    ACanvas.MoveTo(LStart.X + CGraphToggle div 2, LStart.Y);
+    ACanvas.LineTo(LMidX, LStart.Y);
+    ACanvas.LineTo(LMidX, LEnd.Y);
+    ACanvas.LineTo(LEnd.X - Head, LEnd.Y);
+    ACanvas.Brush.Color := ACanvas.Pen.Color;
+    ACanvas.Polygon([LEnd, Point(LEnd.X - Head, LEnd.Y - 4), Point(LEnd.X - Head, LEnd.Y + 4)]);
   end;
-  ACanvas.Font.Color := ThemeColors.Text;
-  ACanvas.Pen.Color := ThemeColors.Line;
-  ACanvas.Rectangle(Result);
   ACanvas.Pen.Width := 1;
 
+  if AEdge.Calls <= 0 then
+    Exit;
   ACanvas.Brush.Style := bsClear;
-  LTextRect := Rect(Result.Left + 6, Result.Top + 4, Result.Right - 6, Result.Top + 22);
-  ACanvas.Font.Style := [fsBold];
-  // The full name never fits: keep the tail, which is the type and the method.
-  LText := AName;
-  if Length(LText) > 46 then
-    LText := '...' + Copy(LText, Length(LText) - 43, 44);
-  ACanvas.TextRect(LTextRect, LText, [tfEndEllipsis]);
-
-  ACanvas.Font.Style := [];
-  LTextRect := Rect(Result.Left + 6, Result.Top + 24, Result.Right - 6, Result.Bottom - 4);
-  if FStore.Mode = smInstrumenting then
-    LText := 'Time with children: ' + FormatNs(AValue)
-  else
-    LText := Format('%d samples', [AValue]);
-  ACanvas.TextRect(LTextRect, LText, [tfEndEllipsis]);
+  ACanvas.Font.Color := ThemeColors.Subtle;
+  ACanvas.TextOut(LMidX + 4, LEnd.Y - 16, IntToStr(AEdge.Calls));
+  ACanvas.Font.Color := ThemeColors.Text;
   ACanvas.Brush.Style := bsSolid;
 end;
 
 procedure TMainForm.PaintGraph(Sender: TObject);
-const
-  BoxWidth = 330;
-  BoxHeight = 48;
-  Gap = 26;
 var
   LCanvas: TCanvas;
-  LCentreRect, LRect: TRect;
-  I, LRow, LLeft, LCentreY: Integer;
-  LTotal: Int64;
+  LMax: Int64;
+  I: Integer;
 begin
   LCanvas := FGraph.Canvas;
   LCanvas.Brush.Color := ThemeColors.Window;
   LCanvas.Font.Color := ThemeColors.Text;
   LCanvas.FillRect(FGraph.ClientRect);
-  SetLength(FGraphBoxes, 0);
-  SetLength(FGraphBoxIds, 0);
-  if FGraphMethodId < 0 then
+  if Length(FGraphNodes) = 0 then
   begin
     LCanvas.Brush.Style := bsClear;
     LCanvas.TextOut(16, 16, 'Pick a method in the Report to see who calls it and what it calls.');
@@ -1724,103 +2159,112 @@ begin
     Exit;
   end;
 
-  LCentreY := 40 + BoxHeight + 60;
-  LCentreRect := Rect(40, LCentreY, 40 + BoxWidth, LCentreY + BoxHeight);
+  LMax := 0;
+  for I := 0 to High(FGraphEdges) do
+    LMax := Max(LMax, FGraphEdges[I].Value);
 
-  // Callers, in a row above.
-  LRow := 40;
-  for I := 0 to High(FGraphParents) do
-  begin
-    LLeft := 40 + I * (BoxWidth + Gap);
-    LRect := Rect(LLeft, LRow, LLeft + BoxWidth, LRow + BoxHeight);
-    DrawGraphBox(LCanvas, LRect, FGraphParents[I].FullName, FGraphParents[I].Value, False);
-    SetLength(FGraphBoxes, Length(FGraphBoxes) + 1);
-    SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
-    FGraphBoxes[High(FGraphBoxes)] := LRect;
-    FGraphBoxIds[High(FGraphBoxIds)] := FGraphParents[I].MethodId;
-    DrawGraphArrow(LCanvas, Point(LRect.CenterPoint.X, LRect.Bottom),
-      Point(LCentreRect.CenterPoint.X, LCentreRect.Top));
-  end;
+  // The edges first: a box drawn over its own arrow is what makes a graph look drawn by
+  // hand rather than read.
+  for I := 0 to High(FGraphEdges) do
+    DrawGraphEdge(LCanvas, FGraphEdges[I], LMax);
+  for I := 0 to High(FGraphNodes) do
+    DrawGraphNode(LCanvas, FGraphNodes[I]);
+
+  LCanvas.Brush.Style := bsClear;
+  LCanvas.Font.Color := ThemeColors.Subtle;
   if FGraphParentsHidden > 0 then
-  begin
-    LCanvas.Brush.Style := bsClear;
-    LCanvas.TextOut(40, LRow - 22, Format('+%d more callers - see the Details panel',
+    LCanvas.TextOut(CGraphMargin, 6, Format('+%d more callers - the Details panel has them all',
       [FGraphParentsHidden]));
-    LCanvas.Brush.Style := bsSolid;
-  end;
-
-  DrawGraphBox(LCanvas, LCentreRect, FGraphCentre, FGraphCentreValue, True);
   if Length(FGraphHistory) > 0 then
-  begin
-    LCanvas.Brush.Style := bsClear;
-    LCanvas.Font.Color := ThemeColors.Subtle;
-    LCanvas.TextOut(LCentreRect.Right + 16, LCentreRect.Top + 14, 'right-click to go back');
-    LCanvas.Font.Color := ThemeColors.Text;
-    LCanvas.Brush.Style := bsSolid;
-  end;
-
-  // Callees, in a row below, with the share of the focused method's time on the arrow.
-  LTotal := 0;
-  for I := 0 to High(FGraphChildren) do
-    Inc(LTotal, FGraphChildren[I].Value);
-  LRow := LCentreY + BoxHeight + 60;
-  for I := 0 to High(FGraphChildren) do
-  begin
-    LLeft := 40 + I * (BoxWidth + Gap);
-    LRect := Rect(LLeft, LRow, LLeft + BoxWidth, LRow + BoxHeight);
-    DrawGraphBox(LCanvas, LRect, FGraphChildren[I].FullName, FGraphChildren[I].Value, False);
-    SetLength(FGraphBoxes, Length(FGraphBoxes) + 1);
-    SetLength(FGraphBoxIds, Length(FGraphBoxIds) + 1);
-    FGraphBoxes[High(FGraphBoxes)] := LRect;
-    FGraphBoxIds[High(FGraphBoxIds)] := FGraphChildren[I].MethodId;
-    DrawGraphArrow(LCanvas, Point(LCentreRect.CenterPoint.X, LCentreRect.Bottom),
-      Point(LRect.CenterPoint.X, LRect.Top));
-    if LTotal > 0 then
-    begin
-      LCanvas.Brush.Style := bsClear;
-      LCanvas.TextOut(LRect.CenterPoint.X - 12, LRect.Top - 18,
-        Format('%.0f%%', [100.0 * FGraphChildren[I].Value / LTotal]));
-      LCanvas.Brush.Style := bsSolid;
-    end;
-  end;
-
-  if FGraphChildrenHidden > 0 then
-  begin
-    LCanvas.Brush.Style := bsClear;
-    LCanvas.TextOut(40, LRow + BoxHeight + 8, Format('+%d more callees - see the Details panel',
-      [FGraphChildrenHidden]));
-    LCanvas.Brush.Style := bsSolid;
-  end;
-
-  FGraph.Width := Max(FGraphScroll.ClientWidth,
-    40 + (Max(Length(FGraphParents), Length(FGraphChildren)) + 1) * (BoxWidth + Gap));
-  FGraph.Height := Max(FGraphScroll.ClientHeight, LRow + BoxHeight + 40);
+    LCanvas.TextOut(FGraphNodes[0].Box.Left, FGraph.Height - 20,
+      'click a box to walk there, right-click to go back, double-click for the source');
+  LCanvas.Font.Color := ThemeColors.Text;
+  LCanvas.Brush.Style := bsSolid;
 end;
 
-/// Clicking a box walks the graph, which is the whole point of having one. The right
-/// button walks back - the graph says so on screen - and a double click leaves the graph
-/// for the code.
+/// Clicking a box walks the graph, which is the whole point of having one; clicking the
+/// [+] opens or closes what that box calls, without moving anywhere. The right button
+/// walks back, and a double click leaves the graph for the code.
 procedure TMainForm.GraphMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var
-  I: Integer;
+  LPoint: TPoint;
+  LIndex, I: Integer;
 begin
   if Button = mbRight then
   begin
     GraphBack;
     Exit;
   end;
-  for I := 0 to High(FGraphBoxes) do
-    if FGraphBoxes[I].Contains(Point(X, Y)) then
+  LPoint := Point(X, Y);
+  for I := 0 to High(FGraphNodes) do
+    if not FGraphNodes[I].Toggle.IsEmpty and FGraphNodes[I].Toggle.Contains(LPoint) then
+    begin
+      LIndex := FGraphOpen.IndexOf(IntToStr(FGraphNodes[I].MethodId));
+      if LIndex >= 0 then
+        FGraphOpen.Delete(LIndex)
+      else
+        FGraphOpen.Add(IntToStr(FGraphNodes[I].MethodId));
+      BuildGraphNodes;
+      LayoutGraphNodes;
+      FGraph.Invalidate;
+      Exit;
+    end;
+  for I := 0 to High(FGraphNodes) do
+    if FGraphNodes[I].Box.Contains(LPoint) then
     begin
       if ssDouble in Shift then
       begin
-        ShowSourceOf(FGraphBoxIds[I]);
+        ShowSourceOf(FGraphNodes[I].MethodId);
         FSourcePanel.Activate;
       end
       else
-        ShowGraphOf(FGraphBoxIds[I]);
+        ShowGraphOf(FGraphNodes[I].MethodId);
       Exit;
     end;
+end;
+
+procedure TMainForm.ExpandGraph(ALevels: Integer);
+var
+  LOpened: Boolean;
+  LLevel, I: Integer;
+begin
+  if FGraphMethodId < 0 then
+    Exit;
+  for LLevel := 1 to Max(0, ALevels) do
+  begin
+    LOpened := False;
+    for I := 0 to High(FGraphNodes) do
+      if FGraphNodes[I].HasCallees and not FGraphNodes[I].Expanded and (FGraphNodes[I].Depth >= 0)
+        and (FGraphOpen.IndexOf(IntToStr(FGraphNodes[I].MethodId)) < 0) then
+      begin
+        FGraphOpen.Add(IntToStr(FGraphNodes[I].MethodId));
+        LOpened := True;
+      end;
+    if not LOpened then
+      Break;
+    BuildGraphNodes;
+  end;
+  LayoutGraphNodes;
+  FGraph.Invalidate;
+end;
+
+/// The box under the pointer says its whole name, which the box itself has no room for.
+procedure TMainForm.GraphMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+var
+  LHint: string;
+  I: Integer;
+begin
+  LHint := '';
+  for I := 0 to High(FGraphNodes) do
+    if FGraphNodes[I].Box.Contains(Point(X, Y)) then
+    begin
+      LHint := FGraphNodes[I].Name;
+      Break;
+    end;
+  if LHint = FGraph.Hint then
+    Exit;
+  Application.CancelHint;
+  FGraph.Hint := LHint;
 end;
 
 /// Walking a graph without a way back means starting from the Report every time.
@@ -1841,28 +2285,15 @@ begin
   if (FGraphMethodId >= 0) and (AMethodId <> FGraphMethodId) then
     FGraphHistory := FGraphHistory + [FGraphMethodId];
   FGraphMethodId := AMethodId;
-  if (AMethodId < 0) or not FStore.IsOpen then
-  begin
-    FGraphCentre := '';
-    FGraphCentreValue := 0;
-    FGraphParents := nil;
-    FGraphChildren := nil;
-  end
-  else
-  begin
-    FGraphCentre := FStore.MethodName(AMethodId);
-    FGraphCentreValue := FStore.MethodInclusive(AMethodId);
-    FGraphParents := FStore.Parents(AMethodId);
-    FGraphChildren := FStore.Children(AMethodId);
-    // A wide fan is unreadable and slow to draw: the tail is in the Details table, and
-    // the graph says how much of it is missing rather than pretending it is complete.
-    FGraphParentsHidden := Max(0, Length(FGraphParents) - 6);
-    FGraphChildrenHidden := Max(0, Length(FGraphChildren) - 6);
-    if Length(FGraphParents) > 6 then SetLength(FGraphParents, 6);
-    if Length(FGraphChildren) > 6 then SetLength(FGraphChildren, 6);
-  end;
+  // Walking to another method starts its graph closed: what was open belonged to the
+  // branch somebody was following, and carrying it over reopens things at random.
+  FGraphOpen.Clear;
+  BuildGraphNodes;
   if FGraph <> nil then
+  begin
+    LayoutGraphNodes;
     FGraph.Invalidate;
+  end;
 end;
 
 procedure TMainForm.BuildEditorTab;
@@ -1878,18 +2309,14 @@ begin
   // from DevExpress ones, which the skin paints like every other bar here. The arrangement
   // - a host at the bottom holding the horizontal bar and a square corner - is the one that
   // works in CVSTreeGraph, where this was solved first.
-  FEditorScrollHost := TPanel.Create(Self);
+  FEditorScrollHost := TdxPanel.Create(Self);
   FEditorScrollHost.Parent := FSourcePanel;
   FEditorScrollHost.Align := alBottom;
-  FEditorScrollHost.BevelOuter := bvNone;
-  FEditorScrollHost.Caption := '';
   FEditorScrollHost.Visible := False;
 
-  FEditorScrollCorner := TPanel.Create(Self);
+  FEditorScrollCorner := TdxPanel.Create(Self);
   FEditorScrollCorner.Parent := FEditorScrollHost;
   FEditorScrollCorner.Align := alRight;
-  FEditorScrollCorner.BevelOuter := bvNone;
-  FEditorScrollCorner.Caption := '';
   FEditorScrollCorner.Visible := False;
 
   FEditorScrollH := TcxScrollBar.Create(Self);
@@ -2160,7 +2587,7 @@ end;
 procedure TMainForm.BuildMemoryTab;
 var
   LByType, LBySite, LHeap: TcxTabSheet;
-  LHeapTop: TPanel;
+  LHeapTop: TdxPanel;
   LLabel: TcxLabel;
 begin
   FMemoryPages := TcxPageControl.Create(Self);
@@ -2181,11 +2608,10 @@ begin
   LHeap.PageControl := FMemoryPages;
   LHeap.Caption := 'Live heap';
 
-  LHeapTop := TPanel.Create(Self);
+  LHeapTop := TdxPanel.Create(Self);
   LHeapTop.Parent := LHeap;
   LHeapTop.Align := alTop;
   LHeapTop.Height := 36;
-  LHeapTop.BevelOuter := bvNone;
 
   LLabel := TcxLabel.Create(Self);
   LLabel.Transparent := True;
@@ -2683,7 +3109,7 @@ begin
   LGrid := FocusedGrid;
   if LGrid = nil then
   begin
-    MessageDlg('There is no table to export here.', mtInformation, [mbOK], 0);
+    dxMessageDlg('There is no table to export here.', mtInformation, [mbOK], 0);
     Exit;
   end;
   LDialog := TSaveDialog.Create(Self);
@@ -3467,12 +3893,12 @@ begin
       except
         on E: Exception do
         begin
-          MessageDlg('Cannot start the control service:' + sLineBreak + E.Message, mtError, [mbOK], 0);
+          dxMessageDlg('Cannot start the control service:' + sLineBreak + E.Message, mtError, [mbOK], 0);
           Exit(False);
         end;
       end;
     end;
-  MessageDlg('nap.exe was not found next to this application, nor in a bin folder ' +
+  dxMessageDlg('nap.exe was not found next to this application, nor in a bin folder ' +
     'beside it.' + sLineBreak +
     'Point Settings at it, or keep the package together.', mtError, [mbOK], 0);
   Result := False;
@@ -3519,12 +3945,12 @@ begin
     LogLine(Format('%s: NOT FOUND. %s', [LTool.Name, LTool.Fix]));
     if LTool.InstallCommand = '' then
     begin
-      MessageDlg(Format('%s was not found.'#13#10#13#10'%s'#13#10#13#10'%s',
+      dxMessageDlg(Format('%s was not found.'#13#10#13#10'%s'#13#10#13#10'%s',
         [LTool.Name, LTool.Purpose, LTool.Fix]), mtWarning, [mbOK], 0);
       Continue;
     end;
 
-    if MessageDlg(Format('%s was not found, and every profiling session needs it.'#13#10#13#10 +
+    if dxMessageDlg(Format('%s was not found, and every profiling session needs it.'#13#10#13#10 +
       '%s'#13#10#13#10'Install it now?'#13#10#13#10'    %s',
       [LTool.Name, LTool.Purpose, LTool.InstallCommand]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
       Continue;
@@ -3533,7 +3959,7 @@ begin
     except
       on E: Exception do
       begin
-        MessageDlg(E.Message, mtError, [mbOK], 0);
+        dxMessageDlg(E.Message, mtError, [mbOK], 0);
         Continue;
       end;
     end;
@@ -3583,7 +4009,7 @@ begin
     Exit;
   if not TryReadSessionSpec(ASessionDirectory, LRequest) then
   begin
-    MessageDlg('That session did not keep what it was started with, so it cannot be run again.'
+    dxMessageDlg('That session did not keep what it was started with, so it cannot be run again.'
       + sLineBreak + 'Use New session... and set it up once; from then on Run again works.',
       mtInformation, [mbOK], 0);
     Exit;
@@ -3614,7 +4040,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
       Exit;
     end;
   end;
@@ -3673,7 +4099,7 @@ begin
     // what can be done to any stored result.
     FLiveDatabasePath := '';
     if LStatus.Error <> '' then
-      MessageDlg(LStatus.Error, mtError, [mbOK], 0);
+      dxMessageDlg(LStatus.Error, mtError, [mbOK], 0);
     if (LStatus.DatabasePath <> '') and TFile.Exists(LStatus.DatabasePath) then
       LoadSession(LStatus.DatabasePath);
   end;
@@ -3688,7 +4114,7 @@ begin
   if FSessionId = '' then
     Exit;
   LName := Format('snapshot %s', [FormatDateTime('hh:nn:ss', Now)]);
-  if not InputQuery('Archive results', 'Keep the results collected so far as:', LName) then
+  if not dxInputQuery('Archive results', 'Keep the results collected so far as:', LName) then
     Exit;
   try
     LPath := FClient.Archive(FSessionId, Trim(LName));
@@ -3698,7 +4124,7 @@ begin
     ReloadExplorer;
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -3809,7 +4235,7 @@ begin
       LoadSession(LStatus.DatabasePath);
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -3822,7 +4248,7 @@ var
 begin
   if FSessionId = '' then
     Exit;
-  if MessageDlg('Throw away everything collected so far in this session?' + sLineBreak +
+  if dxMessageDlg('Throw away everything collected so far in this session?' + sLineBreak +
     'The app keeps running and stays instrumented, so collection continues from zero.',
     mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
     Exit;
@@ -3834,7 +4260,7 @@ begin
     SetStatus(Format('session %s: %s, results cleared', [FSessionId, LStatus.State]));
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -3858,7 +4284,7 @@ begin
     FPauseButton.Caption := IfThen(FPaused, 'Resume', 'Pause');
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -3874,7 +4300,7 @@ begin
     SetStatus('Recording.');
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
@@ -3888,7 +4314,7 @@ begin
     FPoll.Enabled := True;         // the analysis runs after collection ends
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 

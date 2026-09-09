@@ -10,7 +10,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.UITypes,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls,
-  cxLabel, cxButtons, cxListBox,
+  cxLabel, cxButtons, cxListBox, dxMessageDialog, dxInputDialogs,
   uSettings, uLayouts;
 
 type
@@ -173,20 +173,20 @@ var
   LNewName: string;
 begin
   LNewName := Selected;
-  if not InputQuery('Rename layout', 'New name', LNewName) then
+  if not dxInputQuery('Rename layout', 'New name', LNewName) then
     Exit;
   try
     RenameLayout(Selected, Trim(LNewName));
     RefreshList;
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 
 procedure TLayoutDialog.DeleteClick(Sender: TObject);
 begin
-  if MessageDlg(Format('Delete the layout "%s"?', [Selected]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+  if dxMessageDlg(Format('Delete the layout "%s"?', [Selected]), mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
     Exit;
   DeleteLayout(Selected);
   RefreshList;
@@ -199,7 +199,7 @@ var
   LName: string;
 begin
   LName := Selected;
-  if not InputQuery('Save layout', 'Name for the current arrangement', LName) then
+  if not dxInputQuery('Save layout', 'Name for the current arrangement', LName) then
     Exit;
   try
     SaveLayoutAs(Trim(LName));
@@ -208,7 +208,7 @@ begin
     UpdateButtons;
   except
     on E: Exception do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+      dxMessageDlg(E.Message, mtError, [mbOK], 0);
   end;
 end;
 

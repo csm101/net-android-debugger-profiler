@@ -58,7 +58,7 @@ public class GuiChannelTests
         await using var gui = await OpenAsync(cts.Token);
         await gui.OpenAsync(SessionDatabase(), "report", cts.Token);
 
-        var viewed = await gui.ViewAsync("graph", "TestTarget", filter: null, sortBy: null, ascending: false, cts.Token);
+        var viewed = await gui.ViewAsync("graph", "TestTarget", filter: null, sortBy: null, ascending: false, expand: 0, cts.Token);
         Assert.Contains("TestTarget", viewed.GetProperty("method").GetString());
         Assert.Equal("graph", viewed.GetProperty("panel").GetString());
 
@@ -91,7 +91,7 @@ public class GuiChannelTests
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         await using var gui = await OpenAsync(cts.Token);
         await gui.OpenAsync(SessionDatabase(), "report", cts.Token);
-        await gui.ViewAsync("graph", "TestTarget", null, null, false, cts.Token);
+        await gui.ViewAsync("graph", "TestTarget", null, null, false, 0, cts.Token);
 
         var whole = await gui.CaptureAsync(null, "panel", 1400, 900, null, wantBytes: false, trim: false, cts.Token);
         var trimmed = await gui.CaptureAsync(null, "panel", 1400, 900, null, wantBytes: false, trim: true, cts.Token);
@@ -158,7 +158,7 @@ public class GuiChannelTests
 
         await gui.OpenAsync(SessionDatabase(), null, cts.Token);
         var wrongPanel = await Assert.ThrowsAsync<Core.Sessions.ProfilerException>(
-            () => gui.ViewAsync("nonsense", null, null, null, false, cts.Token));
+            () => gui.ViewAsync("nonsense", null, null, null, false, 0, cts.Token));
         Assert.Contains("report", wrongPanel.Message);
     }
 }

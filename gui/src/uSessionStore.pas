@@ -45,6 +45,17 @@ type
     MethodId: Integer;
     FullName: string;
     Value: Int64;
+    /// Calls on this edge, when the mode counts calls; 0 for sampling, where the number
+    /// on an arrow would be samples and not a hit count.
+    Calls: Int64;
+  end;
+
+  /// What a method is worth, for the box the call graph draws for it. Zero calls means
+  /// the mode does not count them rather than "it was never called".
+  TMethodStats = record
+    Calls: Int64;
+    SelfValue: Int64;
+    Total: Int64;
   end;
 
   TNeighbours = TArray<TNeighbour>;
@@ -122,6 +133,11 @@ type
     function MethodName(AMethodId: Integer): string;
     /// Source location of a method, when the session was told where the build output is.
     function MethodSource(AMethodId: Integer): TMethodSource;
+    /// The figures of one method, as the call graph puts them in its box.
+    function MethodStats(AMethodId: Integer): TMethodStats;
+    /// Whether this method calls anything at all: what decides that a graph box gets a
+    /// [+] to open, without reading the callees of every box on screen.
+    function HasCallees(AMethodId: Integer): Boolean;
     /// Whether this session resolved any source location at all. None, on a session that
     /// had symbols, is a different thing from one method having none: it means the results
     /// were written by a build that could not read them, and only a new run repairs it.
@@ -761,12 +777,12 @@ var
 begin
   if FMode = smInstrumenting then
     LQuery := CreateQuery(
-      'SELECT p.method_id, m.full_name, SUM(n.total_ns) AS value ' +
+      'SELECT p.method_id, m.full_name, SUM(n.total_ns) AS value, SUM(n.calls) AS calls ' +
       'FROM timing_tree n JOIN timing_tree p ON p.id = n.parent_id JOIN method m ON m.id = p.method_id ' +
       'WHERE n.method_id = :m GROUP BY p.method_id, m.full_name ORDER BY value DESC')
   else
     LQuery := CreateQuery(
-      'SELECT e.caller_method_id AS method_id, m.full_name, e.samples AS value ' +
+      'SELECT e.caller_method_id AS method_id, m.full_name, e.samples AS value, 0 AS calls ' +
       'FROM sample_edge e JOIN method m ON m.id = e.caller_method_id ' +
       'WHERE e.callee_method_id = :m ORDER BY value DESC');
   LList := TList<TNeighbour>.Create;
@@ -778,6 +794,7 @@ begin
       LItem.MethodId := LQuery.FieldByName('method_id').AsInteger;
       LItem.FullName := LQuery.FieldByName('full_name').AsString;
       LItem.Value := LQuery.FieldByName('value').AsLargeInt;
+      LItem.Calls := LQuery.FieldByName('calls').AsLargeInt;
       LList.Add(LItem);
       LQuery.Next;
     end;
@@ -796,12 +813,12 @@ var
 begin
   if FMode = smInstrumenting then
     LQuery := CreateQuery(
-      'SELECT c.method_id, m.full_name, SUM(c.total_ns) AS value ' +
+      'SELECT c.method_id, m.full_name, SUM(c.total_ns) AS value, SUM(c.calls) AS calls ' +
       'FROM timing_tree n JOIN timing_tree c ON c.parent_id = n.id JOIN method m ON m.id = c.method_id ' +
       'WHERE n.method_id = :m GROUP BY c.method_id, m.full_name ORDER BY value DESC')
   else
     LQuery := CreateQuery(
-      'SELECT e.callee_method_id AS method_id, m.full_name, e.samples AS value ' +
+      'SELECT e.callee_method_id AS method_id, m.full_name, e.samples AS value, 0 AS calls ' +
       'FROM sample_edge e JOIN method m ON m.id = e.callee_method_id ' +
       'WHERE e.caller_method_id = :m ORDER BY value DESC');
   LList := TList<TNeighbour>.Create;
@@ -813,6 +830,7 @@ begin
       LItem.MethodId := LQuery.FieldByName('method_id').AsInteger;
       LItem.FullName := LQuery.FieldByName('full_name').AsString;
       LItem.Value := LQuery.FieldByName('value').AsLargeInt;
+      LItem.Calls := LQuery.FieldByName('calls').AsLargeInt;
       LList.Add(LItem);
       LQuery.Next;
     end;
@@ -910,6 +928,46 @@ begin
     Result.StartLine := LQuery.Fields[1].AsInteger;
     Result.EndLine := LQuery.Fields[2].AsInteger;
     Result.Found := Result.FileName <> '';
+  finally
+    LQuery.Free;
+  end;
+end;
+
+function TSessionStore.HasCallees(AMethodId: Integer): Boolean;
+var
+  LQuery: TFDQuery;
+begin
+  if FMode = smInstrumenting then
+    LQuery := CreateQuery(
+      'SELECT 1 FROM timing_tree n JOIN timing_tree c ON c.parent_id = n.id WHERE n.method_id = :m LIMIT 1')
+  else
+    LQuery := CreateQuery('SELECT 1 FROM sample_edge WHERE caller_method_id = :m LIMIT 1');
+  try
+    LQuery.ParamByName('m').AsInteger := AMethodId;
+    LQuery.Open;
+    Result := not LQuery.Eof;
+  finally
+    LQuery.Free;
+  end;
+end;
+
+function TSessionStore.MethodStats(AMethodId: Integer): TMethodStats;
+var
+  LQuery: TFDQuery;
+begin
+  Result := Default(TMethodStats);
+  if FMode = smInstrumenting then
+    LQuery := CreateQuery('SELECT calls, self_ns AS self_value, total_ns AS total FROM timing_stat WHERE method_id = :m')
+  else
+    LQuery := CreateQuery('SELECT 0 AS calls, exclusive_cpu AS self_value, inclusive_cpu AS total FROM sample_stat WHERE method_id = :m');
+  try
+    LQuery.ParamByName('m').AsInteger := AMethodId;
+    LQuery.Open;
+    if LQuery.Eof then
+      Exit;
+    Result.Calls := LQuery.FieldByName('calls').AsLargeInt;
+    Result.SelfValue := LQuery.FieldByName('self_value').AsLargeInt;
+    Result.Total := LQuery.FieldByName('total').AsLargeInt;
   finally
     LQuery.Free;
   end;

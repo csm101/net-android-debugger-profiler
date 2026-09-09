@@ -89,7 +89,8 @@ call counts rather than raw sample counts: durations never match exactly.
 ## A picture of it
 
 Every view above is also a panel of the profiler's GUI, which draws it on request:
-`gui_open` (a session), `gui_view` (a panel, a method to focus), `gui_capture` (the PNG).
+`gui_open` (a session), `gui_view` (a panel, a method to focus, and for the call graph
+`expand` - how many levels of callees to open), `gui_capture` (the PNG).
 The window is not shown while this happens, so it works when the person asking is not at
 that machine; `gui_show` puts it on their screen when they ask. Use it when the shape of
 the thing - a call graph, a growth between snapshots - says more than the numbers.

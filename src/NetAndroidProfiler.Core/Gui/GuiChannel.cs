@@ -90,7 +90,8 @@ public sealed class GuiChannel : IAsyncDisposable
         SendAsync(new Dictionary<string, object?> { ["command"] = "open", ["path"] = path, ["panel"] = panel }, ct);
 
     /// <summary>Choose what is on screen: a panel, a method to focus, a filter, a sort.</summary>
-    public Task<JsonElement> ViewAsync(string? panel, string? method, string? filter, string? sortBy, bool ascending, CancellationToken ct) =>
+    public Task<JsonElement> ViewAsync(string? panel, string? method, string? filter, string? sortBy,
+        bool ascending, int expand, CancellationToken ct) =>
         SendAsync(new Dictionary<string, object?>
         {
             ["command"] = "view",
@@ -99,6 +100,7 @@ public sealed class GuiChannel : IAsyncDisposable
             ["filter"] = filter,
             ["sortBy"] = sortBy,
             ["ascending"] = ascending,
+            ["expand"] = expand,
         }, ct);
 
     /// <summary>

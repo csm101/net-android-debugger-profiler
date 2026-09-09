@@ -116,7 +116,7 @@ implementation
 
 uses
   System.UITypes, System.IOUtils, System.StrUtils,
-  uJobDialog, uCallspecDialog, uSettings, uTheme, uSessionSpec;
+  uJobDialog, uCallspecDialog, uSettings, uTheme, uSessionSpec, dxMessageDialog;
 
 const
   CLabelLeft = 16;
@@ -1034,7 +1034,7 @@ begin
   except
     on E: Exception do
     begin
-      MessageDlg('Cannot list devices: ' + E.Message, mtError, [mbOK], 0);
+      dxMessageDlg('Cannot list devices: ' + E.Message, mtError, [mbOK], 0);
       Exit(False);
     end;
   end;

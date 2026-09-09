@@ -89,6 +89,30 @@ Delphi GUI (`gui/`): follows the coding standards of the VendingService
 workspace (`C:\Athens\VendingService\AGENTS.md`) - DevExpress VCL, no `with`,
 typed exceptions, 2-space indent, CRLF sources.
 
+**Never a stock VCL control where DevExpress has the equivalent (blocking).** The
+window is skinned, and a native control is a hole in it: it paints the system's
+colours, its scrollbars ignore the theme, and on a dark skin it shows up as a white
+rectangle. This is not a matter of taste - it is why the call graph flashed a white
+sheet on every resize. Known equivalents, to be used without asking:
+
+| stock VCL | use |
+|---|---|
+| `TPanel` | `TdxPanel` (dxPanel) |
+| `TScrollBox` | `TcxScrollBox` (cxScrollBox) |
+| `TSplitter` | `TcxSplitter` (cxSplitter) |
+| `TPageControl` / `TTabSheet` | `TcxPageControl` / `TcxTabSheet` (cxPC) |
+| `TLabel`, `TEdit`, `TComboBox`, `TCheckBox`, `TMemo`, `TButton`, `TListBox` | the `Tcx` ones |
+| `MessageDlg`, `ShowMessage` | `dxMessageDlg` (dxMessageDialog) |
+| `InputQuery`, `InputBox` | `dxInputQuery`, `dxInputBox` (dxInputDialogs) |
+| `TStatusBar` | `TdxStatusBar` with `PaintStyle = stpsUseLookAndFeel` |
+| toolbars, menus | `TdxBarManager` (and see the no-floating-bars rule in GUI_DESIGN.md) |
+
+What legitimately stays stock, because DevExpress has nothing for it: `TPaintBox`
+(our own drawing), `TTimer`, `TOpenDialog`/`TSaveDialog` and `SelectDirectory` (the
+shell's own dialogs, which are the ones users expect), `TForm` itself, and anything
+under `Winapi`. When something new has no equivalent, say so in the code comment
+rather than leaving the reader to wonder whether it was an oversight.
+
 # Licensing additions
 
 - MPL-1.1/2.0 components may be used **unmodified** (its copyleft is per file, so a

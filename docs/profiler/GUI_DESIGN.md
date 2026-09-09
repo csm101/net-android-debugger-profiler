@@ -108,13 +108,64 @@ AQTime's key detail, and the one worth copying exactly:
   This is what turns a 200k-node tree into something answerable at a glance, and
   it is cheap for us: the trees are already in `sample_tree` / `timing_tree`.
 
-### Call Graph
+### Call Graph (built 2026-09-09, the shape AQTime draws)
 
-The same relationships drawn instead of nested: the selected method as the
-central box, parents above, children below, arrows for the call direction. Each
-box has the name on top and one metric underneath (AQTime uses Time with
-Children), and the critical path is bold here too. Lower priority than the trees:
-same data, prettier, less dense.
+Read from the method in focus outwards, in columns: **callers to its left, callees to its
+right, one column per level**, elbow connectors labelled with the number of calls on that
+edge, and the heaviest edges drawn thicker and in the accent colour. The method in focus is
+the box painted in the accent colour, the way AQTime paints it blue.
+
+Each box carries the type and the method on a title bar (the namespace repeats across the
+graph and eats the width; the whole name is a hover away) and its figures underneath -
+Calls, Time, Time with children, or Samples for a sampling session.
+
+**Every box that calls something has a [+]**, and that is what makes the graph usable on a
+real application: opening it brings that method's callees into the next column, closing it
+takes the whole branch away. Only the first level of callees is drawn by itself; nothing
+expands on its own, because a complete call graph of an application is unreadable.
+
+**It is a graph, not a tree**: one box per method, and a method called from two places has
+two arrows into the same box - which is how AQTime draws it, and what makes "this is called
+from three points of this branch" visible at a glance. It is also what ends recursion: a
+method is visited once, so A -> B -> A has nowhere to expand for ever. The price is that
+the figures in a box are the method's own totals rather than one path's share; the number
+on each arrow is that call's own count, and that is where the per-path answer is.
+
+**Every box turns its arrows on a vertical line of its own**, spaced out from its neighbours
+in the same column. Routing them all through the middle of the corridor - the obvious way,
+and the first way this was written - merges the brackets of two boxes into one, and the
+picture then says that each of them calls every callee of the other. That is not a cosmetic
+defect: it is a drawing that states something false.
+
+An arrow that goes back to a box in the same column or to the left of one is drawn thin and
+faint, routed around the boxes rather than through them: it is a return into the graph, not
+another step outwards.
+
+Each column is packed from the top in the order the calls were discovered, and the store
+answers heaviest first - so the call that costs most is the box at the top of its column.
+Line thickness and the accent colour say the same thing about an arrow: the share it has of
+the heaviest call in the graph.
+
+Being open is a property of the method, and walking to another method starts that method's
+graph closed. `ExpandGraph(levels)` opens everything down to a depth the way clicking every
+[+] would: the control channel's `view` takes `expand`, and the command line `--expand=<n>`
+before a `--render=graph:`, which is how a picture of "the graph two levels deep" is taken
+without a hand on the mouse.
+
+The callers are one level and no further: a caller's own callers are that method's graph,
+one click away. Clicking a box walks there, right-click walks back, double-click leaves the
+graph for the source.
+
+Layout: the callee columns are packed from the top, the method in focus sits against the
+middle of the column it calls, and the callers against the middle of it. `HasCallees`
+decides which boxes get a [+] without reading the callees of every box on screen.
+
+The canvas lives in a **`TcxScrollBox`**, not the VCL one, and this is not cosmetic: the VCL
+scroll box paints the system's white behind the drawing, which on a dark theme was a white
+sheet flashing on every resize and standing in the open wherever the window was larger than
+the graph, with unskinned scrollbars on top. The cx one is painted by the skin; it is
+double-buffered, and `OnResize` re-lays the graph out so the canvas always covers the
+viewport.
 
 ### Editor
 
