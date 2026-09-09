@@ -19,7 +19,7 @@
     server (NetAndroid.Mcp) ships in that package, so it carries the same version.
   -->
   <PropertyGroup Condition="$(MSBuildProjectName.StartsWith('NetAndroidProfiler')) Or '$(MSBuildProjectName)' == 'NetAndroid.Mcp'">
-    <NapVersion>0.2.0</NapVersion>
+    <NapVersion>0.3.0</NapVersion>
     <Version>$(NapVersion)</Version>
     <Product>net-android-profiler</Product>
   </PropertyGroup>
