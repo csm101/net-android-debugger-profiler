@@ -4,6 +4,12 @@ A **debugger** and a **profiler** for .NET for Android applications — C# on Mo
 apps included — driven by AI agents through MCP, by editors through the Debug Adapter Protocol,
 and by people through a desktop GUI and a command line.
 
+> **First release, September 2026.** The MCP server is the finished part: its whole tool surface
+> has been run end to end against a real application on a physical device. The GUI works and is
+> in daily use, but it is still work in progress, and there is no proper manual yet - this README,
+> the documents under `docs/` and the skill the server ships with are what exists. Bug reports are
+> very welcome: the author is away until 24 September 2026 and will answer them on his return.
+
 ## What is in the package
 
 Three separate things over one engine.
