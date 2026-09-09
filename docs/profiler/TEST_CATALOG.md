@@ -83,6 +83,7 @@ Conventions (mirroring the debugger project's discipline):
 - [x] AOT: instrumenting refused, sampling warned but allowed (leaf frames land on the
   caller) - `Aot_blocks_instrumenting_and_only_warns_for_sampling`
 - [x] Method tokens -> portable pdb source ranges (Fast/PortablePdbSymbolsTests): `Loads_testtarget_pdb_and_lists_its_documents`, `Methods_in_document_have_line_ranges`, `Sampled_method_tokens_resolve_to_source_ranges`, `Unknown_module_or_token_returns_null`
+- [x] A source suffix that matches two files is refused instead of annotated as one - `A_suffix_that_matches_several_source_files_is_reported_as_ambiguous` (a short suffix used to print one project's figures against another project's namesake file)
 
 ## C. Memory analysis
 - [x] Exact allocation counts/sizes per type (provider path) - `Allocations_by_type_count_every_record_and_its_payload`

@@ -104,6 +104,18 @@ public sealed class PortablePdbSymbols : IDisposable
         return list.OrderBy(m => m.StartLine).ToList();
     }
 
+    /// <summary>
+    /// The distinct documents whose path ends with <paramref name="documentSuffix"/>. More than
+    /// one means the suffix does not identify a file: two projects can each have a Services/LogService.cs.
+    /// </summary>
+    public IReadOnlyList<string> DocumentsMatching(string documentSuffix)
+    {
+        string needle = Normalize(documentSuffix);
+        return Documents()
+            .Where(d => Normalize(d).EndsWith(needle, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
     /// <summary>Documents known to the loaded pdbs.</summary>
     public IReadOnlyList<string> Documents()
     {

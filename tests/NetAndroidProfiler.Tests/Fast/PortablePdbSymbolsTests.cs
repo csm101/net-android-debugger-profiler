@@ -33,6 +33,20 @@ public class PortablePdbSymbolsTests
         Assert.Equal(s.Find(method.Module, method.Token)!.Document, byFileName!.Document);
     }
 
+    /// <summary>
+    /// A suffix short enough to match two files used to be annotated as if it were one: the
+    /// figures of every matching file were printed against the text of the first one, so the
+    /// numbers landed on lines of a namesake in another project. The caller has to be told.
+    /// </summary>
+    [Fact]
+    public void A_suffix_that_matches_several_source_files_is_reported_as_ambiguous()
+    {
+        using var s = PortablePdbSymbols.LoadDirectory(PdbDir);
+
+        Assert.Single(s.DocumentsMatching("Workloads/CpuBurner.cs"));
+        Assert.True(s.DocumentsMatching(".cs").Count > 1, "the recorded pdbs hold more than one source file");
+    }
+
     [Fact]
     public void Methods_in_document_have_line_ranges()
     {

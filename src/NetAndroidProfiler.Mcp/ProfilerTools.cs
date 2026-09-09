@@ -454,6 +454,11 @@ public sealed class ProfilerTools(SessionHost host)
         using var s = host.OpenResults(sessionId, out _);
         using var pdbs = Core.Symbols.PortablePdbSymbols.LoadDirectory(symbolsDir);
         if (pdbs.Modules.Count == 0) throw new McpException($"No portable pdb files in {symbolsDir} (DebugType must be portable).");
+        var matching = pdbs.DocumentsMatching(sourceFile);
+        if (matching.Count > 1)
+            throw new McpException(
+                $"'{sourceFile}' matches {matching.Count} source files in the pdbs of {symbolsDir}; pass a longer suffix. " +
+                string.Join("; ", matching.Take(10)));
         var methods = pdbs.MethodsInDocument(sourceFile);
         if (methods.Count == 0)
         {
