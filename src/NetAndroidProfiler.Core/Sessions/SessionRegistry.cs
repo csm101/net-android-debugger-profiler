@@ -121,7 +121,12 @@ public sealed class SessionRegistry : IAsyncDisposable
         {
             if (live.Session.State == SessionState.Ready) return ResultStore.Open(live.Session.DatabasePath);
             if (live.Session.State == SessionState.Failed) throw new ProfilerException($"Session {id} failed: {live.Session.Info.Error}");
-            throw new ProfilerException($"Session {id} is still {live.Session.State}; wait for it to finish.");
+            // A Get Results writes the database of a session that is still collecting, and reading
+            // it back is the whole point of having asked for it: the results up to now.
+            if (File.Exists(live.Session.DatabasePath)) return ResultStore.Open(live.Session.DatabasePath);
+            throw new ProfilerException(
+                $"Session {id} is still {live.Session.State} and has written no results yet; " +
+                "profile_snapshot writes what it has so far, profile_stop ends it.");
         }
         string dir = Path.Combine(SessionsRoot, id);
         if (!Directory.Exists(dir)) throw new ProfilerException($"Unknown session '{id}'.");

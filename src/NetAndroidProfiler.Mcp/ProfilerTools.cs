@@ -278,7 +278,8 @@ public sealed class ProfilerTools(SessionHost host)
         try
         {
             var archive = await live.Session.ArchiveAsync(name, ct);
-            return $"Archived '{archive.Name}' ({archive.CreatedUtc.ToLocalTime():HH:mm:ss}). The session keeps collecting."
+            return $"Archived '{archive.Name}' ({archive.CreatedUtc.ToLocalTime():HH:mm:ss})."
+                + (live.Session.State == SessionState.Collecting ? " The session keeps collecting." : "")
                 + Environment.NewLine + archive.Path;
         }
         catch (Exception e) when (e is ProfilerException or ToolException) { throw new McpException(e.Message); }
