@@ -8,7 +8,28 @@ and by people through a desktop GUI and a command line.
 > has been run end to end against a real application on a physical device. The GUI works and is
 > in daily use, but it is still work in progress, and there is no proper manual yet - this README,
 > the documents under `docs/` and the skill the server ships with are what exists. Bug reports are
-> very welcome: the author is away until 24 September 2026 and will answer them on his return.
+> very welcome.
+>
+> Both products speak to **MonoVM**, so they serve apps up to `net10.0-android`. From .NET 11
+> Android apps run on CoreCLR only (the SDK refuses Mono there, error NETSDK1242), and CoreCLR is
+> not supported yet.
+
+## Quick start
+
+Nothing has to be cloned or built to use it:
+
+1. Download `net-android-<version>.zip` from the
+   [latest release](https://github.com/csm101/net-android-debugger-profiler/releases/latest) and
+   unpack it anywhere.
+2. Run `install.cmd` in that folder (Windows). It registers one Claude Code plugin - the MCP
+   server and the skill that drives it - and puts the profiler GUI on the desktop.
+3. Start a new Claude Code session and ask it to debug or profile your app. It builds and
+   installs the app the way each mode needs (`build_app`); the app only has to be a
+   `net10.0-android` or earlier project on a device or emulator with USB debugging on.
+
+Cloning the repository is only for changing the code; building the GUI from source needs
+RAD Studio with a DevExpress VCL license of your own. The full installation options are under
+[Install](#install).
 
 ## What is in the package
 

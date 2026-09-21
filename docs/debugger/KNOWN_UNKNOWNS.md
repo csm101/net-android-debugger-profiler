@@ -46,6 +46,17 @@ needs a different wire protocol and a different debug-property mechanism (`src/n
 in dotnet/android). The repository-level view and the order of decisions are in
 `docs/KNOWN_UNKNOWNS.md` R2. Not a near-term concern for the reference application.
 
+Confirmed 2026-06 by the SDK: `UseMonoRuntime=true` on `net11.0-android` fails with NETSDK1242
+("Use the CoreCLR runtime or target .NET 10.0"), so no .NET 11 Android app can be debugged by
+this engine, whatever the project asks for. Two MIT reference implementations to read before
+designing the CoreCLR engine, pointed out by the author of one of them after the first public
+release (2026-09): `MattParkerDev/sharpdbg`, a managed .NET debugger with a DAP frontend written
+entirely in C#, and `JaneySprings/clrdbg`, its fork with the additions MAUI/Android needs, which
+the `JaneySprings/DotNet.Meteor` VS Code extension (MIT) now uses for its CoreCLR targets. By
+that author's account debugging MAUI on CoreCLR still depends on some closed-source pieces;
+which ones, and whether the licensing rules of this repository allow what remains, is the
+first thing to establish.
+
 ## U9 - Physical handhelds over WiFi adb
 Attach flow against real handhelds over adb connect host:port, possibly
 through SSH tunnels. Latency/stability of SDB over that path.
